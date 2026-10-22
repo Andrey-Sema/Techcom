@@ -580,7 +580,7 @@ Dashboard `followup-overview.json` — rows and panels:
 | Delivery | outbox backlog by status, oldest pending age, attempts by result, dead letters, reconciled count, replays |
 | LLM | requests by result, fallback rate, tokens in/out, cost/day vs budget, latency p95, circuit state |
 | Security | auth failures, authz denials, notes flagged, rate-limited requests, validation rejections |
-| Logs | Loki panel `{service="followup"} \| json \| level=~"warning\|error"`, linked by `run_id` |
+| Logs | Loki panel `{service_name="followup"} \| severity_text=~"(?i)warn.*\|error\|critical"`, linked by `run_id` |
 
 ## 10. Loki and Alloy
 
