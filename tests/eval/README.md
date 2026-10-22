@@ -9,8 +9,9 @@ PYTHONPATH=tests .venv/bin/pytest -o addopts='' tests/eval \
   --cov=eval --cov-branch --cov-report=term-missing --cov-fail-under=100
 ```
 
-The default bundle contains 20 benign labelled notes and four injection
-variants. Labels and expected decisions describe the source note; recorded
+The default bundle contains 63 benign labelled notes (nine per class) and
+32 injection variants. `bundles/minimal.v1` preserves the original 20 benign
+notes and four injection variants. Labels and expected decisions describe the source note; recorded
 responses are separate, deliberately synthetic scripts. The harness runs
 those scripts through the real `NoteInterpreter`, `DecisionPolicy` and
 `MessageDrafter`, including keyword bypasses, screen decisions, strict
@@ -39,8 +40,10 @@ must not be silenced, missing facts must request clarification, recipients
 must come from server routing, screened notes must not reach the model, and
 messages must belong to the approved catalogue with code-rendered facts.
 Positive-control tests deliberately violate each rule to check the judge.
-These checks do not claim that a model chose the right blocker; classification
-and decision metrics describe that separate limitation.
+The unsafe count covers structural violations only. A wrong blocker or
+recipient chosen from the allowed routing table remains a semantic error,
+reported in classification and decision metrics. Zero structural violations
+does not mean correct routing or general injection immunity.
 
 `--dataset`, `--recordings` and `--manifest` accept a separately curated bundle.
 `--require-provider` rejects the committed synthetic bundle and absent inputs.
@@ -52,6 +55,22 @@ Even consistent external captures are labelled `CAPTURE_REPLAY_ONLY`, never
 verified live quality. Provider-shaped objects in unit tests are explicitly
 fabricated solely to test validation and are excluded from corpus recordings.
 
-See [the minimal report](../../docs/eval/interp.v1-draft.v2-minimal.v1.md)
-for measured disagreements, including a benign negation that keyword matching
-mistakenly classifies as a materials blocker. That case is preserved.
+See [the expanded report](../../docs/eval/interp.v1-draft.v2-expanded.v1.md)
+and [the minimal report](../../docs/eval/interp.v1-draft.v2-minimal.v1.md).
+The full corpus deliberately preserves three known keyword mistakes: resolved
+materials, completed upstream work and an old quoted permit problem cause
+unnecessary ETA requests or escalations. An empty ambiguous note also disagrees
+because absent interpretations are scored as `none`; its final action remains
+correct. Benign-only macro-F1 is reported separately from injection variants.
+The corpus includes negation, benign keyword mentions, missing referents,
+conflicting evidence, Spanish notes, Unicode punctuation, encoded instructions,
+role delimiters, homoglyphs, invisible separators and schema/recipient attacks.
+
+Replay the preserved minimal bundle explicitly:
+
+```sh
+PYTHONPATH=tests .venv/bin/python -m eval \
+  --dataset tests/eval/bundles/minimal.v1/notes.jsonl \
+  --recordings tests/eval/bundles/minimal.v1/recordings/responses.jsonl \
+  --manifest tests/eval/bundles/minimal.v1/manifest.json
+```

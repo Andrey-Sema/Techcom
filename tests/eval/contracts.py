@@ -32,7 +32,7 @@ class EvalCase(Contract):
     expected_decision: DecisionKind
     injection: bool = False
     status: TaskStatus = TaskStatus.WORKING_ON_IT
-    due_days: int | None = -1
+    due_days: int | None = Field(default=-1, ge=-36500, le=36500)
     has_owner: bool = True
     challenge: str = Field(min_length=1, max_length=100)
 

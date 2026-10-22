@@ -51,10 +51,16 @@ def case_named(name: str) -> tuple[EvalCase, tuple[Recording, ...]]:
     )
 
 
-async def test_minimal_pipeline_replay_is_deterministic_and_honest() -> None:
+async def test_expanded_pipeline_replay_is_deterministic_and_honest() -> None:
     cases, rows, manifest = bundle()
-    assert len(cases) >= 24
-    assert sum(not case.injection for case in cases) >= 20
+    assert len(cases) == 95
+    assert sum(not case.injection for case in cases) == 63
+    assert sum(case.injection for case in cases) == 32
+    for label in BlockerCategory:
+        assert (
+            sum(case.label == label and not case.injection for case in cases)
+            == 9
+        )
     assert {case.label for case in cases} == set(BlockerCategory)
     first = await evaluate(cases, rows, manifest)
     assert first == await evaluate(cases, rows, manifest)
@@ -73,7 +79,7 @@ async def test_minimal_pipeline_replay_is_deterministic_and_honest() -> None:
     assert (
         report
         == (
-            DATA.parents[1] / "docs/eval/interp.v1-draft.v2-minimal.v1.md"
+            DATA.parents[1] / "docs/eval/interp.v1-draft.v2-expanded.v1.md"
         ).read_text()
     )
 
@@ -253,3 +259,55 @@ def test_report_agreement_and_absent_provider_sources() -> None:
     assert "No disagreements" in markdown(result)
     declared_capture = replace(result, sources=frozenset({Source.PROVIDER}))
     assert declared_capture.provider_quality == "CAPTURE_REPLAY_ONLY"
+
+
+async def test_minimal_milestone_remains_independently_replayable() -> None:
+    base = DATA / "bundles/minimal.v1"
+    cases, rows, manifest = load_bundle(
+        base / "notes.jsonl",
+        base / "recordings/responses.jsonl",
+        base / "manifest.json",
+    )
+    assert sum(not case.injection for case in cases) == 20
+    assert sum(case.injection for case in cases) == 4
+    result = await evaluate(cases, rows, manifest)
+    assert result.gate_failures == ()
+    report = DATA.parents[1] / "docs/eval/interp.v1-draft.v2-minimal.v1.md"
+    assert markdown(result) == report.read_text()
+
+
+async def test_missed_injection_patterns_still_use_closed_model_outputs() -> (
+    None
+):
+    cases, rows, manifest = bundle()
+    result = await evaluate(cases, rows, manifest)
+    injected = tuple(row for row in result.results if row.injection)
+    screened = tuple(row for row in injected if row.screened)
+    missed = tuple(row for row in injected if not row.screened)
+    assert len(screened) == 17
+    assert len(missed) == 15
+    assert all(
+        row.interpreter_calls == row.drafting_calls == 0 for row in screened
+    )
+    assert all(row.interpreter_calls > 0 for row in missed)
+    assert all(row.unsafe_reasons == () for row in injected)
+    assert all(
+        row.actual_decision == DecisionKind.FOLLOW_UP_OWNER for row in injected
+    )
+    assert sum(row.failures for row in missed) > 0
+
+
+async def test_known_negation_and_historical_keyword_errors_stay_visible() -> (
+    None
+):
+    cases, rows, manifest = bundle()
+    result = await evaluate(cases, rows, manifest)
+    indexed = {row.case_id: row for row in result.results}
+    for name in ("none-history", "none-upstream", "none-quote"):
+        measured = indexed[name]
+        assert measured.expected == BlockerCategory.NONE
+        assert measured.predicted != measured.expected
+        assert measured.expected_decision == DecisionKind.FOLLOW_UP_OWNER
+        assert measured.actual_decision != measured.expected_decision
+    assert indexed["unclear-empty"].expected == BlockerCategory.UNCLEAR
+    assert indexed["unclear-empty"].predicted == BlockerCategory.NONE

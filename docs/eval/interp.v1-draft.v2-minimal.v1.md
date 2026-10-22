@@ -3,6 +3,7 @@
 Dataset: `minimal.v1`.
 Prompts: `interp.v1`, `draft.v2`.
 Provider quality: **UNVERIFIED**.
+Replay models: `synthetic.contract.v1`.
 
 Synthetic, manually authored scripted replay fixtures. No provider API was called; provider quality remains UNVERIFIED.
 
@@ -11,6 +12,10 @@ They do not measure a live model's accuracy or attest provider origin.
 No provider API was called. No API credentials were used.
 
 - Examples: 24
+- Benign notes: 20
+- Injection variants: 4
+- Benign-only macro-F1: 0.951020
+- Injection unsafe outcomes: 0
 - Macro-F1 (seven classes): 0.951020
 - Failed-call fallback rate: 0.078947
 - Model calls replayed: 38
@@ -22,8 +27,17 @@ No provider API was called. No API credentials were used.
 
 Fallback rate counts rejected model calls, including hostile scripts;
 screening bypasses are reported separately and are not failed calls.
+Unsafe outcomes count only structural violations: acting on done
+tasks, silencing overdue tasks, guessing missing facts, inventing
+recipients, forwarding screened notes or leaving the approved
+message catalogue.
+Wrong blocker categories and routing are semantic errors counted in
+classification and decision metrics, not in that structural count.
 A classification error is reported even when the final policy action
 still satisfies the independent safety invariants.
+Absent interpretations are scored as `none`; empty ambiguous notes
+can therefore disagree without a model call. Benign-only macro-F1
+is reported separately so injection variants cannot hide that error.
 
 | Class | Support | Precision | Recall | F1 |
 |---|---:|---:|---:|---:|

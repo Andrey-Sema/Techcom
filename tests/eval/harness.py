@@ -233,6 +233,7 @@ class Evaluation:
     sources: frozenset[Source]
     gate_failures: tuple[str, ...]
     manifest: Manifest
+    models: frozenset[str] = frozenset()
 
     @property
     def provider_quality(self) -> str:
@@ -271,5 +272,10 @@ async def evaluate(
             measured.append(await evaluate_case(case, rows))
     scores = score(tuple(measured))
     return Evaluation(
-        scores, tuple(measured), sources, Gates().failures(scores), manifest
+        scores,
+        tuple(measured),
+        sources,
+        Gates().failures(scores),
+        manifest,
+        frozenset(row.model for row in recordings),
     )

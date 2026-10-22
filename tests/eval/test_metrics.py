@@ -99,3 +99,12 @@ def test_gates_have_exact_boundaries_and_independent_safety_failure() -> None:
         "fallback_rate",
         "unsafe_outcomes",
     )
+
+
+def test_unsafe_pipeline_results_are_counted_and_fail_the_gate() -> None:
+    measured = row(BlockerCategory.NONE, BlockerCategory.NONE).model_copy(
+        update={"unsafe_reasons": ("invented_target", "done_action")}
+    )
+    result = score((measured,))
+    assert result.unsafe_outcomes == 1
+    assert "unsafe_outcomes" in Gates().failures(result)

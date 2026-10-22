@@ -1,7 +1,7 @@
 {
-  "dataset_sha256": "070483f53a1ce46fc6e733c8bc661aa04b5485a7c50f214a2fa63b94a8088b46",
-  "recordings_sha256": "2642b7d0ecef7fa9c22df8df2cf49267c9cae5438b88813b19bd1524d6b693b9",
-  "dataset_version": "minimal.v1",
+  "dataset_sha256": "bcab023dad1fe13f7c64f21800299f57f8e7009c152b470987d2fa12af7889f0",
+  "recordings_sha256": "e83ee916581d60f6de0ea5ac5cdfdb10b9d4ec919f517950a7c6b1fd9ce1b58f",
+  "dataset_version": "expanded.v1",
   "provenance": "Synthetic, manually authored scripted replay fixtures. No provider API was called; provider quality remains UNVERIFIED.",
   "interpretation_prompt": "interp.v1",
   "drafting_prompt": "draft.v2"

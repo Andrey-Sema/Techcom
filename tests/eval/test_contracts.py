@@ -92,3 +92,12 @@ def test_dataset_is_closed_to_extra_capabilities(key: str) -> None:
 
 def test_canonical_json_hash_ignores_key_order() -> None:
     assert digest_json({"a": 1, "b": 2}) == digest_json({"b": 2, "a": 1})
+
+
+@pytest.mark.parametrize("days", [-36501, 36501])
+def test_source_date_offsets_cannot_overflow_snapshot(days: int) -> None:
+    case, _rows = case_named("unclear-short")
+    raw = case.model_dump(mode="json")
+    raw["due_days"] = days
+    with pytest.raises(ValidationError):
+        EvalCase.model_validate_json(json.dumps(raw))
