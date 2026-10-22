@@ -95,7 +95,7 @@ AC-API1, AC-OPS2. *Tier B* requires all MUST and SHOULD items.
 
 | ID | Level | Criterion | Verified by |
 |----|-------|-----------|-------------|
-| AC-Q1 | MUST | `ruff check` and `ruff format --check` clean with line length 79 (strict PEP 8); all comments and docstrings in English. | CI |
+| AC-Q1 | MUST | `ruff check` and `ruff format --check` clean with line length 79 (strict PEP 8); all comments and docstrings in English. | CI; `tests/meta/test_english_only.py` |
 | AC-Q2 | MUST | `mypy --strict` clean on `src` and `tests`. | CI |
 | AC-Q3 | MUST | **100 % line and branch coverage**; no ad-hoc `pragma: no cover`. | CI coverage gate + grep |
 | AC-Q4 | MUST | Hexagonal dependency rule enforced (`import-linter`): domain imports no adapters/infrastructure. | CI |

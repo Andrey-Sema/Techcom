@@ -20,6 +20,18 @@ Two declared tiers (decision from the senior audit, `16` #30):
   minutes; complexity gates enforce it.
 * The README states the real time spent per tier and what was cut (§4).
 
+## 0a. Progress tracker (updated with every milestone commit)
+
+| M | State | What exists | What is still missing |
+|---|-------|-------------|------------------------|
+| M0 | partial | `pyproject.toml` (Ruff `ALL`, Bandit, mypy strict, pytest, coverage 100 %), `uv.lock`, `.gitignore`, `.gitattributes`, `.editorconfig`, `.python-version`, English-only guard (`tests/meta/`) | `mocks/` workspace member, `.dockerignore`, pre-commit, Makefile, CI workflow, `compose.yaml`, `.env.example`, import-linter contract |
+| M1 | **done** | `domain/` (normalize, injection, interpretation, policy R1–R9, identity, messages), `config/policy.toml`, `config/routing.toml`; unit, property (1–6, 8–10) and golden tests | — |
+| M5 | partial | OpenAI model router with failover, breakers, USD budget, secret-file key / workload identity (`ADR-0013`) | LLM stub, note interpreter, drafter, S7/S8 scenarios |
+| M0b, M2–M4, M6–M12 | not started | — | see §1 |
+
+Next on the critical path: finish **M0** (CI and pre-commit first, so
+every later push is gated), then **M2 ∥ M3**, then **M4**.
+
 ## 1. Work breakdown (MoSCoW, estimates)
 
 | M | Milestone | Deliverables | Must/Should/Could | Est. |
@@ -133,4 +145,6 @@ controls, gates and evidence.
 * Internal TLS between containers and dynamic DB credentials — documented
   ASVS deviations for local compose, required in production (`15`).
 * OpenTelemetry tracing export — logs + metrics are enough here.
-* Second LLM provider for failover — template fallback covers availability.
+* Second LLM *provider* for failover — the router already fails over
+  across three OpenAI model generations (`ADR-0013`), and the template
+  fallback covers a full outage; a Gemini backend is optional.
