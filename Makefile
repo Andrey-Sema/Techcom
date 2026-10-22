@@ -1,4 +1,4 @@
-.PHONY: bootstrap quality test test-fast test-integration mock db-up db-down
+.PHONY: bootstrap quality test test-fast test-integration mock demo db-up db-down
 
 bootstrap:
 	uv sync --locked --all-packages
@@ -23,6 +23,9 @@ test-integration:
 mock:
 	mkdir -p var
 	FOLLOWUP_MOCK_JOURNAL=var/delivery_log.jsonl uv run --locked uvicorn techcom_mocks.app:create_app --factory --host 127.0.0.1 --port 8081 --workers 1
+
+demo:
+	uv run --locked python scripts/demo.py
 
 # Create secrets/postgres_password locally before starting the database.
 db-up:

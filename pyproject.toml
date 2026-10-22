@@ -19,6 +19,9 @@ dependencies = [
     "rich>=13.9",
 ]
 
+[project.scripts]
+followup = "techcom_followup.bootstrap:main"
+
 [dependency-groups]
 dev = [
     "bandit[toml]>=1.8",
