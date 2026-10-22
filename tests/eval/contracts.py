@@ -124,6 +124,12 @@ class Manifest(Contract):
     provenance: str = Field(min_length=20)
     interpretation_prompt: str = "interp.v1"
     drafting_prompt: str = "draft.v2"
+    pipeline_commit: str | None = Field(
+        default=None, pattern=r"^[a-f0-9]{40}$"
+    )
+    pipeline_sha256: str | None = Field(
+        default=None, pattern=r"^[a-f0-9]{64}$"
+    )
 
 
 def digest_text(text: str) -> str:

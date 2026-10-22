@@ -1,14 +1,25 @@
 """Replay exact recordings through the real M5 workflow and policy."""
 
+import sys
 from collections import deque
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from inspect import getsource
 
 from structlog.testing import capture_logs
 
-from eval.contracts import EvalCase, Manifest, Recording, Source
+from eval import metrics
+from eval.contracts import (
+    EvalCase,
+    Manifest,
+    Recording,
+    Source,
+    digest_json,
+    digest_text,
+)
 from eval.metrics import CaseResult, Gates, Scores, score
+from techcom_followup.application import drafter, interpreter, llm_workflow
 from techcom_followup.application.drafter import (
     PROMPT_VERSION as DRAFT_PROMPT,
 )
@@ -26,6 +37,14 @@ from techcom_followup.application.ports import (
     LLMRequest,
     LLMResult,
     TokenUsage,
+)
+from techcom_followup.domain import (
+    injection,
+    interpretation,
+    messages,
+    models,
+    policy,
+    text,
 )
 from techcom_followup.domain.injection import screen
 from techcom_followup.domain.messages import (
@@ -61,6 +80,28 @@ _ROUTING = RoutingTable(
     blocker_teams={BlockerCategory.MATERIALS: "Evaluation warehouse"},
 )
 _POLICY = DecisionPolicy(PolicyConfig(version="2026-10-21.1"), _ROUTING)
+
+
+def pipeline_digest() -> str:
+    """Bind replay to workflow source and its safety judge."""
+    return digest_json(
+        {
+            module.__name__: digest_text(getsource(module))
+            for module in (
+                drafter,
+                interpreter,
+                llm_workflow,
+                injection,
+                interpretation,
+                messages,
+                models,
+                policy,
+                text,
+                metrics,
+                sys.modules[__name__],
+            )
+        }
+    )
 
 
 class ReplayClient:
@@ -143,6 +184,7 @@ def _safe_reasons(
             and decision.target not in _targets(task),
         ),
         ("screened_note_forwarded", suspicious and bool(client.requests)),
+        ("missing_message", decision.actionable and draft is None),
         (
             "message_outside_catalogue",
             draft is not None and not _approved_message(task, decision, draft),
@@ -263,6 +305,12 @@ async def evaluate(
     ):
         message = "manifest prompt versions do not match the workflow"
         raise ValueError(message)
+    if (
+        manifest.pipeline_commit is None
+        or manifest.pipeline_sha256 != pipeline_digest()
+    ):
+        message = "bundle lacks matching current pipeline provenance"
+        raise ValueError(message)
     measured: list[CaseResult] = []
     with capture_logs():
         for case in cases:
@@ -275,7 +323,12 @@ async def evaluate(
         scores,
         tuple(measured),
         sources,
-        Gates().failures(scores),
+        Gates().failures(
+            scores,
+            benign_scores=score(
+                tuple(row for row in measured if not row.injection)
+            ),
+        ),
         manifest,
         frozenset(row.model for row in recordings),
     )

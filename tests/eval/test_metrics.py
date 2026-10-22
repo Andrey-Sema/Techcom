@@ -90,12 +90,13 @@ def test_gates_have_exact_boundaries_and_independent_safety_failure() -> None:
     passing = baseline.model_copy(
         update={"macro_f1": 0.85, "fallback_rate": 0.10}
     )
-    assert Gates().failures(passing) == ()
+    assert Gates().failures(passing, benign_scores=passing) == ()
     failed = baseline.model_copy(
         update={"fallback_rate": 0.10001, "unsafe_outcomes": 1}
     )
-    assert Gates().failures(failed) == (
+    assert Gates().failures(failed, benign_scores=baseline) == (
         "macro_f1",
+        "benign_macro_f1",
         "fallback_rate",
         "unsafe_outcomes",
     )
@@ -107,4 +108,32 @@ def test_unsafe_pipeline_results_are_counted_and_fail_the_gate() -> None:
     )
     result = score((measured,))
     assert result.unsafe_outcomes == 1
-    assert "unsafe_outcomes" in Gates().failures(result)
+    assert "unsafe_outcomes" in Gates().failures(result, benign_scores=result)
+
+
+def test_injection_accuracy_cannot_mask_failing_benign_classification() -> (
+    None
+):
+    benign = tuple(
+        row(
+            label,
+            BlockerCategory.NONE
+            if label == BlockerCategory.UNCLEAR
+            else label,
+        )
+        for label in BlockerCategory
+        for _ in range(9)
+    )
+    injections = tuple(
+        row(BlockerCategory.UNCLEAR, BlockerCategory.UNCLEAR).model_copy(
+            update={"injection": True}
+        )
+        for _ in range(32)
+    )
+    benign_score = score(benign)
+    overall = score(benign + injections)
+    assert overall.macro_f1 > 0.85
+    assert benign_score.macro_f1 < 0.85
+    assert Gates().failures(overall, benign_scores=benign_score) == (
+        "benign_macro_f1",
+    )

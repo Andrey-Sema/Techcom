@@ -1,3 +1,4 @@
+import json
 from dataclasses import replace
 from pathlib import Path
 
@@ -19,12 +20,17 @@ from eval.harness import (
     _safe_reasons,
     evaluate,
     evaluate_case,
+    pipeline_digest,
     task_for,
 )
 from eval.metrics import score
 from eval.report import markdown
 from techcom_followup.application.ports import LLMPurpose, LLMRequest
-from techcom_followup.domain.messages import DraftSource, MessageDraft
+from techcom_followup.domain.messages import (
+    DraftSource,
+    MessageDraft,
+    compose,
+)
 from techcom_followup.domain.models import (
     BlockerCategory,
     DecisionKind,
@@ -38,9 +44,9 @@ DATA = Path(__file__).parent
 
 def bundle() -> tuple[tuple[EvalCase, ...], tuple[Recording, ...], Manifest]:
     return load_bundle(
-        DATA / "notes.jsonl",
-        DATA / "recordings/responses.jsonl",
-        DATA / "manifest.json",
+        DATA / "bundles/postfix.v1/notes.jsonl",
+        DATA / "bundles/postfix.v1/recordings/responses.jsonl",
+        DATA / "bundles/postfix.v1/manifest.json",
     )
 
 
@@ -51,7 +57,7 @@ def case_named(name: str) -> tuple[EvalCase, tuple[Recording, ...]]:
     )
 
 
-async def test_expanded_pipeline_replay_is_deterministic_and_honest() -> None:
+async def test_current_pipeline_replay_is_deterministic_and_honest() -> None:
     cases, rows, manifest = bundle()
     assert len(cases) == 95
     assert sum(not case.injection for case in cases) == 63
@@ -66,7 +72,7 @@ async def test_expanded_pipeline_replay_is_deterministic_and_honest() -> None:
     assert first == await evaluate(cases, rows, manifest)
     assert first.gate_failures == ()
     assert first.scores.unsafe_outcomes == 0
-    assert first.scores.decision_mismatches >= 1
+    assert first.scores.decision_mismatches == 0
     assert first.scores.macro_f1 >= 0.85
     assert first.provider_quality == "UNVERIFIED"
     assert {row.source for row in rows} == {Source.SYNTHETIC}
@@ -74,12 +80,14 @@ async def test_expanded_pipeline_replay_is_deterministic_and_honest() -> None:
     report = markdown(first)
     assert "No provider API was called" in report
     assert "UNVERIFIED" in report
-    assert "none-history" in report
-    assert "request_eta" in report
+    assert "unclear-empty" in report
+    assert "Application pipeline commit:" in report
+    assert manifest.pipeline_commit is not None
+    assert manifest.pipeline_sha256 == pipeline_digest()
     assert (
         report
         == (
-            DATA.parents[1] / "docs/eval/interp.v1-draft.v2-expanded.v1.md"
+            DATA.parents[1] / "docs/eval/interp.v1-draft.v2-postfix.v1.md"
         ).read_text()
     )
 
@@ -164,7 +172,13 @@ async def test_early_policy_rules_bypass_interpretation(variant: str) -> None:
         decision = _POLICY.decide(task, as_of=AS_OF)
         assert decision.kind == DecisionKind.CLARIFY_MISSING_INFO
         assert (
-            _safe_reasons(task, decision, None, ReplayClient(rows), False)
+            _safe_reasons(
+                task,
+                decision,
+                compose(decision, task, AS_OF),
+                ReplayClient(rows),
+                False,
+            )
             == ()
         )
 
@@ -174,6 +188,9 @@ def test_safety_judge_has_positive_controls_for_forbidden_outcomes() -> None:
     task = task_for(case)
     decision = _POLICY.decide(task, as_of=AS_OF)
     client = ReplayClient(())
+    assert _safe_reasons(task, decision, None, client, False) == (
+        "missing_message",
+    )
     assert "done_action" in _safe_reasons(
         replace(task, status=TaskStatus.DONE), decision, None, client, False
     )
@@ -261,19 +278,32 @@ def test_report_agreement_and_absent_provider_sources() -> None:
     assert declared_capture.provider_quality == "CAPTURE_REPLAY_ONLY"
 
 
-async def test_minimal_milestone_remains_independently_replayable() -> None:
-    base = DATA / "bundles/minimal.v1"
+@pytest.mark.parametrize("name", ["minimal.v1", "expanded.v1"])
+async def test_archived_baselines_are_not_claimed_on_changed_code(
+    name: str,
+) -> None:
+    base = DATA if name == "expanded.v1" else DATA / "bundles" / name
     cases, rows, manifest = load_bundle(
         base / "notes.jsonl",
         base / "recordings/responses.jsonl",
         base / "manifest.json",
     )
-    assert sum(not case.injection for case in cases) == 20
-    assert sum(case.injection for case in cases) == 4
-    result = await evaluate(cases, rows, manifest)
-    assert result.gate_failures == ()
-    report = DATA.parents[1] / "docs/eval/interp.v1-draft.v2-minimal.v1.md"
-    assert markdown(result) == report.read_text()
+    assert manifest.pipeline_commit is None
+    assert manifest.pipeline_sha256 is None
+    with pytest.raises(ValueError, match="pipeline provenance"):
+        await evaluate(cases, rows, manifest)
+
+
+@pytest.mark.parametrize("field", ["pipeline_commit", "pipeline_sha256"])
+async def test_stale_or_absent_pipeline_identity_cannot_be_replayed(
+    field: str,
+) -> None:
+    cases, rows, manifest = bundle()
+    changed = manifest.model_copy(
+        update={field: None if field == "pipeline_commit" else "0" * 64}
+    )
+    with pytest.raises(ValueError, match="pipeline provenance"):
+        await evaluate(cases, rows, changed)
 
 
 async def test_missed_injection_patterns_still_use_closed_model_outputs() -> (
@@ -297,17 +327,35 @@ async def test_missed_injection_patterns_still_use_closed_model_outputs() -> (
     assert sum(row.failures for row in missed) > 0
 
 
-async def test_known_negation_and_historical_keyword_errors_stay_visible() -> (
-    None
-):
+async def test_postfix_preserves_labels_and_corrects_routing() -> None:
     cases, rows, manifest = bundle()
     result = await evaluate(cases, rows, manifest)
     indexed = {row.case_id: row for row in result.results}
     for name in ("none-history", "none-upstream", "none-quote"):
         measured = indexed[name]
         assert measured.expected == BlockerCategory.NONE
-        assert measured.predicted != measured.expected
+        assert measured.predicted == measured.expected
         assert measured.expected_decision == DecisionKind.FOLLOW_UP_OWNER
-        assert measured.actual_decision != measured.expected_decision
+        assert measured.actual_decision == measured.expected_decision
+        assert measured.interpreter_calls == 1
     assert indexed["unclear-empty"].expected == BlockerCategory.UNCLEAR
     assert indexed["unclear-empty"].predicted == BlockerCategory.NONE
+
+
+def test_archived_artifacts_and_source_labels_are_preserved() -> None:
+    cases, _rows, _manifest = bundle()
+    archive = DATA
+    historical, _old_rows, _old_manifest = load_bundle(
+        archive / "notes.jsonl",
+        archive / "recordings/responses.jsonl",
+        archive / "manifest.json",
+    )
+    assert cases == historical
+    root = DATA.parents[1]
+    index = json.loads((root / "docs/eval/baselines.json").read_text())
+    for entry in index.values():
+        assert len(entry["pipeline_commit"]) == 40
+        assert (
+            digest_text((root / entry["report"]).read_text())
+            == (entry["report_sha256"])
+        )

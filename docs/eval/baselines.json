@@ -1,0 +1,20 @@
+{
+  "minimal.v1": {
+    "pipeline_commit": "48755f03f8a3016525bbe1bd3e7a39507604eb0c",
+    "evaluation_commit": "fd40bb6d3ac1eb920fb1069ec8a66a1c3728e3c1",
+    "report": "docs/eval/interp.v1-draft.v2-minimal.v1.md",
+    "report_sha256": "9d3ef8366b38ee9fcf7e631c443d6644d765f35575fc44629c3c95d3f18d93f9",
+    "bundle": "tests/eval/bundles/minimal.v1",
+    "status": "Archived synthetic evidence; not replayed against changed pipeline code.",
+    "report_artifact_commit": "16d45e9f8de473fc0063d2df8ccf7c11d793dc89"
+  },
+  "expanded.v1": {
+    "pipeline_commit": "48755f03f8a3016525bbe1bd3e7a39507604eb0c",
+    "evaluation_commit": "16d45e9f8de473fc0063d2df8ccf7c11d793dc89",
+    "report": "docs/eval/interp.v1-draft.v2-expanded.v1.md",
+    "report_sha256": "815b8086eea4b216f638af441c2a3eea4a077bffa4a2f1c0d32af03e84ba2ff4",
+    "bundle": "tests/eval",
+    "status": "Archived synthetic evidence; not replayed against changed pipeline code.",
+    "report_artifact_commit": "16d45e9f8de473fc0063d2df8ccf7c11d793dc89"
+  }
+}

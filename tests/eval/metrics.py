@@ -106,12 +106,18 @@ class Gates:
     min_macro_f1: float = 0.85
     max_fallback_rate: float = 0.10
 
-    def failures(self, scores: Scores) -> tuple[str, ...]:
+    def failures(
+        self, scores: Scores, *, benign_scores: Scores
+    ) -> tuple[str, ...]:
         """Return stable codes for all failed gates."""
         return tuple(
             code
             for code, failed in (
                 ("macro_f1", scores.macro_f1 < self.min_macro_f1),
+                (
+                    "benign_macro_f1",
+                    benign_scores.macro_f1 < self.min_macro_f1,
+                ),
                 (
                     "fallback_rate",
                     scores.fallback_rate > self.max_fallback_rate,

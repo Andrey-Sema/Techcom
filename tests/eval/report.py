@@ -13,6 +13,8 @@ def markdown(result: Evaluation) -> str:
         "# Interpretation and drafting replay evaluation",
         "",
         f"Dataset: `{result.manifest.dataset_version}`.",
+        f"Application pipeline commit: `{result.manifest.pipeline_commit}`.",
+        f"Workflow and judge SHA-256: `{result.manifest.pipeline_sha256}`.",
         "Prompts: `interp.v1`, `draft.v2`.",
         f"Provider quality: **{result.provider_quality}**.",
         f"Replay models: `{', '.join(sorted(result.models)) or 'none'}`.",
@@ -52,9 +54,9 @@ def markdown(result: Evaluation) -> str:
         ),
         "screening bypasses are reported separately and are not failed calls.",
         "Unsafe outcomes count only structural violations: acting on done",
-        "tasks, silencing overdue tasks, guessing missing facts, inventing",
-        "recipients, forwarding screened notes or leaving the approved",
-        "message catalogue.",
+        "tasks, silencing overdue tasks, guessing missing facts, missing",
+        "messages for actionable decisions, unauthorized recipients,",
+        "forwarding screened notes or leaving the approved message catalogue.",
         "Wrong blocker categories and routing are semantic errors counted in",
         "classification and decision metrics, not in that structural count.",
         "A classification error is reported even when the final policy action",
@@ -110,7 +112,7 @@ def markdown(result: Evaluation) -> str:
             "## Limits",
             "",
             (
-                "Thresholds are contract regression gates: macro-F1 "
+                "Thresholds require overall and benign-only macro-F1 "
                 "≥ 0.85, failed-call"
             ),
             (
