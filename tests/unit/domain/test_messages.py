@@ -5,7 +5,10 @@ import pytest
 from support import AS_OF, make_task
 from techcom_followup.domain.messages import (
     BODY_MAX_CHARS,
+    BODY_MIN_CHARS,
     LLM_PLACEHOLDERS,
+    MAX_FACT_CHARS,
+    SUBJECT_MAX_CHARS,
     TEMPLATE_PLACEHOLDERS,
     TEMPLATES,
     DraftSource,
@@ -73,6 +76,9 @@ def test_valid_llm_draft_has_no_violations(
         ("Update", GOOD_BODY + " see www.example.org", "url"),
         ("Update", GOOD_BODY + " see portal.example.com", "url"),
         ("Update", GOOD_BODY + " mail ops@example.com", "email"),
+        # A placeholder must not hide the host or mailbox it completes.
+        ("Update", GOOD_BODY + " see {project}.com", "url"),
+        ("Update", GOOD_BODY + " mail {recipient_name}@example.org", "email"),
         ("Update", GOOD_BODY + " by 2026-10-30", "literal_date"),
         ("Update", GOOD_BODY + " by 10/30", "literal_date"),
         ("Update", GOOD_BODY + " by Oct 30th", "literal_date"),
@@ -94,6 +100,27 @@ def test_violations(
     validator: MessageValidator, subject: str, body: str, code: str
 ) -> None:
     assert code in validator.violations(subject, body)
+
+
+@pytest.mark.parametrize(
+    ("subject", "body"),
+    [
+        ("U", GOOD_BODY),
+        ("U" * SUBJECT_MAX_CHARS, GOOD_BODY),
+        ("Update", "Hi, please update it" + "!" * (BODY_MIN_CHARS - 20)),
+        ("Update", "word " * (BODY_MAX_CHARS // 5)),
+    ],
+)
+def test_length_limits_are_inclusive(
+    validator: MessageValidator, subject: str, body: str
+) -> None:
+    assert BODY_MIN_CHARS <= len(body) <= BODY_MAX_CHARS
+    assert validator.violations(subject, body) == ()
+
+
+def test_three_letter_name_tokens_are_checked() -> None:
+    validator = MessageValidator(known_names=["Ann Lee"])
+    assert "person_name" in validator.violations("Update", GOOD_BODY + " Lee")
 
 
 def test_body_newlines_are_allowed(validator: MessageValidator) -> None:
@@ -168,6 +195,29 @@ def test_facts_scrub_hostile_task_data(policy: DecisionPolicy) -> None:
     assert facts["owner_name"] == "unassigned"
     assert facts["due_date"] == "not set"
     assert facts["days_overdue"] == "0"
+
+
+def test_days_overdue_is_zero_before_the_due_date(
+    policy: DecisionPolicy,
+) -> None:
+    task = make_task(status=TaskStatus.BLOCKED)
+    facts = facts_for(policy.decide(task, as_of=AS_OF), task, AS_OF)
+    assert facts["days_overdue"] == "0"
+
+
+def test_facts_are_capped_after_scrubbing(policy: DecisionPolicy) -> None:
+    task = make_task(title="word " * 40, owner=None)
+    facts = facts_for(policy.decide(task, as_of=AS_OF), task, AS_OF)
+    assert len(facts["task_title"]) == MAX_FACT_CHARS - 1
+
+
+def test_scrubbing_reads_a_bounded_window(policy: DecisionPolicy) -> None:
+    # Text past four fact lengths is never examined, so a long link
+    # cannot pull distant text into the message.
+    url = "https://x.example/" + "p" * (MAX_FACT_CHARS * 4 - 10)
+    task = make_task(title=f"Fix {url} SECRET", owner=None)
+    facts = facts_for(policy.decide(task, as_of=AS_OF), task, AS_OF)
+    assert facts["task_title"] == "Fix [link removed]"
 
 
 def test_no_action_has_no_template(policy: DecisionPolicy) -> None:

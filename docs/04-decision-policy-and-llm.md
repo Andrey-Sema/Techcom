@@ -95,6 +95,10 @@ Choices made while coding the table, each pinned by a unit test:
   (`[link removed]`), so a hostile task title cannot plant a phishing
   link. Facts are capped at 80 characters, which keeps subjects within
   120 and bodies within 800 characters (property-tested).
+* **Placeholders are not blind spots.** The draft validator checks the
+  text with each placeholder replaced by a word, so `{project}.com` or
+  `{recipient_name}@example.org` still read as a host or a mailbox and
+  are rejected (found by mutation testing, M8).
 * **Code location.** `domain/{normalize,injection,interpretation,
   policy,identity,messages}.py`; thresholds in `config/policy.toml`,
   recipients in `config/routing.toml`, both validated at load
