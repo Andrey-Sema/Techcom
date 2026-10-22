@@ -96,10 +96,11 @@ class CircuitBreaker:
         """Close the current generation; ignore stale completions."""
         if not self._current(permit):
             return
+        if self._opened_at is not None:
+            self._generation += 1
         self._failures = 0
         self._opened_at = None
         self._probe = None
-        self._generation += 1
 
     def record_failure(self, permit: BreakerPermit | None = None) -> None:
         """Count current failures without disturbing newer probes."""
