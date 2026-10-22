@@ -1,5 +1,6 @@
-"""Constrained outbound HTTP transport with bounded streamed."""
+"""Constrained outbound HTTP with bounded responses."""
 
+import asyncio
 import json
 from datetime import datetime
 from email.utils import parsedate_to_datetime
@@ -8,6 +9,7 @@ from math import isfinite
 import httpx
 
 MAX_RESPONSE_BYTES = 2_000_000
+REQUEST_DEADLINE_SECONDS = 10
 
 
 class UpstreamError(Exception):
@@ -25,7 +27,7 @@ class HttpEndpoint:
         allowed_hosts: frozenset[str],
         allow_local_http: bool = False,
     ) -> None:
-        """Reject redirects, credentials, paths and unapproved."""
+        """Reject credentials, paths and unapproved origins."""
         url = httpx.URL(base_url)
         local_http = allow_local_http and url.host in {
             "mock-api",
@@ -55,7 +57,20 @@ class HttpEndpoint:
         payload: object = None,
         operation_id: str | None = None,
     ) -> httpx.Response:
-        """Read no more than the response cap with redirects."""
+        """Bound response bytes and disable redirects."""
+        async with asyncio.timeout(REQUEST_DEADLINE_SECONDS):
+            return await self._request(
+                method, path, payload=payload, operation_id=operation_id
+            )
+
+    async def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        payload: object,
+        operation_id: str | None,
+    ) -> httpx.Response:
         headers = (
             {} if operation_id is None else {"Idempotency-Key": operation_id}
         )
@@ -90,7 +105,7 @@ def json_body(response: httpx.Response) -> object:
 
 
 def retry_after(value: str | None, now: datetime) -> float:
-    """Parse seconds or HTTP-date, rejecting non-finite and huge."""
+    """Parse finite, capped seconds or an HTTP-date."""
     if value is None:
         return 0
     try:

@@ -26,7 +26,7 @@ class RetryPolicy:
     def delay(
         self, attempt: int, *, jitter: float, retry_after: float = 0
     ) -> float:
-        """Return a capped delay; jitter is an injected unit."""
+        """Cap delays using an injected jitter fraction."""
         if attempt < 1 or not 0 <= jitter <= 1:
             message = "attempt must be positive and jitter in [0, 1]"
             raise ValueError(message)

@@ -29,7 +29,7 @@ class _TransientReadError(UpstreamError):
 
 
 class HttpTaskSource:
-    """Never retry permanent errors or unvalidated response."""
+    """Never retry permanent errors or invalid envelopes."""
 
     def __init__(
         self,
@@ -46,7 +46,7 @@ class HttpTaskSource:
         self._jitter = jitter
 
     async def fetch_tasks(self) -> tuple[object, ...]:
-        """Fetch at most 10,000 records in four attempts and 20."""
+        """Fetch at most 10,000 records within bounded retries."""
         policy = RetryPolicy(max_attempts=4, base_seconds=0.5, cap_seconds=10)
         count = 0
 
@@ -62,20 +62,25 @@ class HttpTaskSource:
                 count, jitter=self._jitter(), retry_after=error.delay
             )
 
+        async def read() -> tuple[object, ...]:
+            nonlocal count
+            count += 1
+            return await self._fetch()
+
+        retrying_read = stamina.retry(
+            on=backoff, attempts=MAX_ATTEMPTS, timeout=20
+        )(read)
         async with asyncio.timeout(20):
-            async for attempt in stamina.retry_context(
-                on=backoff, attempts=4, timeout=20
-            ):
-                with attempt:
-                    count += 1
-                    return await self._fetch()
-        message = "source_retry_exhausted"
-        raise UpstreamError(message)
+            return await retrying_read()
 
     async def _fetch(self) -> tuple[object, ...]:
         try:
             response = await self._endpoint.request("GET", "/v1/tasks")
-        except (httpx.TimeoutException, httpx.NetworkError) as error:
+        except (
+            httpx.TimeoutException,
+            httpx.NetworkError,
+            TimeoutError,
+        ) as error:
             raise _TransientReadError(0) from error
         if response.status_code in _RETRYABLE_CODES:
             raise _TransientReadError(

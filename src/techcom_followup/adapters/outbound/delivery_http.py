@@ -1,4 +1,4 @@
-"""Single-attempt HTTP writes and conservative acknowledgement."""
+"""Single-attempt writes and strict acknowledgement checks."""
 
 from dataclasses import asdict
 from typing import Literal
@@ -32,7 +32,7 @@ class _Receipt(BaseModel):
 
 
 class HttpDeliveryGateway:
-    """No hidden POST retries; a lost acknowledgement always needs."""
+    """Lost acknowledgements need lookup before another POST."""
 
     def __init__(self, endpoint: HttpEndpoint, clock: Clock) -> None:
         """Bind a fixed outbound origin and injected clock."""
@@ -40,7 +40,7 @@ class HttpDeliveryGateway:
         self._clock = clock
 
     async def send(self, action: ActionRecord) -> DeliveryResult:
-        """Send the persisted payload once with its stable operation."""
+        """Send a persisted payload once with its operation id."""
         target = action.decision.target
         if target is None:
             message = "an outbound action needs a policy-owned target"
@@ -65,17 +65,17 @@ class HttpDeliveryGateway:
             return DeliveryResult(
                 DeliveryKind.RETRYABLE, error="connect_failed"
             )
-        except (httpx.HTTPError, UpstreamError):
+        except (httpx.HTTPError, UpstreamError, TimeoutError):
             return DeliveryResult(DeliveryKind.UNKNOWN, error="send_unknown")
         return self._classify(response, action.identity.operation_id)
 
     async def lookup(self, operation_id: UUID) -> DeliveryResult:
-        """Allow absence only for a successful authoritative 404."""
+        """Allow absence only after an authoritative lookup 404."""
         try:
             response = await self._endpoint.request(
                 "GET", f"/v1/messages/{operation_id}"
             )
-        except (httpx.HTTPError, UpstreamError):
+        except (httpx.HTTPError, UpstreamError, TimeoutError):
             return DeliveryResult(DeliveryKind.UNKNOWN, error="lookup_unknown")
         if response.status_code == httpx.codes.NOT_FOUND:
             return DeliveryResult(DeliveryKind.ABSENT)

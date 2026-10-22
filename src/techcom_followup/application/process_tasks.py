@@ -80,7 +80,7 @@ class ProcessTasks:
         interpreter: NoteInterpreter | None = None,
         drafter: MessageDrafter | None = None,
     ) -> None:
-        """Inject policy, I/O ports and optional validated LLM."""
+        """Inject policy, I/O ports and optional LLM workflows."""
         self._deps = dependencies
         self._interpreter = interpreter
         self._drafter = drafter

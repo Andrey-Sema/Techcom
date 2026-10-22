@@ -307,10 +307,7 @@ class PgRepository:
 
     async def defer_claim(self, update: ActionUpdate) -> bool:
         """Fence an unsent claim and restore its unspent attempt."""
-        update.validate()
-        if update.status != ActionStatus.PENDING:
-            message = "unsent claims can only be deferred to pending"
-            raise ValueError(message)
+        update.validate_defer()
         async with self._engine.begin() as connection:
             result = await connection.execute(
                 actions.update()

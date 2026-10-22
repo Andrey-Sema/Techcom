@@ -1,4 +1,4 @@
-"""Single-attempt delivery with durable scheduling and fenced."""
+"""Durable delivery scheduling with fenced outcomes."""
 
 import asyncio
 from collections.abc import Callable
@@ -35,7 +35,12 @@ class DeliveryDependencies:
 
 
 class DeliveryBreaker(Protocol):
-    """Admission and failure feedback, without an infrastructure."""
+    """Dependency health feedback and probe admission."""
+
+    @property
+    def state(self) -> str:
+        """Expose closed/open/half_open without reserving a probe."""
+        ...
 
     def allow(self) -> bool:
         """Admit one call or half-open probe."""
@@ -71,18 +76,23 @@ class DispatchActions:
         self._stopping = False
 
     def stop(self) -> None:
-        """Stop future claims while allowing the current send to."""
+        """Stop claims and let the current send finish."""
         self._stopping = True
+
+    def _can_claim(self) -> bool:
+        return not self._stopping and self._enabled()
 
     async def execute(
         self, *, limit: int = 50, budget: RetryBudget | None = None
     ) -> int:
-        """Process a bounded cycle; ambiguous cancellations become."""
+        """Process a bounded cycle and reconcile cancellations."""
         ClaimRequest(self._deps.clock.now(), limit=limit).validate()
         admitted = budget if budget is not None else RetryBudget(limit)
         completed = 0
         for _ in range(limit):
-            if self._stopping or not self._enabled():
+            if not self._can_claim():
+                break
+            if self._breaker is not None and self._breaker.state == "open":
                 break
             claimed = await self._deps.repository.claim_actions(
                 ClaimRequest(self._deps.clock.now(), limit=1)
@@ -90,6 +100,9 @@ class DispatchActions:
             if not claimed:
                 break
             action = claimed[0]
+            if not self._can_claim():
+                await self._defer(action, "dispatch_stopped")
+                break
             if action.attempts > 1 and not admitted.take():
                 await self._defer(action, "retry_budget")
                 break
@@ -118,7 +131,12 @@ class DispatchActions:
 
     async def _deliver(self, action: ActionRecord) -> None:
         try:
-            result = await self._deps.gateway.send(action)
+            try:
+                result = await self._deps.gateway.send(action)
+            except BaseException:
+                if self._breaker is not None:
+                    self._breaker.record_failure()
+                raise
             if self._breaker is not None:
                 if result.kind in {
                     DeliveryKind.UNKNOWN,
@@ -141,6 +159,9 @@ class DispatchActions:
     async def _apply(
         self, action: ActionRecord, result: DeliveryResult
     ) -> None:
+        if action.lease_token is None:
+            message = "repository returned an unfenced action"
+            raise ValueError(message)
         now = self._deps.clock.now()
         status = delivery_status(result, action.attempts, self._retry)
         delay = self._retry.delay(
@@ -148,9 +169,6 @@ class DispatchActions:
             jitter=self._jitter(),
             retry_after=result.retry_after,
         )
-        if action.lease_token is None:
-            message = "repository returned an unfenced action"
-            raise ValueError(message)
         await self._deps.repository.apply_outcome(
             ActionUpdate(
                 action.id,
@@ -167,7 +185,7 @@ class DispatchActions:
 def delivery_status(
     result: DeliveryResult, attempts: int, retry: RetryPolicy
 ) -> ActionStatus:
-    """Unknown outcomes retain reconciliation even at the attempt."""
+    """Reconcile unknown outcomes even at the attempt cap."""
     if result.kind is DeliveryKind.ACCEPTED:
         return ActionStatus.SENT
     if result.kind in {DeliveryKind.UNKNOWN, DeliveryKind.ABSENT}:

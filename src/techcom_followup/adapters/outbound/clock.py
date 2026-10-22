@@ -1,4 +1,4 @@
-"""Production clock and controllable UTC clock for deterministic."""
+"""UTC system clock and controllable test clock."""
 
 from dataclasses import dataclass
 from datetime import UTC, date, datetime

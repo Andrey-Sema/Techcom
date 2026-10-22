@@ -233,10 +233,7 @@ class InMemoryRepository:
 
     async def defer_claim(self, update: ActionUpdate) -> bool:
         """Fence an unsent claim and restore its unspent attempt."""
-        update.validate()
-        if update.status != ActionStatus.PENDING:
-            message = "unsent claims can only be deferred to pending"
-            raise ValueError(message)
+        update.validate_defer()
         async with self._lock:
             action = self._owned(
                 update.action_id, update.lease_token, update.now
