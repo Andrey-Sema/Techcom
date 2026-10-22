@@ -4,7 +4,7 @@ import time
 from collections.abc import Callable
 from datetime import UTC, date, datetime
 
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, DefaultAsyncHttpxClient
 from openai.auth import k8s_service_account_token_provider
 
 from techcom_followup.adapters.outbound.llm.config import RoutingConfig
@@ -41,6 +41,7 @@ def build_openai_client(settings: OpenAISettings) -> AsyncOpenAI:
             organization=settings.organization,
             base_url=base_url,
             max_retries=0,
+            http_client=DefaultAsyncHttpxClient(follow_redirects=False),
             timeout=_CLIENT_TIMEOUT_S,
         )
     # The settings validator guarantees the key exists in this mode.
@@ -51,6 +52,7 @@ def build_openai_client(settings: OpenAISettings) -> AsyncOpenAI:
         organization=settings.organization,
         base_url=base_url,
         max_retries=0,
+        http_client=DefaultAsyncHttpxClient(follow_redirects=False),
         timeout=_CLIENT_TIMEOUT_S,
     )
 
