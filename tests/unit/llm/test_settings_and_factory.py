@@ -2,11 +2,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
-import llm_doubles as sdk
 import pytest
-from llm_doubles import FakeClock
 from pydantic import HttpUrl, SecretStr, ValidationError
 
+import llm_doubles as sdk
+from llm_doubles import FakeClock
 from techcom_followup.adapters.outbound.llm import factory
 from techcom_followup.adapters.outbound.llm.config import RoutingConfig
 from techcom_followup.application.ports import LLMRequest

@@ -10,19 +10,28 @@ dependencies = [
     "pydantic>=2.10",
     "pydantic-settings>=2.6",
     "structlog>=24.4",
+    "alembic>=1.14",
+    "psycopg[binary,pool]>=3.2",
+    "sqlalchemy[asyncio]>=2.0,<2.1",
 ]
 
 [dependency-groups]
 dev = [
     "bandit[toml]>=1.8",
     "hypothesis>=6.120",
+    "httpx>=0.28",
+    "import-linter>=2.1",
     "mypy>=1.13",
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
     "pytest-cov>=6.0",
     "pytest-randomly>=3.16",
     "ruff>=0.8",
+    "pre-commit>=4.0",
     "syrupy>=4.8",
+    "techcom-mocks",
+    "testcontainers[postgres]>=4.8",
+    "types-docker>=7.1",
 ]
 
 [build-system]
@@ -35,11 +44,17 @@ packages = ["src/techcom_followup"]
 [tool.uv]
 default-groups = ["dev"]
 
+[tool.uv.workspace]
+members = ["mocks"]
+
+[tool.uv.sources]
+techcom-mocks = { workspace = true }
+
 # ---------------------------------------------------------------- ruff --
 [tool.ruff]
 line-length = 79                       # strict PEP 8
 target-version = "py313"               # keep in sync with mypy
-src = ["src", "tests"]
+src = ["src", "mocks/src", "tests"]
 
 [tool.ruff.lint]
 select = ["ALL"]
@@ -73,7 +88,7 @@ max-statements = 40
 ban-relative-imports = "all"
 
 [tool.ruff.lint.isort]
-known-first-party = ["techcom_followup"]
+known-first-party = ["techcom_followup", "techcom_mocks"]
 
 [tool.ruff.format]
 docstring-code-format = true
@@ -94,7 +109,7 @@ enable_error_code = [
     "possibly-undefined", "explicit-override",
 ]
 plugins = ["pydantic.mypy"]
-files = ["src", "tests"]
+files = ["src", "mocks/src", "tests", "migrations"]
 
 [tool.pydantic-mypy]
 init_forbid_extra = true
@@ -116,12 +131,14 @@ xfail_strict = true
 filterwarnings = ["error"]
 markers = [
     "live_llm: calls the real LLM provider (opt-in, needs a key)",
+    "integration: requires PostgreSQL 18 in Docker",
+    "asvs: evidence for an implemented ASVS security control",
 ]
 
 # ------------------------------------------------------------ coverage --
 [tool.coverage.run]
 branch = true
-source = ["techcom_followup"]
+source = ["techcom_followup", "techcom_mocks"]
 
 [tool.coverage.report]
 fail_under = 100
@@ -133,3 +150,21 @@ exclude_also = [
     "raise NotImplementedError",
     "@overload",
 ]
+
+[tool.importlinter]
+root_packages = ["techcom_followup", "techcom_mocks"]
+
+[[tool.importlinter.contracts]]
+name = "Hexagonal layers"
+type = "layers"
+layers = [
+    "techcom_followup.adapters",
+    "techcom_followup.infrastructure",
+    "techcom_followup.application",
+    "techcom_followup.domain",
+]
+
+[[tool.importlinter.contracts]]
+name = "Mock isolation"
+type = "independence"
+modules = ["techcom_followup", "techcom_mocks"]
