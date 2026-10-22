@@ -3,6 +3,7 @@
 import asyncio
 from datetime import timedelta
 
+from techcom_followup.application.delivery_audit import audit_delivery
 from techcom_followup.application.dispatch import DeliveryDependencies
 from techcom_followup.application.processing_ports import DeliveryKind
 from techcom_followup.application.repository import (
@@ -64,7 +65,7 @@ class ReconcileUnknown:
                 jitter=1,
                 retry_after=result.retry_after,
             )
-            await self._deps.repository.apply_outcome(
+            applied = await self._deps.repository.apply_outcome(
                 ActionUpdate(
                     action.id,
                     action.lease_token,
@@ -75,6 +76,16 @@ class ReconcileUnknown:
                     provider_ref=result.provider_ref,
                 )
             )
+            if applied:
+                await audit_delivery(
+                    self._deps.repository,
+                    action,
+                    now,
+                    "delivery.reconciled"
+                    if status is ActionStatus.SENT
+                    else "delivery.reconciliation",
+                    status,
+                )
         except BaseException:
             await asyncio.shield(
                 self._deps.repository.release_claim(

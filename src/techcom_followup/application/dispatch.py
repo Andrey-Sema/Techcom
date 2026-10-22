@@ -7,6 +7,7 @@ from datetime import timedelta
 from random import SystemRandom
 from typing import Protocol
 
+from techcom_followup.application.delivery_audit import audit_delivery
 from techcom_followup.application.processing_ports import (
     Clock,
     DeliveryGateway,
@@ -54,6 +55,16 @@ class DeliveryBreaker(Protocol):
     def record_failure(self, permit: BreakerPermit | None = None) -> None:
         """Count consecutive dependency failures."""
         ...
+
+    def abandon(self, permit: BreakerPermit) -> None:
+        """Release only an attempt's own abandoned probe."""
+        ...
+
+
+@dataclass(frozen=True, slots=True)
+class _Admission:
+    breaker: DeliveryBreaker
+    permit: BreakerPermit
 
 
 class DispatchActions:
@@ -107,19 +118,21 @@ class DispatchActions:
             if action.attempts > 1 and not admitted.take():
                 await self._defer(action, "retry_budget")
                 break
-            allowed, permit = self._admit()
+            allowed, admission = self._admit()
             if not allowed:
                 await self._defer(action, "circuit_open")
                 break
-            await self._deliver(action, permit)
+            await self._deliver(action, admission)
             completed += 1
         return completed
 
-    def _admit(self) -> tuple[bool, BreakerPermit | None]:
+    def _admit(self) -> tuple[bool, _Admission | None]:
         if self._breaker is None:
             return True, None
         permit = self._breaker.admit()
-        return permit is not None, permit
+        if permit is None:
+            return False, None
+        return True, _Admission(self._breaker, permit)
 
     async def _defer(self, action: ActionRecord, error: str) -> None:
         if action.lease_token is None:
@@ -138,27 +151,37 @@ class DispatchActions:
         )
 
     async def _deliver(
-        self, action: ActionRecord, permit: BreakerPermit | None
+        self, action: ActionRecord, admission: _Admission | None
     ) -> None:
         try:
+            await audit_delivery(
+                self._deps.repository,
+                action,
+                self._deps.clock.now(),
+                "delivery.attempt",
+                action.status,
+            )
             try:
                 result = await self._deps.gateway.send(action)
             except BaseException:
-                if self._breaker is not None:
-                    self._breaker.record_failure(permit)
+                if admission is not None:
+                    admission.breaker.record_failure(admission.permit)
                 raise
-            if self._breaker is not None:
+            if admission is not None:
                 if result.kind in {
                     DeliveryKind.UNKNOWN,
                     DeliveryKind.RETRYABLE,
                 }:
-                    self._breaker.record_failure(permit)
+                    admission.breaker.record_failure(admission.permit)
                 else:
-                    self._breaker.record_success(permit)
+                    admission.breaker.record_success(admission.permit)
             await self._apply(action, result)
         except BaseException:
             await asyncio.shield(self._release(action))
             raise
+        finally:
+            if admission is not None:
+                admission.breaker.abandon(admission.permit)
 
     async def _release(self, action: ActionRecord) -> None:
         if action.lease_token is not None:
@@ -179,7 +202,7 @@ class DispatchActions:
             jitter=self._jitter(),
             retry_after=result.retry_after,
         )
-        await self._deps.repository.apply_outcome(
+        applied = await self._deps.repository.apply_outcome(
             ActionUpdate(
                 action.id,
                 action.lease_token,
@@ -190,6 +213,14 @@ class DispatchActions:
                 provider_ref=result.provider_ref,
             )
         )
+        if applied:
+            await audit_delivery(
+                self._deps.repository,
+                action,
+                now,
+                f"delivery.{status.value}",
+                status,
+            )
 
 
 def delivery_status(

@@ -37,6 +37,7 @@ from techcom_followup.application.repository import (
     ActionRecord,
     ActionStatus,
     ActionUpdate,
+    AuditEvent,
     ClaimRequest,
     Repository,
 )
@@ -706,3 +707,79 @@ async def test_stale_cancel_cannot_release_another_delivery_probe() -> None:
             *(() if probe is None else (probe,)),
             return_exceptions=True,
         )
+
+
+async def test_permanent_delivery_failure_has_closed_audit_metadata() -> None:
+    repository = InMemoryRepository()
+    action = await enqueue(repository)
+    gateway = Gateway(
+        result=DeliveryResult(DeliveryKind.PERMANENT, error="http_422")
+    )
+    await DispatchActions(
+        DeliveryDependencies(repository, gateway, FixedClock(NOW))
+    ).execute()
+    events = await repository.list_audit()
+    delivery = [
+        event for event in events if event.kind.startswith("delivery.")
+    ]
+    assert [event.kind for event in delivery] == [
+        "delivery.attempt",
+        "delivery.dead",
+    ]
+    assert delivery[-1].payload == {
+        "action_id": str(action.id),
+        "operation_id": str(action.identity.operation_id),
+        "attempt": 1,
+        "status": "dead",
+    }
+    assert delivery[-1].task_id == action.decision.task_id
+    assert action.message.body not in repr(delivery)
+
+
+async def test_fenced_lookup_cannot_emit_reconciled_audit() -> None:
+    repository = InMemoryRepository()
+    await enqueue(repository)
+    action = (await repository.claim_actions(ClaimRequest(NOW)))[0]
+    assert action.lease_token is not None
+    await repository.release_claim(action.id, action.lease_token, NOW)
+    clock = FixedClock(NOW)
+
+    class LateLookup(Gateway):
+        @override
+        async def lookup(self, operation_id: UUID) -> DeliveryResult:
+            clock.instant += timedelta(seconds=31)
+            return DeliveryResult(DeliveryKind.ACCEPTED, "ref")
+
+    before = await repository.list_audit()
+    await ReconcileUnknown(
+        DeliveryDependencies(repository, LateLookup(), clock)
+    ).execute(limit=1)
+    assert await repository.list_audit() == before
+    assert (await repository.list_actions())[0].status is ActionStatus.UNKNOWN
+
+
+async def test_cancelled_attempt_audit_abandons_only_its_own_probe() -> None:
+    class InterruptedAudit(InMemoryRepository):
+        @override
+        async def append_audit(self, event: AuditEvent) -> None:
+            if event.kind == "delivery.attempt":
+                raise asyncio.CancelledError
+            await super().append_audit(event)
+
+    elapsed = 0
+    breaker = CircuitBreaker(
+        failure_threshold=1, cooldown_s=30, monotonic=lambda: elapsed
+    )
+    breaker.record_failure()
+    elapsed = 31
+    repository = InterruptedAudit()
+    await enqueue(repository)
+    gateway = Gateway()
+    with pytest.raises(asyncio.CancelledError):
+        await DispatchActions(
+            DeliveryDependencies(repository, gateway, FixedClock(NOW)),
+            breaker=breaker,
+        ).execute()
+    assert not gateway.sends
+    assert breaker.state == "half_open"
+    assert breaker.admit() is not None
