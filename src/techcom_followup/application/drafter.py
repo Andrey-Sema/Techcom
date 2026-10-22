@@ -1,4 +1,10 @@
-"""Draft placeholder messages with deterministic fallback."""
+"""Select approved phrasing and render facts owned entirely by code.
+
+Free-form language cannot be proven factual by name/date regexes. The
+model therefore selects an exact entry from a small phrasing catalogue;
+unknown prose always falls back. This removes the ability to invent
+names, instructions or facts even when the injection screen misses them.
+"""
 
 import json
 from datetime import date
@@ -6,7 +12,6 @@ from datetime import date
 from pydantic import Field
 
 from techcom_followup.application.llm_workflow import (
-    InvalidOutputError,
     LanguageCall,
     StrictOutput,
     parse_output,
@@ -33,26 +38,39 @@ from techcom_followup.domain.messages import (
 )
 from techcom_followup.domain.models import Decision, Flag, Task
 
-PROMPT_VERSION = "draft.v1"
-SUBJECT_MIN_CHARS = 5
+PROMPT_VERSION = "draft.v2"
 _INSTRUCTIONS = (
-    "Phrase a concise construction follow-up. Output only schema-conforming "
-    "JSON with subject and body. Use placeholders for every fact; do not "
-    "invent names, dates, links, numbers or status changes. Preserve all "
-    "placeholders in the template. The decision and recipient are final. "
-    "No tools or actions are available."
+    "Select one approved phrasing exactly. Output only schema-conforming "
+    "JSON with its subject and body, unchanged. Facts are placeholders "
+    "filled by code. Do not add names, instructions or facts. The decision "
+    "and recipient are final. No tools or actions are available."
 )
 
 
 class DraftOutput(StrictOutput):
-    """A closed language-only output, before facts are inserted."""
+    """An exact catalogue entry, before code inserts any facts."""
 
     subject: str = Field(min_length=5, max_length=SUBJECT_MAX_CHARS)
     body: str = Field(min_length=BODY_MIN_CHARS, max_length=BODY_MAX_CHARS)
 
 
+def approved_phrasings(template_id: str) -> tuple[DraftOutput, ...]:
+    """Offer code-authored variants with identical facts."""
+    template = TEMPLATES[template_id]
+    body = template.body
+    if "{owner_name}" in body:
+        body = (
+            "Hello {recipient_name}, {task_id} '{task_title}' ({project}) "
+            "needs attention. Due: {due_date}."
+        )
+    return (
+        DraftOutput(subject=template.subject, body=body),
+        DraftOutput(subject=template.subject, body=body + " Thank you."),
+    )
+
+
 class MessageDrafter:
-    """Render validated language using code-owned facts."""
+    """Select approved phrasing with code-owned factual values."""
 
     def __init__(
         self,
@@ -74,50 +92,43 @@ class MessageDrafter:
             or screen(task.notes).suspicious
         ):
             return baseline
-        from_template = self._request(decision, baseline.template_id)
-        text = await self.calls.call(from_template)
-        if text is None:
+        choices = approved_phrasings(baseline.template_id)
+        output = await self.calls.call(
+            self._request(decision, choices),
+            lambda text: self._validate(text, choices, task),
+        )
+        if output is None:
             return baseline
-        try:
-            output = parse_output(text, DraftOutput)
-            validator = self._validator or MessageValidator([task.owner or ""])
-            require_output(
-                not validator.violations(output.subject, output.body),
-                "message_rules",
+        facts = facts_for(decision, task, as_of)
+        body = render(output.body, facts)
+        if "{owner_name}" in TEMPLATES[baseline.template_id].body:
+            body += (
+                f" Owner: {facts['owner_name']}. "
+                f"Context: {facts['reason_text']}"
             )
-            require_output(
-                all(
-                    "{" + name + "}" in output.subject + output.body
-                    for name in _required(baseline.template_id)
-                ),
-                "missing_placeholder",
-            )
-            facts = facts_for(decision, task, as_of)
-            body = render(output.body, facts)
-            if "{owner_name}" in TEMPLATES[baseline.template_id].body:
-                body += (
-                    f" Owner: {facts['owner_name']}. "
-                    f"Context: {facts['reason_text']}"
-                )
-            result = MessageDraft(
-                subject=render(output.subject, facts),
-                body=body,
-                template_id=baseline.template_id,
-                source=DraftSource.LLM,
-            )
-            require_output(
-                SUBJECT_MIN_CHARS <= len(result.subject) <= SUBJECT_MAX_CHARS
-                and BODY_MIN_CHARS <= len(result.body) <= BODY_MAX_CHARS,
-                "rendered_length",
-            )
-        except InvalidOutputError as exc:
-            self.calls.reject(str(exc), from_template, text)
-            return baseline
-        self.calls.accept()
-        return result
+        return MessageDraft(
+            subject=render(output.subject, facts),
+            body=body,
+            template_id=baseline.template_id,
+            source=DraftSource.LLM,
+        )
+
+    def _validate(
+        self, text: str, choices: tuple[DraftOutput, ...], task: Task
+    ) -> DraftOutput:
+        output = parse_output(text, DraftOutput)
+        require_output(output in choices, "unapproved_phrasing")
+        validator = self._validator or MessageValidator([task.owner or ""])
+        require_output(
+            not validator.violations(output.subject, output.body),
+            "message_rules",
+        )
+        return output
 
     @staticmethod
-    def _request(decision: Decision, template_id: str) -> LLMRequest:
+    def _request(
+        decision: Decision, choices: tuple[DraftOutput, ...]
+    ) -> LLMRequest:
         return LLMRequest(
             purpose=LLMPurpose.DRAFT_MESSAGE,
             instructions=_INSTRUCTIONS,
@@ -125,20 +136,13 @@ class MessageDrafter:
                 {
                     "decision": decision.kind,
                     "reason_code": decision.reason_code,
-                    "template_id": template_id,
                     "allowed_placeholders": sorted(LLM_PLACEHOLDERS),
-                    "required_placeholders": _required(template_id),
+                    "approved_phrasings": [
+                        item.model_dump() for item in choices
+                    ],
                 }
             ),
             schema_name="draft_body",
             json_schema=DraftOutput.model_json_schema(),
             prompt_version=PROMPT_VERSION,
         )
-
-
-def _required(template_id: str) -> list[str]:
-    template = TEMPLATES[template_id]
-    text = template.subject + template.body
-    return sorted(
-        name for name in LLM_PLACEHOLDERS if "{" + name + "}" in text
-    )

@@ -1,3 +1,4 @@
+import asyncio
 import dataclasses
 import json
 from datetime import UTC, datetime, timedelta
@@ -15,7 +16,10 @@ from techcom_followup.adapters.outbound.llm_stub import (
     ScriptedLLM,
     request_key,
 )
-from techcom_followup.application.drafter import MessageDrafter
+from techcom_followup.application.drafter import (
+    MessageDrafter,
+    approved_phrasings,
+)
 from techcom_followup.application.interpreter import (
     PROMPT_VERSION,
     InterpretationOutput,
@@ -28,7 +32,7 @@ from techcom_followup.application.llm_workflow import (
     LanguageCall,
     parse_output,
 )
-from techcom_followup.application.ports import LLMError, LLMRequest
+from techcom_followup.application.ports import LLMError, LLMRequest, LLMResult
 from techcom_followup.application.repository import CacheEntry
 from techcom_followup.domain.messages import DraftSource, MessageValidator
 from techcom_followup.domain.models import (
@@ -240,15 +244,11 @@ async def test_language_breaker_recovers_with_exactly_one_probe(
     stub = ScriptedLLM([LLMError("private")] * 5 + [VALID])
     calls = LanguageCall(stub, monotonic=clock.monotonic)
     for _ in range(5):
-        assert await calls.call(request_) is None
-    assert await calls.call(request_) is None
+        assert await calls.call(request_, str) is None
+    assert await calls.call(request_, str) is None
     assert len(stub.requests) == 5
     clock.advance(30)
-    assert calls._allow()
-    assert not calls._allow()
-    calls._probe = False
-    assert await calls.call(request_) == VALID
-    calls.accept()
+    assert await calls.call(request_, str) == VALID
     assert calls._opened_at is None
 
 
@@ -258,17 +258,12 @@ def test_strict_output_bounds_and_utc_clock() -> None:
     assert _utc_now().tzinfo is UTC
 
 
-def draft_json(
-    subject: str = "Update {task_id}: {task_title}", body: str | None = None
-) -> str:
+def draft_json(subject: str | None = None, body: str | None = None) -> str:
+    approved = approved_phrasings("follow_up.overdue.v1")[0]
     return json.dumps(
         {
-            "subject": subject,
-            "body": body
-            or (
-                "Hi {recipient_name}, please update {task_id} '{task_title}' "
-                "({project}), due {due_date}, {days_overdue} days overdue."
-            ),
+            "subject": approved.subject if subject is None else subject,
+            "body": approved.body if body is None else body,
         }
     )
 
@@ -329,12 +324,7 @@ async def test_missing_clients_use_templates_and_unclear() -> None:
 async def test_escalation_keeps_code_owned_owner_and_reason() -> None:
     task = dataclasses.replace(TASK, due_date=AS_OF - timedelta(days=8))
     decision = repo_policy().decide(task, as_of=AS_OF)
-    output = draft_json(
-        body=(
-            "Hello {recipient_name}, please review {task_id} '{task_title}' "
-            "({project}), due {due_date}."
-        )
-    )
+    output = approved_phrasings("escalate.v1")[1].model_dump_json()
     draft = await MessageDrafter(ScriptedLLM([output])).draft(
         decision, task, as_of=AS_OF
     )
@@ -355,3 +345,171 @@ async def test_explicit_flag_prevents_drafting_without_suspicious_text() -> (
         await MessageDrafter(stub).draft(decision, TASK, as_of=AS_OF)
     ).source is DraftSource.TEMPLATE
     assert not stub.requests
+
+
+class GatedClient:
+    def __init__(self) -> None:
+        self.started = {name: asyncio.Event() for name in ("old", "probe")}
+        self.release = {name: asyncio.Event() for name in ("old", "probe")}
+        self.fail_old = False
+
+    async def generate_json(self, request: LLMRequest) -> LLMResult:
+        if request.input_text == "failure":
+            message = "closed transport error"
+            raise LLMError(message)
+        await self._wait(request.input_text)
+        if self.fail_old and request.input_text == "old":
+            message = "stale failure"
+            raise LLMError(message)
+        return await ScriptedLLM([VALID]).generate_json(request)
+
+    async def _wait(self, name: str) -> None:
+        self.started[name].set()
+        await self.release[name].wait()
+
+
+@pytest.mark.parametrize("outcome", ["cancel", "success", "failure"])
+async def test_old_language_attempt_cannot_disturb_new_probe(
+    request_: LLMRequest, outcome: str
+) -> None:
+    client = GatedClient()
+    clock = FakeClock()
+    calls = LanguageCall(client, monotonic=clock.monotonic)
+    old_request = dataclasses.replace(request_, input_text="old")
+    old = asyncio.create_task(calls.call(old_request, str))
+    await client.started["old"].wait()
+    failed = dataclasses.replace(request_, input_text="failure")
+    for _ in range(5):
+        assert await calls.call(failed, str) is None
+    clock.advance(30)
+    probe_request = dataclasses.replace(request_, input_text="probe")
+    probe = asyncio.create_task(calls.call(probe_request, str))
+    await client.started["probe"].wait()
+    if outcome == "cancel":
+        old.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await old
+    else:
+        client.fail_old = outcome == "failure"
+        client.release["old"].set()
+        await old
+    assert await calls.call(failed, str) is None
+    assert calls.failures["unavailable"] == 1
+    client.release["probe"].set()
+    assert await probe == VALID
+    assert calls._opened_at is None
+
+
+async def test_hung_language_call_obeys_total_deadline(
+    request_: LLMRequest,
+) -> None:
+    client = GatedClient()
+    calls = LanguageCall(client, timeout_s=0.001)
+    request = dataclasses.replace(request_, input_text="old")
+    assert await calls.call(request, str) is None
+    assert calls.failures["transport"] == 1
+
+
+@pytest.mark.parametrize("timeout_s", [0, float("inf"), float("nan")])
+def test_language_deadline_requires_finite_positive_bound(
+    timeout_s: float,
+) -> None:
+    with pytest.raises(ValueError, match="timeout"):
+        LanguageCall(None, timeout_s=timeout_s)
+
+
+@pytest.mark.parametrize(
+    "invented",
+    [
+        "Ask Alice Wonderland to approve the work.",
+        "The inspector approved the work and the permit was issued.",
+        "The task is complete and no follow-up is required.",
+        "The delivery is scheduled for next week.",
+    ],
+)
+async def test_unapproved_facts_cannot_reach_rendered_draft(
+    invented: str,
+) -> None:
+    approved = approved_phrasings("follow_up.overdue.v1")[0]
+    text = draft_json(body=approved.body + " " + invented)
+    decision = repo_policy().decide(TASK, as_of=AS_OF)
+    drafter = MessageDrafter(ScriptedLLM([text]))
+    draft = await drafter.draft(decision, TASK, as_of=AS_OF)
+    assert draft.source is DraftSource.TEMPLATE
+    assert invented not in draft.body
+    assert drafter.calls.failures["unapproved_phrasing"] == 1
+
+
+async def test_extra_directory_restriction_can_reject_approved_prose() -> None:
+    decision = repo_policy().decide(TASK, as_of=AS_OF)
+    drafter = MessageDrafter(
+        ScriptedLLM([draft_json()]), validator=MessageValidator(["Could"])
+    )
+    draft = await drafter.draft(decision, TASK, as_of=AS_OF)
+    assert draft.source is DraftSource.TEMPLATE
+    assert drafter.calls.failures["message_rules"] == 1
+
+
+async def test_cancelled_owned_language_probe_can_be_replaced(
+    request_: LLMRequest,
+) -> None:
+    client = GatedClient()
+    clock = FakeClock()
+    calls = LanguageCall(client, monotonic=clock.monotonic)
+    failed = dataclasses.replace(request_, input_text="failure")
+    for _ in range(5):
+        await calls.call(failed, str)
+    clock.advance(30)
+    request = dataclasses.replace(request_, input_text="probe")
+    probe = asyncio.create_task(calls.call(request, str))
+    await client.started["probe"].wait()
+    probe.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await probe
+    client.release["probe"].set()
+    assert await calls.call(request, str) == VALID
+
+
+async def test_closed_language_success_does_not_hide_concurrent_failures(
+    request_: LLMRequest,
+) -> None:
+    client = GatedClient()
+    client.fail_old = True
+    calls = LanguageCall(client)
+    old_request = dataclasses.replace(request_, input_text="old")
+    failures = [
+        asyncio.create_task(calls.call(old_request, str)) for _ in range(5)
+    ]
+    await client.started["old"].wait()
+    client.release["probe"].set()
+    healthy = dataclasses.replace(request_, input_text="probe")
+    assert await calls.call(healthy, str) == VALID
+    client.release["old"].set()
+    assert await asyncio.gather(*failures) == [None] * 5
+    assert await calls.call(healthy, str) is None
+    assert calls.failures["unavailable"] == 1
+
+
+@pytest.mark.parametrize(
+    ("status", "days_due"),
+    [
+        (TaskStatus.WORKING_ON_IT, -1),
+        (TaskStatus.WORKING_ON_IT, -6),
+        (TaskStatus.BLOCKED, 10),
+        (TaskStatus.BLOCKED, -1),
+    ],
+)
+async def test_fallback_changes_neither_policy_action_nor_recipient(
+    status: TaskStatus, days_due: int
+) -> None:
+    task = dataclasses.replace(
+        TASK, status=status, due_date=AS_OF + timedelta(days=days_due)
+    )
+    baseline = repo_policy().decide(task, as_of=AS_OF)
+    result = await NoteInterpreter(ScriptedLLM(["malformed"])).interpret(
+        task, as_of=AS_OF, screen=CLEAN_SCREEN
+    )
+    actual = repo_policy().decide(task, as_of=AS_OF, interpretation=result)
+    assert actual.kind is baseline.kind
+    assert actual.target == baseline.target
+    assert actual.reason_code is baseline.reason_code
