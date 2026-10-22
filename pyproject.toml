@@ -73,6 +73,8 @@ target-version = "py313"               # keep in sync with mypy
 src = ["src", "mocks/src", "tests"]
 # Semgrep rule fixtures are deliberately insecure code.
 extend-exclude = [".semgrep"]
+# Apply the exclusion to files that pre-commit passes explicitly, too.
+force-exclude = true
 
 [tool.ruff.lint]
 select = ["ALL"]
