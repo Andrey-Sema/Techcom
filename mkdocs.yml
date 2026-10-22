@@ -53,6 +53,7 @@ nav:
       - "17 — Tooling & Repository Hygiene (single source of truth)": 17-tooling-and-repo-hygiene.md
       - "18 — Operations Runbook": 18-runbook.md
       - "M0 / M2 / M3 implementation review": 19-foundation-review.md
+  - "Benchmarks": benchmarks.md
   - Security evidence:
       - "ASVS 5.0 traceability (generated)": asvs-traceability.md
       - "Docker Security checklist": security/docker-security.md

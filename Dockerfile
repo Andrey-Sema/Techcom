@@ -82,7 +82,8 @@ ENV PATH="/opt/venv/bin:${PATH}" \
     PYTHONBREAKPOINT=0
 WORKDIR /app
 USER 10001:10001
-# The "followup" entry point and its HEALTHCHECK arrive with the CLI
-# (M6a) and the REST API (M6b); until then the image runs migrations:
-#   docker run --rm -e FOLLOWUP_DATABASE_URL=... IMAGE alembic upgrade head
-CMD ["alembic", "current"]
+# The CLI runs one command per container (run, dispatch, reconcile,
+# report); a HEALTHCHECK belongs to the long-running REST API (M6b).
+# Migrations: docker run --rm --entrypoint alembic IMAGE upgrade head
+ENTRYPOINT ["followup"]
+CMD ["--help"]

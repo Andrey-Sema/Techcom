@@ -3,7 +3,7 @@
         test test-fast test-integration mock demo db-up db-down \
         obs-secrets up-obs down-obs obs-check obs-smoke \
         images dockerfile-lint image-scan image-test mutation sbom \
-        secrets-scan secrets-staged
+        secrets-scan secrets-staged bench demo-check
 
 GATES = uv run --locked --group gates
 # Semgrep conflicts with the project's dependency set, so it runs in an
@@ -81,6 +81,10 @@ test-fast:
 test-integration:
 	uv run --locked pytest -m integration --no-cov
 
+# 10,000-task benchmark against PostgreSQL 18 (docs/benchmarks.md).
+bench:
+	uv run --locked pytest -m bench --no-cov -p no:randomly tests/bench
+
 # Mutation testing of the decision core (docs/06 s. 6); nightly in CI.
 # Scope and test selection live in [tool.mutmut] in pyproject.toml.
 mutation:
@@ -95,6 +99,10 @@ mock:
 
 demo:
 	uv run --locked python scripts/demo.py
+
+# CI smoke: a fresh demo must match samples/ apart from identifiers.
+demo-check: demo
+	uv run --locked python scripts/demo_check.py
 
 # Create secrets/postgres_password locally before starting the database.
 db-up:

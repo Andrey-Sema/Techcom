@@ -25,6 +25,7 @@ pytestmark = pytest.mark.image
 
 RUNTIME = os.environ.get("FOLLOWUP_TEST_IMAGE", "techcom-followup:dev")
 MOCK = os.environ.get("FOLLOWUP_TEST_MOCK_IMAGE", "techcom-mock:dev")
+PYTHON = ("--entrypoint=python",)
 HARDENED = (
     "--rm",
     "--read-only",
@@ -81,13 +82,15 @@ def docker(*args: str) -> str:
 
 
 def test_runtime_runs_as_the_unprivileged_service_user() -> None:
-    assert docker("run", *HARDENED, RUNTIME, "id", "-u") == "10001"
+    assert docker("run", *HARDENED, "--entrypoint=id", RUNTIME, "-u") == (
+        "10001"
+    )
 
 
 @pytest.mark.asvs("13.4.1", "15.2.3")
 def test_runtime_ships_only_the_product() -> None:
     found = json.loads(
-        docker("run", *HARDENED, RUNTIME, "python", "-c", INVENTORY)
+        docker("run", *HARDENED, *PYTHON, RUNTIME, "-c", INVENTORY)
     )
     assert found == {
         "source": [],
@@ -101,11 +104,16 @@ def test_runtime_ships_only_the_product() -> None:
 @pytest.mark.asvs("15.2.3")
 def test_service_user_cannot_modify_its_own_code() -> None:
     # Without --read-only: file ownership alone must already deny it.
-    output = docker("run", "--rm", RUNTIME, "python", "-c", WRITE_PROBE)
+    output = docker("run", "--rm", *PYTHON, RUNTIME, "-c", WRITE_PROBE)
     assert output == "3"
 
 
-def test_runtime_applies_migrations_to_postgres_18() -> None:
+def test_runtime_entry_point_is_the_cli() -> None:
+    assert "followup" in docker("run", *HARDENED, RUNTIME, "--help")
+
+
+def test_runtime_migrates_runs_and_dedupes_end_to_end() -> None:
+    """Shipped image with PostgreSQL 18 and the mock, all hardened."""
     with (
         Network() as network,
         PostgresContainer("postgres:18", driver="psycopg")
@@ -119,12 +127,32 @@ def test_runtime_applies_migrations_to_postgres_18() -> None:
         common = (
             *HARDENED,
             f"--network={network.name}",
-            "--env",
-            f"FOLLOWUP_DATABASE_URL={url}",
-            RUNTIME,
+            f"--env=FOLLOWUP_DATABASE_URL={url}",
+            "--env=FOLLOWUP_TASK_API_URL=http://mock-api:8081",
+            "--env=FOLLOWUP_DELIVERY_API_URL=http://mock-api:8081",
         )
-        docker("run", *common, "alembic", "upgrade", "head")
-        assert "(head)" in docker("run", *common)
+        docker(
+            "run", *common, "--entrypoint=alembic", RUNTIME, "upgrade", "head"
+        )
+        mock = docker(
+            "run",
+            "--detach",
+            *HARDENED,
+            f"--network={network.name}",
+            "--network-alias=mock-api",
+            MOCK,
+        )
+        try:
+            run = ("run", "--as-of", "2026-10-21", "--dispatch")
+            first = json.loads(docker("run", *common, RUNTIME, *run))
+            second = json.loads(docker("run", *common, RUNTIME, *run))
+        finally:
+            docker("rm", "--force", "--volumes", mock)
+    assert first["storage"] == "postgresql"
+    assert first["run"]["stats"]["enqueued"] == 7
+    assert {action["status"] for action in first["actions"]} == {"sent"}
+    assert second["run"]["stats"]["enqueued"] == 0
+    assert second["run"]["stats"]["duplicates"] == 7
 
 
 @contextmanager
