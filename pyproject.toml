@@ -159,7 +159,7 @@ testpaths = ["tests"]
 addopts = [
     "-ra", "--strict-markers", "--strict-config",
     "--cov", "--cov-branch", "--cov-report=term-missing",
-    "-m", "not live_llm and not image",
+    "-m", "not live_llm and not image and not bench",
 ]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
@@ -170,6 +170,7 @@ markers = [
     "integration: requires PostgreSQL 18 in Docker",
     "asvs: evidence for an implemented ASVS security control",
     "image: runs the built container images (make image-test)",
+    "bench: 10,000-task benchmark against PostgreSQL 18 (make bench)",
 ]
 
 # ------------------------------------------------------------ coverage --

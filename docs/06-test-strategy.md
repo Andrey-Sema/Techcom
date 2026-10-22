@@ -69,6 +69,11 @@ the policy) — coverage is the floor, not the proof.
   stub LLM, PostgreSQL 18 via testcontainers; budgets: full run < 60 s,
   rerun (all duplicates) < 30 s, peak RSS < 300 MB. Results written to
   `docs/benchmarks.md` with hardware info.
+* As built (M8): `make bench`. Measured 83 s / 71 s / 218 MB after the
+  benchmark exposed eight round trips per decision (now five) and a
+  connection per transaction in the test helper. The 60 s / 30 s targets
+  are not met; the test guards against regressions at 120 s, and
+  `docs/benchmarks.md` explains why and quantifies the next lever.
 * Schemathesis against the running API (`/openapi.json`) with all checks
   (status-code conformance, response schema, server errors) using a CI
   service token; plus negative-auth stateful checks.

@@ -333,9 +333,10 @@ these differences, each for a reason found while building it:
   proxies without writing the CA into a layer.
 * The mock runs `uvicorn techcom_mocks.app:create_app --factory` with
   its journal on a `/var/lib/mock` volume, so it also works read-only.
-* `ENTRYPOINT ["followup"]` and the API `HEALTHCHECK` arrive with the
-  CLI (M6a) and the API (M6b); until then the runtime image runs
-  `alembic` (migrations are image-tested against PostgreSQL 18).
+* `ENTRYPOINT ["followup"]` with `CMD ["--help"]`: the CLI runs one
+  command per container; migrations use `--entrypoint alembic`. The
+  `HEALTHCHECK` belongs to the long-running API (M6b). An image test runs
+  migrate → `run --dispatch` → rerun against PostgreSQL 18 and the mock.
 
 ## 6. `compose.yaml` (core)
 
