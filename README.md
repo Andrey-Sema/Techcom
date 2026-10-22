@@ -1,10 +1,11 @@
 # TechCom AI Operations & Follow-up Service
 
-> Status: **design complete; implemented — domain core (M1,
-> `src/techcom_followup/domain/`) and LLM router
-> (`src/techcom_followup/adapters/outbound/llm/`); 298 tests, 100 %
-> branch coverage** (plan for the
-> TechCom AI Engineer final assessment). Evaluation date: 2026-10-21 UTC.
+> Status: **M0, M1, M2 and M3 implemented**, plus the OpenAI router
+> portion of M5. The complete processing/dispatch workflow and production
+> authorization are still under development. Fixture evaluation date:
+> 2026-10-21 UTC. See the [progress tracker](docs/08-implementation-plan.md)
+> and [implementation review](docs/19-foundation-review.md) for evidence
+> and remaining security work.
 
 A Python service that reads construction project tasks through a mock API,
 decides **deterministically** which ones need attention, uses an **LLM only
@@ -81,7 +82,47 @@ Prometheus + Grafana + Loki + Alloy · pytest + hypothesis +
 testcontainers + syrupy + mutmut · gitleaks, pip-audit, Trivy, Semgrep,
 zizmor, ZAP.
 
-## Planned commands
+## Running the implemented components
+
+Python 3.13 or 3.14 and uv are required. Docker is required for PostgreSQL
+contract/integration tests. Commands run from the repository root:
+
+```sh
+make bootstrap
+make quality
+make test-fast       # deterministic offline tests, no Docker or API key
+make test            # includes PostgreSQL 18 tests and 100% branch gate
+uv run --locked pre-commit install
+make mock            # local-only receiver at 127.0.0.1:8081, one worker
+```
+
+`make mock` writes and fsyncs `var/delivery_log.jsonl` before acknowledging
+delivery and restores committed receipts on restart. The in-memory mock
+store is available for injected tests. The journal has no retention
+pruning yet: it retains keys for the entire journal lifetime. Run exactly
+one receiver process per journal. The mock has no production authentication
+and must remain local; its package is excluded from the production wheel.
+
+For a local PostgreSQL instance, create an ignored password file first:
+
+```sh
+mkdir -p secrets
+uv run python -c 'import secrets; from pathlib import Path; p = Path("secrets/postgres_password"); p.touch(mode=0o600, exist_ok=False); p.write_text(secrets.token_urlsafe(32))'
+make db-up
+```
+
+Set `FOLLOWUP_DATABASE_URL` through your local secret configuration before
+`uv run alembic upgrade head`; no database URL or password is checked in.
+The Compose database user is for local development. Production database
+roles, JWT authorization, project/object authorization and the complete
+ASVS L2 evidence are pending milestones M6b/M9.
+
+CI requires PostgreSQL tests to run; a missing Docker daemon fails CI.
+Local full-suite runs skip unavailable PostgreSQL tests and consequently
+fail the 100% coverage gate. Use `make test-fast` for an explicit subset.
+Live LLM calls are opt-in and excluded from all default verification.
+
+## Planned workflow commands
 
 ```text
 make demo        # compose up, migrate, run, dispatch, rerun, report
