@@ -19,6 +19,7 @@ from enum import StrEnum
 import openai
 from openai.types.responses import Response
 
+from techcom_followup.adapters.outbound.llm.accounting import maximum_usage
 from techcom_followup.adapters.outbound.llm.config import RouteConfig
 from techcom_followup.application.ports import (
     LLMConfigurationError,
@@ -53,7 +54,7 @@ class BackendError(Exception):
 class BackendReply:
     """Text and accounting extracted from a provider response."""
 
-    __slots__ = ("model", "response_id", "text", "usage")
+    __slots__ = ("model", "response_id", "text", "usage", "usage_reported")
 
     def __init__(
         self,
@@ -62,12 +63,14 @@ class BackendReply:
         model: str,
         response_id: str,
         usage: TokenUsage,
+        usage_reported: bool = True,
     ) -> None:
         """Bundle the fields the router needs."""
         self.text = text
         self.model = model
         self.response_id = response_id
         self.usage = usage
+        self.usage_reported = usage_reported
 
 
 class OpenAIResponsesBackend:
@@ -152,25 +155,19 @@ def _status_error(exc: openai.APIStatusError) -> BackendError:
 
 
 def _conservative_usage(request: LLMRequest, route: RouteConfig) -> TokenUsage:
-    # Used only if the provider omits usage: over-estimate so that the
-    # spending budget can never be undercounted. Two characters per
-    # token over-estimates English text by roughly a factor of two.
-    prompt_chars = len(request.instructions) + len(request.input_text)
-    return TokenUsage(
-        input_tokens=prompt_chars // 2 + 1,
-        output_tokens=route.max_output_tokens,
-    )
+    return maximum_usage(request, max_output_tokens=route.max_output_tokens)
 
 
 def _reply_from(response: Response, fallback: TokenUsage) -> BackendReply:
     usage = _usage_from(response, fallback)
+    billed_usage = usage if response.usage is not None else None
     for item in response.output:
         if item.type != "message":
             continue
         for content in item.content:
             if content.type == "refusal":
                 msg = "model refused the request"
-                raise LLMRefusalError(msg, usage)
+                raise LLMRefusalError(msg, billed_usage)
     if response.status != "completed":
         details = response.incomplete_details
         reason = (
@@ -178,16 +175,17 @@ def _reply_from(response: Response, fallback: TokenUsage) -> BackendReply:
             if details is not None and details.reason is not None
             else str(response.status)
         )
-        raise LLMIncompleteError(reason, usage)
+        raise LLMIncompleteError(reason, billed_usage)
     text = response.output_text
     if not text.strip():
         reason = "empty_output"
-        raise LLMIncompleteError(reason, usage)
+        raise LLMIncompleteError(reason, billed_usage)
     return BackendReply(
         text=text,
         model=response.model,
         response_id=response.id,
         usage=usage,
+        usage_reported=response.usage is not None,
     )
 
 

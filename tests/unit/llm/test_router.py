@@ -1,3 +1,4 @@
+import asyncio
 from datetime import date
 from decimal import Decimal
 
@@ -5,6 +6,7 @@ import pytest
 from structlog.testing import capture_logs
 
 from llm_doubles import FakeClock
+from techcom_followup.adapters.outbound.llm.accounting import maximum_usage
 from techcom_followup.adapters.outbound.llm.config import (
     RouteConfig,
     RoutingConfig,
@@ -183,7 +185,7 @@ async def test_refusal_is_not_failed_over_but_is_billed(
     assert router.budget.spent_usd == Decimal("0.004000")
 
 
-async def test_incomplete_without_usage_is_not_billed(
+async def test_incomplete_without_usage_consumes_conservative_reservation(
     routing_config: RoutingConfig,
     request_: LLMRequest,
     clock: FakeClock,
@@ -194,7 +196,8 @@ async def test_incomplete_without_usage_is_not_billed(
     router = make_router(routing_config, backend, clock)
     with pytest.raises(LLMIncompleteError):
         await router.generate_json(request_)
-    assert router.budget.spent_usd == 0
+    assert router.budget.spent_usd > 0
+    assert router.budget.reserved_usd == 0
 
 
 async def test_bad_credentials_stop_the_walk(
@@ -235,3 +238,231 @@ def test_missing_backend_is_a_configuration_error(
             monotonic=clock.monotonic,
             today=lambda: date(2026, 10, 21),
         )
+
+
+class BlockingBackend:
+    def __init__(self) -> None:
+        self.started = asyncio.Event()
+        self.release = asyncio.Event()
+        self.calls = 0
+
+    async def complete(
+        self, request: LLMRequest, route: RouteConfig, timeout_s: float
+    ) -> BackendReply:
+        self.calls += 1
+        self.started.set()
+        await self.release.wait()
+        return reply(route.model)
+
+
+async def test_concurrent_calls_reserve_budget_before_network(
+    routing_config: RoutingConfig, request_: LLMRequest, clock: FakeClock
+) -> None:
+    route = routing_config.routes[request_.purpose][0]
+    bound = routing_config.prices[route.model].maximum_cost(
+        maximum_usage(request_, max_output_tokens=route.max_output_tokens)
+    )
+    config = routing_config.model_copy(update={"daily_budget_usd": bound})
+    backend = BlockingBackend()
+    router = LLMRouter(
+        config=config,
+        backends={"openai": backend},
+        monotonic=clock.monotonic,
+        today=lambda: date(2026, 10, 21),
+    )
+    first = asyncio.create_task(router.generate_json(request_))
+    await backend.started.wait()
+    assert router.budget.reserved_usd == bound
+    with pytest.raises(LLMBudgetExceededError):
+        await router.generate_json(request_)
+    assert backend.calls == 1
+    backend.release.set()
+    await first
+    assert router.budget.reserved_usd == 0
+    assert router.budget.spent_usd == Decimal("0.004000")
+
+
+async def test_insufficient_nonzero_budget_rejects_before_call(
+    routing_config: RoutingConfig, request_: LLMRequest, clock: FakeClock
+) -> None:
+    config = routing_config.model_copy(
+        update={"daily_budget_usd": Decimal("0.000001")}
+    )
+    backend = ScriptedBackend({})
+    router = make_router(config, backend, clock)
+    with pytest.raises(LLMBudgetExceededError, match="bounded"):
+        await router.generate_json(request_)
+    assert backend.calls == []
+
+
+async def test_cancelled_half_open_probe_does_not_leak(
+    routing_config: RoutingConfig, request_: LLMRequest, clock: FakeClock
+) -> None:
+    backend = BlockingBackend()
+    router = LLMRouter(
+        config=routing_config,
+        backends={"openai": backend},
+        monotonic=clock.monotonic,
+        today=lambda: date(2026, 10, 21),
+    )
+    route = routing_config.routes[request_.purpose][0]
+    breaker = router._breakers[route.model]
+    for _ in range(routing_config.breaker_failure_threshold):
+        breaker.record_failure()
+    clock.advance(routing_config.breaker_cooldown_s)
+    probe = asyncio.create_task(router.generate_json(request_))
+    await backend.started.wait()
+    probe.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await probe
+    assert router.budget.reserved_usd == 0
+    assert router.budget.spent_usd > 0
+    backend.release.set()
+    result = await router.generate_json(request_)
+    assert result.model == route.model
+    assert backend.calls == 2
+
+
+async def test_failover_drops_backend_error_contents(
+    routing_config: RoutingConfig, request_: LLMRequest, clock: FakeClock
+) -> None:
+    private_content = "owner private note bearer credential"
+    backend = ScriptedBackend(
+        {
+            "gpt-6.1-sol": BackendError(
+                FailureKind.TRANSIENT, private_content
+            ),
+            "gpt-6-sol": reply("gpt-6-sol"),
+        }
+    )
+    with capture_logs() as logs:
+        await make_router(routing_config, backend, clock).generate_json(
+            request_
+        )
+    assert private_content not in str(logs)
+
+
+async def test_missing_usage_settles_full_conservative_price(
+    routing_config: RoutingConfig, request_: LLMRequest, clock: FakeClock
+) -> None:
+    route = routing_config.routes[request_.purpose][0]
+    bound = maximum_usage(request_, max_output_tokens=route.max_output_tokens)
+    backend = ScriptedBackend(
+        {
+            route.model: BackendReply(
+                text="{}",
+                model=route.model,
+                response_id="stub",
+                usage=bound,
+                usage_reported=False,
+            )
+        }
+    )
+    router = make_router(routing_config, backend, clock)
+    result = await router.generate_json(request_)
+    assert result.cost_usd == routing_config.prices[route.model].maximum_cost(
+        bound
+    )
+    assert router.budget.reserved_usd == 0
+
+
+async def test_provider_overrun_is_charged_and_prevents_more_calls(
+    routing_config: RoutingConfig, request_: LLMRequest, clock: FakeClock
+) -> None:
+    route = routing_config.routes[request_.purpose][0]
+    backend = ScriptedBackend(
+        {
+            route.model: BackendReply(
+                text="{}",
+                model=route.model,
+                response_id="stub",
+                usage=TokenUsage(1_000_000, 200),
+            )
+        }
+    )
+    router = make_router(routing_config, backend, clock)
+    result = await router.generate_json(request_)
+    assert router.budget.spent_usd == result.cost_usd
+    assert router.budget.overage_usd > 0
+    with pytest.raises(LLMBudgetExceededError):
+        await router.generate_json(request_)
+    assert backend.calls == [route.model]
+
+
+class InterleavedBackend:
+    def __init__(self) -> None:
+        self.started = [asyncio.Event(), asyncio.Event(), asyncio.Event()]
+        self.release = [asyncio.Event(), asyncio.Event(), asyncio.Event()]
+        self.calls = 0
+
+    async def complete(
+        self, request: LLMRequest, route: RouteConfig, timeout_s: float
+    ) -> BackendReply:
+        index = self.calls
+        self.calls += 1
+        self.started[index].set()
+        if index == 1:
+            raise transient()
+        await self.release[index].wait()
+        return reply(route.model)
+
+
+def one_route(config: RoutingConfig, **updates: object) -> RoutingConfig:
+    return config.model_copy(
+        update={
+            "routes": {
+                purpose: routes[:1]
+                for purpose, routes in config.routes.items()
+            },
+            "breaker_failure_threshold": 1,
+            **updates,
+        }
+    )
+
+
+async def test_cancelled_old_request_cannot_release_new_router_probe(
+    routing_config: RoutingConfig, request_: LLMRequest, clock: FakeClock
+) -> None:
+    config = one_route(routing_config)
+    backend = InterleavedBackend()
+    router = LLMRouter(
+        config=config,
+        backends={"openai": backend},
+        monotonic=clock.monotonic,
+        today=lambda: date(2026, 10, 21),
+    )
+    stale = asyncio.create_task(router.generate_json(request_))
+    await backend.started[0].wait()
+    with pytest.raises(LLMUnavailableError):
+        await router.generate_json(request_)
+    clock.advance(config.breaker_cooldown_s)
+    probe = asyncio.create_task(router.generate_json(request_))
+    await backend.started[2].wait()
+    stale.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await stale
+    with pytest.raises(LLMUnavailableError):
+        await router.generate_json(request_)
+    assert backend.calls == 3
+    backend.release[2].set()
+    assert (await probe).text
+
+
+async def test_total_router_deadline_includes_waiting_for_semaphore(
+    routing_config: RoutingConfig, request_: LLMRequest, clock: FakeClock
+) -> None:
+    backend = BlockingBackend()
+    router = LLMRouter(
+        config=one_route(routing_config, request_timeout_s=0.001),
+        backends={"openai": backend},
+        monotonic=clock.monotonic,
+        today=lambda: date(2026, 10, 21),
+    )
+    for _ in range(4):
+        await router._semaphore.acquire()
+    with pytest.raises(LLMUnavailableError) as caught:
+        await router.generate_json(request_)
+    assert backend.calls == 0
+    assert caught.value.attempts[0].outcome == "timeout"
+    assert router.budget.reserved_usd == 0
+    assert router.budget.spent_usd > 0
