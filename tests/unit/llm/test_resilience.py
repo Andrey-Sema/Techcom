@@ -42,6 +42,7 @@ def test_breaker_rejects_invalid_settings(
         )
 
 
+@pytest.mark.asvs("16.5.2")
 def test_breaker_opens_after_consecutive_failures(clock: FakeClock) -> None:
     cb = breaker(clock)
     cb.record_failure()

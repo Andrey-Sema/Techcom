@@ -60,6 +60,23 @@ jobs:
           enable-cache: true
       - run: uv sync --locked --all-packages --group gates --group docs
       - run: make gates
+      - run: make sbom
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sbom-dependencies
+          path: var/sbom/techcom-followup.cdx.json
+          if-no-files-found: error
+  secrets:
+    name: secrets
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          # gitleaks scans the whole history, not just the last commit.
+          fetch-depth: 0
+          persist-credentials: false
+      - run: make secrets-scan
   observability:
     name: observability
     runs-on: ubuntu-latest
@@ -93,4 +110,9 @@ jobs:
           enable-cache: true
       - run: uv sync --locked --all-packages
       - run: make image-scan
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sbom-runtime-image
+          path: var/sbom/runtime-image.cdx.json
+          if-no-files-found: error
       - run: make image-test

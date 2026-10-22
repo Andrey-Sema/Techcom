@@ -53,6 +53,10 @@ nav:
       - "17 — Tooling & Repository Hygiene (single source of truth)": 17-tooling-and-repo-hygiene.md
       - "18 — Operations Runbook": 18-runbook.md
       - "M0 / M2 / M3 implementation review": 19-foundation-review.md
+  - Security evidence:
+      - "ASVS 5.0 traceability (generated)": asvs-traceability.md
+      - "Docker Security checklist": security/docker-security.md
+      - "LLM Prompt Injection checklist": security/llm-prompt-injection.md
   - Decisions (ADR):
       - "ADR-0001: Hexagonal architecture with a functional core": adr/0001-hexagonal-functional-core.md
       - "ADR-0002: PostgreSQL 18 for state and outbox; no Redis/Celery": adr/0002-postgresql-18-no-broker.md

@@ -96,6 +96,7 @@ def test_valid_llm_draft_has_no_violations(
         ("Update", GOOD_BODY + " Ask Smith.", "person_name"),
     ],
 )
+@pytest.mark.asvs("1.3.10", "1.3.11")
 def test_violations(
     validator: MessageValidator, subject: str, body: str, code: str
 ) -> None:
@@ -123,6 +124,14 @@ def test_three_letter_name_tokens_are_checked() -> None:
     assert "person_name" in validator.violations("Update", GOOD_BODY + " Lee")
 
 
+@pytest.mark.asvs("1.2.9")
+def test_name_tokens_are_matched_literally() -> None:
+    # Directory names become regexes; metacharacters must stay literal.
+    validator = MessageValidator(known_names=["Le.e Ops"])
+    assert validator.violations("Update", GOOD_BODY + " Leee") == ()
+    assert "person_name" in validator.violations("Update", GOOD_BODY + " Le.e")
+
+
 def test_body_newlines_are_allowed(validator: MessageValidator) -> None:
     assert validator.violations("Update", GOOD_BODY + "\nThanks!") == ()
 
@@ -132,6 +141,7 @@ def test_short_name_tokens_are_ignored(validator: MessageValidator) -> None:
     assert validator.violations("Update", GOOD_BODY + " Li") == ()
 
 
+@pytest.mark.asvs("1.3.7", "1.3.10")
 def test_render_is_one_pass_and_never_formats() -> None:
     facts = {"task_id": "{recipient_name}", "recipient_name": "Ann"}
     assert render("{recipient_name}: {task_id}", facts) == (
@@ -139,6 +149,7 @@ def test_render_is_one_pass_and_never_formats() -> None:
     )
 
 
+@pytest.mark.asvs("1.3.7")
 def test_render_rejects_unknown_placeholders() -> None:
     with pytest.raises(ValueError, match="unknown placeholder: owner"):
         render("{owner}", {})
@@ -182,6 +193,7 @@ def test_unknown_status_clarification_names_the_status(
     assert "is missing: a recognised status." in draft.body
 
 
+@pytest.mark.asvs("1.3.7")
 def test_facts_scrub_hostile_task_data(policy: DecisionPolicy) -> None:
     task = make_task(
         title="{recipient_name} visit https://evil.example/x now",
