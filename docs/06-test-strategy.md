@@ -47,6 +47,32 @@ the policy) — coverage is the floor, not the proof.
 * Image test (CI): `docker run --entrypoint python … -c "import
   techcom_mocks"` must fail; no `.git`, no `tests/` in the image.
 
+## 2b. LLM evaluation harness (`ADR-0012`)
+
+* Dataset `tests/eval/notes.jsonl`: ≥ 60 synthetic, labelled notes —
+  materials (incl. "backorder", "awaiting delivery"), upstream dependency,
+  permit, site access, none, genuinely ambiguous, and ≥ 30 injection
+  variants (direct, homoglyph, base64, multilingual, "role" tags).
+* Recorded provider responses (`tests/eval/recordings/<prompt_version>/`)
+  are replayed in CI; `make eval` re-records against the live provider
+  (opt-in, needs a key).
+* Metrics: per-class precision/recall, macro-F1, confusion matrix,
+  fallback rate, **unsafe-outcome count** (any decision that differs from
+  the rules-only decision in a forbidden direction, e.g. overdue →
+  `no_action`).
+* Gates: macro-F1 ≥ 0.85, unsafe outcomes = 0, fallback rate ≤ 10 %.
+  Report committed as `docs/eval/<prompt_version>.md`.
+
+## 2c. Benchmark and API fuzzing
+
+* `tests/bench/test_10k.py` (`-m bench`): 10,000 generated tasks (seeded),
+  stub LLM, PostgreSQL 18 via testcontainers; budgets: full run < 60 s,
+  rerun (all duplicates) < 30 s, peak RSS < 300 MB. Results written to
+  `docs/benchmarks.md` with hardware info.
+* Schemathesis against the running API (`/openapi.json`) with all checks
+  (status-code conformance, response schema, server errors) using a CI
+  service token; plus negative-auth stateful checks.
+
 ## 3. Property-based invariants (hypothesis)
 
 1. **Totality**: every normalized task yields exactly one decision.
@@ -65,6 +91,14 @@ the policy) — coverage is the floor, not the proof.
    interpretation, decision ∈ the set reachable from date/status rules.
 9. **Message safety**: rendered messages contain no unresolved placeholders,
    no URLs/e-mails, length within bounds.
+10. **Normalization totality**: for arbitrary JSON values in every field
+    (`st.recursive` over None/bool/int/float/str/list/dict), `normalize`
+    never raises and returns `Task` or `RejectedRecord` (`16` #2).
+11. **Any LLM text is safe**: for arbitrary stub output (`st.text()`,
+    JSON-like strings), processing never crashes and an overdue non-Done
+    task is never `no_action` (`16` #8).
+12. **Retry budget**: for any sequence of dependency failures, attempts
+    never exceed the configured budget (`16` #5).
 
 ## 4. Fault-injection mechanics (hermetic, no sleeps)
 

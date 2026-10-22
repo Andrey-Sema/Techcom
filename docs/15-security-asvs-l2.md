@@ -2,6 +2,9 @@
 
 ## 1. Target and rules of the game
 
+* **Wording:** "ASVS 5.0 L2 **design target**, verified items listed in
+  `docs/asvs-traceability.md`, local deviations in §4" — never a bare
+  "L2 compliant" (`16` #18).
 * **Target:** OWASP ASVS **5.0.0, Level 2** (L2 includes all L1
   requirements) for the `techcom-followup` service: REST API, CLI, workers,
   persistence and outbound integrations. The mock API is a test double and
@@ -29,7 +32,7 @@ the claim "L2" is evidence-backed, not aspirational.
 
 | # | Decision | ASVS driver |
 |---|----------|-------------|
-| D1 | REST API is protected by **short-lived signed service tokens** (JWT, `EdDSA`/Ed25519, `exp ≤ 15 min`, `aud`, `iss`, `typ=at+jwt`, `jti`, `scope`) instead of a static bearer key. Locally `followup token issue` signs with a dev key; in production tokens come from the IdP (OAuth 2.0 client credentials / workload identity federation). | 13.2.1 forbids unchanging credentials such as API keys between backend components; V9 |
+| D1 | REST API is protected by **short-lived signed service tokens** (JWT, `EdDSA`/Ed25519, `exp ≤ 15 min`, `aud`, `iss`, `typ=at+jwt`, `jti`, `scope`) instead of a static bearer key. Locally `scripts/issue_token.py` (not part of the shipped package) signs with a dev key; in production tokens come from the IdP (OAuth 2.0 client credentials / workload identity federation). | 13.2.1 forbids unchanging credentials such as API keys between backend components; V9 |
 | D2 | **Deny-by-default authorization**: router-level dependency requires a valid token; each route declares its scope (`runs:trigger`, `runs:read`, `actions:read`). | 8.1.1, 8.2.1, 8.3.1 |
 | D3 | **Two DB roles**: `followup_migrator` (DDL) and `followup_app` (DML only; `audit_events` INSERT/SELECT only). Production: short-lived DB credentials from a secret manager (dynamic secrets) or cloud IAM auth. | 13.2.1, 13.2.2, 16.4.2 |
 | D4 | **Outbound allow-list**: the HTTP client factory accepts only hosts from configuration (task API, delivery API, LLM endpoint); `follow_redirects=False`; certificate verification can't be disabled. | 1.3.6, 13.2.4, 13.2.5, 15.3.2, 12.3.2 |
@@ -357,11 +360,41 @@ Each cheat sheet in **bold** gets a short checklist file under
 `docs/security/` during M9, with every item mapped to a control or an N/A
 reason, exactly like the ASVS tables above.
 
+## 10a. OWASP API Security Top 10 (2023) mapping
+
+| Risk | Our control |
+|------|-------------|
+| API1 Broken Object Level Authorization | Single tenant; scope per route; no user-owned objects; ids are UUIDv7 but never used as access control |
+| API2 Broken Authentication | EdDSA service JWT, alg allow-list, `aud`/`iss`/`typ`/`exp` checks, auth-failure alerting |
+| API3 Broken Object Property Level Authorization | Explicit response models, `extra="forbid"` request models |
+| API4 Unrestricted Resource Consumption | rate limit, body cap, run lock, LLM budget, retry budget, per-recipient cap |
+| API5 Broken Function Level Authorization | deny-by-default router dependency + route inventory test |
+| API6 Unrestricted Access to Sensitive Business Flows | run trigger requires `runs:trigger`, single-run lock, audit of every trigger |
+| API7 SSRF | no user-supplied URLs; outbound allow-list; no redirects |
+| API8 Security Misconfiguration | docs off in prod, headers, TRACE 405, hardened containers, Trivy config |
+| API9 Improper Inventory Management | versioned `/v1`, OpenAPI as contract, communication inventory (§6) |
+| API10 Unsafe Consumption of APIs | task/delivery/LLM responses validated with strict schemas; timeouts; fail closed |
+
+## 10b. Supply chain (SLSA-style practices) and CWE
+
+* GitHub Actions pinned by commit SHA; container images (including
+  scanners) pinned by digest; pre-commit hooks frozen to SHAs.
+* Rationale is concrete: in March 2026 the Trivy release v0.69.4 and images
+  0.69.5–0.69.6 were compromised and used to steal CI credentials, which led
+  to malicious LiteLLM releases on PyPI from a pipeline that ran an
+  unpinned scanner.
+* `uv.lock` with hashes, `uv sync --locked`, `pip-audit --require-hashes`;
+  Dependabot with a 7-day cooldown (new releases are not adopted on day 0).
+* Image build with provenance + SBOM attestation; optional keyless signing
+  (cosign) when a registry is used.
+* Findings from Bandit and Semgrep are triaged by their **CWE id** with the
+  CWE Top 25 as priority order.
+
 ## 11. Security verification in CI
 
 | Check | Tool | Gate |
 |-------|------|------|
-| SAST | ruff `S` (bandit rules) + Semgrep (`p/python`, `p/owasp-top-ten`) | no findings ≥ medium |
+| SAST | **Bandit** (standalone gate) + Ruff `S` (editor feedback) + Semgrep (`p/python`, `p/owasp-top-ten`, custom invariants) | Bandit: zero findings (≥ low sev., ≥ medium conf.); Semgrep: zero errors |
 | Secrets | gitleaks (pre-commit + CI) | zero findings |
 | Dependencies | `pip-audit` on exported lock | no known vulns beyond SLA |
 | SBOM | CycloneDX (lock export) + image attestation | artefact present |

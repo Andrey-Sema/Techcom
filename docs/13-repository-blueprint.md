@@ -54,59 +54,7 @@ separate Dockerfile target.
 
 ## 2. `.gitignore`
 
-```gitignore
-# --- Python ---
-__pycache__/
-*.py[cod]
-*.so
-*.egg-info/
-build/
-dist/
-.eggs/
-
-# --- Virtual environments & tooling caches ---
-.venv/
-.uv-cache/
-.ruff_cache/
-.mypy_cache/
-.pytest_cache/
-.hypothesis/
-.import_linter_cache/
-
-# --- Coverage & test artefacts ---
-.coverage
-.coverage.*
-coverage.xml
-htmlcov/
-junit*.xml
-mutants/
-.mutmut-cache
-
-# --- Runtime output (samples/ is committed on purpose) ---
-var/
-*.log
-
-# --- Secrets: never commit (ASVS 13.3.1) ---
-.env
-.env.*
-!.env.example
-secrets/
-*.pem
-*.key
-*.crt
-*.p12
-
-# --- Security tooling output ---
-sbom*.json
-trivy-*.json
-
-# --- IDE / OS ---
-.idea/
-.vscode/
-*.swp
-.DS_Store
-Thumbs.db
-```
+Superseded by `17-tooling-and-repo-hygiene.md` §3 (expanded version).
 
 ## 3. `.dockerignore` (allow-list: ASVS 13.4.1, 15.2.3)
 
@@ -129,6 +77,10 @@ docs, secrets, caches and samples can never leak into the image.
 ```
 
 ## 4. `pyproject.toml`
+
+> The `[dependency-groups]`, `ruff`, `mypy` sections below are superseded by
+> `17` §2 (Ruff `ALL`, Bandit, vulture, deptry, codespell, commitizen).
+> Project metadata, pytest, coverage and import-linter stay as here.
 
 ```toml
 [project]
@@ -330,7 +282,8 @@ COPY config /app/config
 ENV PATH="/opt/venv/bin:${PATH}" \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PYTHONFAULTHANDLER=1
+    PYTHONFAULTHANDLER=1 \
+    PYTHONBREAKPOINT=0
 WORKDIR /app
 USER 10001:10001
 EXPOSE 8080 9464
@@ -376,6 +329,12 @@ x-hardening: &hardening
   cap_drop: [ALL]
   security_opt: ["no-new-privileges:true"]
   tmpfs: ["/tmp"]
+  init: true                  # tini as PID 1: correct SIGTERM forwarding
+  stop_grace_period: 30s      # dispatcher finishes in-flight sends
+  pids_limit: 256
+  mem_limit: 512m
+  cpus: 1.0
+  restart: unless-stopped
 
 services:
   db:
@@ -400,6 +359,7 @@ services:
     image: techcom-followup:local
     build: { context: ., target: runtime }
     <<: *hardening
+    restart: "no"             # one-shot job: never restart after success
     entrypoint: ["alembic", "upgrade", "head"]
     environment:
       FOLLOWUP_DATABASE_URL_FILE: /run/secrets/migrator_dsn
@@ -674,39 +634,11 @@ FOLLOWUP_AS_OF=2026-10-21
 FOLLOWUP_MOCK_FAULTS=
 ```
 
-## 12. `.pre-commit-config.yaml`
+## 12. `.pre-commit-config.yaml` and 13. `Makefile`
 
-Hooks (all pinned by `rev`): `ruff` (lint, `--fix`), `ruff-format`,
-`mypy` (local hook through `uv run`), `gitleaks`, `check-added-large-files`,
-`check-merge-conflict`, `end-of-file-fixer`, `trailing-whitespace`,
-`check-yaml`, `check-toml`, `detect-private-key`, `no-commit-to-branch`
-(`main`), and a local hook that rejects `pragma: no cover`.
+Superseded by `17` §6 and §9 (full content).
 
-## 13. `Makefile` targets
+## 14. CI
 
-| Target | Command |
-|--------|---------|
-| `bootstrap` | `uv sync --locked`, `uv run pre-commit install`, `cp -n .env.example .env`, `make secrets` |
-| `secrets` | `uv run python scripts/make_secrets.py` (idempotent, outside the shipped package) |
-| `lint` | `uv run ruff check . && uv run ruff format --check . && uv run lint-imports` |
-| `type` | `uv run mypy` |
-| `test` / `test-fast` | `uv run pytest -n auto` / `… -m "not integration"` |
-| `security` | `uv run pip-audit` + `gitleaks detect` + `trivy image` + SBOM |
-| `up` / `up-obs` / `down` | compose core / core + observability / stop |
-| `demo` / `demo-fault` | scripted run, rerun, fault profile |
-| `samples` | regenerate `samples/` |
-| `mutation` | `uv run mutmut run` |
-
-## 14. CI (`.github/workflows/ci.yml`)
-
-| Job | Steps | Gate |
-|-----|-------|------|
-| `lint` | setup-uv (cache), `make lint` | must pass |
-| `type` | `make type` | must pass |
-| `test` | matrix py 3.13/3.14, Docker available, `make test`, upload coverage XML + JUnit | 100 % coverage |
-| `security` | gitleaks, pip-audit, CycloneDX SBOM artefact, Trivy fs + image, actions pinned by SHA, `permissions: contents: read` | no HIGH/CRITICAL with fix |
-| `image` | `docker build` with provenance/SBOM attestation | builds |
-| `smoke` | `make up demo`, diff `samples/decisions.json` vs golden | identical |
-
-All third-party actions are pinned to a commit SHA; the workflow token has
-read-only permissions by default.
+Superseded by `17` §10 (full workflow, SHA-pinned actions, digest-pinned
+scanners).

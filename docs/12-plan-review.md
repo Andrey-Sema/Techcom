@@ -52,6 +52,14 @@ resolutions:
 | 23 | Prometheus would not reach the mock on the internal network. | Low | Mock not scraped; only the app's internal metrics port. |
 | 24 | Internal TLS and dynamic credentials are not practical in a local demo. | Accepted | Documented ASVS deviations with production fix (`15` §4 V12/V13). |
 
+## 2b. Third review pass (2026-10-22): strict 30-point audit
+
+See `16-senior-audit.md`: 6 points were proven by mechanism, 14 partial,
+10 missing (notably LLM quality evidence, complexity/dead-code gates,
+graceful shutdown, single-run lock, API fuzzing, benchmark evidence,
+repository hygiene files, scope tiers). All 30 now have a mechanism in
+the plan; tooling consolidated in `17`, operations in `18`.
+
 ## 3. Residual risks (accepted)
 
 * Reviewers without Docker cannot run integration tests — mitigated by

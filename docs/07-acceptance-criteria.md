@@ -4,6 +4,12 @@ Each criterion is **binary and verifiable**; the "Verified by" column names
 the artefact a reviewer can check. The submission is accepted only when every
 **MUST** passes. **SHOULD** items distinguish Senior+ from Senior.
 
+
+**Acceptance per tier** (`08` §0): *Tier A* is accepted when every MUST
+passes except the evidence-heavy items AC-S1–S7, AC-O3–O4, AC-T3–T5,
+AC-E1 (minimal eval only: ≥ 20 notes, unsafe outcomes = 0), AC-P1,
+AC-API1, AC-OPS2. *Tier B* requires all MUST and SHOULD items.
+
 ## 1. Functional
 
 | ID | Level | Criterion | Verified by |
@@ -69,6 +75,21 @@ the artefact a reviewer can check. The submission is accepted only when every
 | AC-O2 | MUST | No secret, token or raw note text appears in any captured log line (property test); log injection payload produces one escaped line. | tests |
 | AC-O3 | MUST | `make up-obs` brings up Prometheus, Grafana (provisioned datasources + dashboard), Loki and Alloy; the dashboard shows the demo run. | smoke check |
 | AC-O4 | SHOULD | Alert rules in `deploy/prometheus/rules/` validated with `promtool check rules` in CI. | CI |
+
+## 4b. Tooling, evidence and operability (added after `16`)
+
+| ID | Level | Criterion | Verified by |
+|----|-------|-----------|-------------|
+| AC-T1 | MUST | `pre-commit run --all-files` passes: Ruff (`ALL`, 79 cols), **Bandit**, mypy, import-linter, codespell, yamllint, hadolint, zizmor, validate-pyproject, uv-lock, pygrep guards. | CI `quality` |
+| AC-T2 | MUST | **Bandit** reports zero findings (severity ≥ low, confidence ≥ medium); every `# nosec` names a test id and has a justification. | CI |
+| AC-T3 | MUST | Complexity (Ruff C90 ≤ 8, xenon B/A/A), dead code (vulture), dependency hygiene (deptry) gates green. | CI |
+| AC-T4 | MUST | Semgrep registry packs + custom invariant rules green; each custom rule has passing `semgrep --test` cases. | CI |
+| AC-T5 | MUST | Repo hygiene files from `17` §3–§8 exist and are linted. | review |
+| AC-E1 | MUST | Eval harness report for the default prompt version: macro-F1 ≥ 0.85, unsafe outcomes = 0. | `docs/eval/` |
+| AC-P1 | SHOULD | 10k-task benchmark within budgets; results in `docs/benchmarks.md`. | `make bench` |
+| AC-API1 | SHOULD | Schemathesis run with all checks has zero failures. | CI `smoke` |
+| AC-OPS1 | MUST | Kill switch, dry-run, single-run lock, graceful shutdown each covered by a test. | tests |
+| AC-OPS2 | SHOULD | Every alert rule has a runbook entry (`18`) linked via `runbook_url`. | review |
 
 ## 5. Code quality, tests, documentation
 

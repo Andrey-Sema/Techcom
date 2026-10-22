@@ -52,6 +52,21 @@ visibility and access control** are.
 Dashboards: one Grafana board with the above; logs searchable by `run_id`,
 `task_id`, `operation_id`.
 
+## 3a. Rollout strategy (added after `16` #22)
+
+1. **Shadow mode (1–2 weeks):** the service decides and logs, dispatch is
+   disabled (kill switch). Ops compare its decisions with what humans
+   actually did; disagreements feed the eval set and rule tuning.
+2. **Canary:** enable dispatch for one project (routing flag), watch dead
+   letters, fallback rate, per-recipient cap hits and recipient feedback.
+3. **General availability** per project; kill switch stays as the first
+   incident lever (`18`).
+4. **Rollback:** disable dispatch → outbox keeps state → no data loss; a
+   policy rollback is a config revert plus golden update.
+
+Time zones and quiet hours (US multi-state crews) are handled at delivery
+time (`04` §2a), not in the decision policy.
+
 ## 4. Limiting access (least privilege)
 
 * **LLM**: no tools, no write access, minimal data (note + title only), PII

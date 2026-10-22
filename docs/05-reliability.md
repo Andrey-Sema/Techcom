@@ -71,6 +71,7 @@ FOLLOWUP_MOCK_FAULTS="tasks:429@1,tasks:503@2,messages:timeout_after_commit@1"
 | `timeout_after_commit` | Commit message + log line, then sleep past client timeout. |
 | `malformed` | 200 with a non-JSON body. |
 | `reset` | Close connection without response. |
+| `non_idempotent` | Receiver **ignores** `Idempotency-Key` (models a provider without idempotency support) — used to prove that reconcile-before-resend alone prevents duplicates (`16` #4). |
 
 Receiver semantics (mirrors Stripe and the IETF `Idempotency-Key` draft):
 first request with a key stores status + body; repeats with the same key and
@@ -78,6 +79,18 @@ same payload hash return the stored response with header
 `Idempotent-Replayed: true`; same key + different payload → **422**; same
 key while the first request is still in progress → **409**; keys retained
 ≥ 24 h.
+
+## 4a. Concurrency and lifecycle controls (added after `16`)
+
+| Control | Mechanism | Test |
+|---------|-----------|------|
+| Single active run | `SELECT pg_try_advisory_lock(hashtext('followup.run'))` at run start; if false → `run.skipped_locked`, exit 0 | two concurrent runs → one processes, one skips |
+| Reconcile-before-resend | An `unknown` action can only leave that state through `lookup()`; the dispatcher's claim query excludes `unknown` | S6 in `non_idempotent` mode → exactly one message |
+| Kill switch | `FOLLOWUP_DISPATCH_ENABLED` read per claim cycle (hot-reload via config file watch or restart) | switch off mid-run → no new attempts |
+| Graceful shutdown | SIGTERM → stop claiming → wait ≤ 25 s for in-flight sends → release leases of unfinished rows (`pending`, attempts unchanged) → exit 0; `init: true`, `stop_grace_period: 30s` | send SIGTERM during a slow fake send |
+| Request correlation | inbound `X-Request-ID` (validated UUID, else generated) bound to logs and forwarded on outbound calls | log capture test |
+| Retention | `followup maintenance prune` deletes LLM cache > 30 d and terminal actions/audit beyond policy, in batches with `LIMIT` | integration test |
+| Dry run | `followup run --dry-run` computes and reports decisions inside a rolled-back transaction | asserts zero rows persisted |
 
 ## 5. Failure-mode & effects analysis (FMEA)
 

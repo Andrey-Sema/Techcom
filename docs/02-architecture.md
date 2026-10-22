@@ -122,9 +122,9 @@ flowchart TB
 │   │   │                 orm.py, clock.py}
 │   │   └── infrastructure/
 │   │       ├── settings.py     # pydantic-settings
-│   │       ├── http.py         # httpx client factory, retry policy
+│   │       ├── http_client.py  # httpx factory, allow-list, retry policy
 │   │       ├── resilience.py   # circuit breaker, retry budget
-│   │       ├── logging.py      # structlog JSON + OTLP, redaction
+│   │       ├── log_config.py   # structlog JSON + OTLP, redaction
 │   │       ├── security.py     # JWT validation, scopes, headers, limits
 │   │       ├── metrics.py      # prometheus-client
 │   │       └── container.py    # composition root (manual DI)

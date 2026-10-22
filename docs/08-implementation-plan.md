@@ -6,33 +6,45 @@ The brief suggests **4 hours** and says *"keep the solution limited to the
 timebox; document any unfinished work."* The reviewers grade outcomes and
 reasoning, not volume. Therefore:
 
-* The **core** (Milestones M0–M5) is designed so that the reliability story
-  is complete even if nothing else ships.
-* Polish (M6–M8) raises the grade from "working" to "demonstrated, correct
-  and tested" (the rubric's 100 % band) but must not bloat the code: target
-  **≤ 2,500 lines of `src/`**, every module explainable in two minutes.
-* The README states honestly how long it took and what was intentionally
-  left out (see §4).
+Two declared tiers (decision from the senior audit, `16` #30):
+
+* **Tier A — Submission core (≈ 19 h):** everything the rubric scores,
+  with the full reliability story, Ruff + Bandit + mypy + 100 % coverage,
+  minimal eval harness, kill switch/dry-run. The live demo depends only on
+  Tier A.
+* **Tier B — Production hardening (≈ 14 h):** full gate set (Semgrep custom
+  rules, vulture, xenon, deptry, zizmor, …), REST API with service JWTs,
+  ASVS evidence, observability stack, benchmark, Schemathesis/ZAP, full
+  eval set, mutation testing, runbook.
+* Code budget: **≤ 2,500 lines in `src/`**, every module explainable in two
+  minutes; complexity gates enforce it.
+* The README states the real time spent per tier and what was cut (§4).
 
 ## 1. Work breakdown (MoSCoW, estimates)
 
 | M | Milestone | Deliverables | Must/Should/Could | Est. |
 |---|-----------|--------------|-------------------|------|
-| M0 | Bootstrap | `uv init`, `pyproject.toml` (ruff 79, mypy strict, pytest, coverage 100 %), pre-commit, Makefile, CI skeleton, `compose.yaml` with `postgres:18`, `.env.example`, import-linter contract | Must | 1 h |
+| M0 | Bootstrap (A) | `uv init` (workspace with `mocks/`), `pyproject.toml` (Ruff `ALL` 79 cols, **Bandit**, mypy strict, pytest, coverage 100 %), `.gitignore`, `.gitattributes`, `.editorconfig`, `.dockerignore`, core pre-commit hooks, Makefile core targets, CI `quality` + `test` jobs, `compose.yaml` with `postgres:18`, `.env.example`, import-linter contract — all per `17` | Must | 1.5 h |
+| M0b | Full gate set (B) | Semgrep + custom rules with tests, vulture, xenon, deptry, codespell, yamllint, hadolint, zizmor, commitizen, validate-pyproject, MkDocs strict, Dependabot, CODEOWNERS, SECURITY/CONTRIBUTING/CHANGELOG, PR template | Should | 1.5 h |
 | M1 | Domain core | `models.py`, `normalize.py`, `identity.py`, `injection.py`, `policy.py` (R1–R9), `messages.py` (templates + validator); unit + property tests; golden snapshot for fixture decisions | Must | 3 h |
 | M2 | Mock API | `techcom_mocks`: `GET /v1/tasks`, `POST /v1/messages` (idempotent receiver, payload hash), `GET /v1/messages/{op}`, fault plan, JSONL delivery log; `FaultInjectingTransport` for tests | Must | 1.5 h |
 | M3 | Persistence | SQLAlchemy Core tables, Alembic migration (PG18 `uuidv7()`), `PgRepository` + `InMemoryRepository`, repository contract tests, testcontainers fixtures | Must | 2.5 h |
-| M4 | Use cases | `ProcessTasks`, `DispatchActions`, `ReconcileUnknown`, HTTP adapters with stamina retries, retry budget, circuit breaker; scenario tests S1–S6 | Must | 3 h |
+| M4 | Use cases (A) | `ProcessTasks`, `DispatchActions`, `ReconcileUnknown`, HTTP adapters with stamina retries, retry budget, circuit breaker, advisory-lock single run, reconcile-before-resend, kill switch, dry-run, graceful shutdown; scenario tests S1–S6 incl. `non_idempotent` receiver | Must | 3.5 h |
 | M5 | LLM | `LLMClient` port, stub (scripted responses incl. malformed), Gemini adapter (`google-genai`, structured output), interpreter (cache, grounding, breaker, fallback), drafter (placeholders + validator); S7, S8 tests | Must | 2.5 h |
-| M6 | Interfaces & ops | Typer CLI (`run/dispatch/reconcile/report/demo/token`), FastAPI (`/v1/runs`, `/v1/actions`, health), metrics on internal port, structlog + redaction + OTLP, run report, samples export | Must | 2.5 h |
+| M6a | CLI & reporting (A) | Typer + Rich CLI (`run/dispatch/reconcile/report/demo`), structlog + redaction, run report, samples export | Must | 1.5 h |
+| M6b | REST API (B) | FastAPI (`/v1/runs`, `/v1/actions`, health), service JWT + scopes, security headers, metrics on internal port, OTLP log export | Should | 2 h |
+| M11a | Eval harness, minimal (A) | 20 labelled notes + injection variants, recorded responses, metrics script | Must | 1 h |
+| M11b | Eval harness, full (B) | ≥ 60 notes + ≥ 30 injection variants, report per prompt version | Should | 1 h |
+| M12 | Ops levers (B) | retention prune, request-id propagation, runbook `18`, backup/restore targets | Should | 1.5 h |
 | M7 | Docs | README (setup, run, assumptions, trade-offs, incomplete, production), ADRs final, `samples/` regenerated, live-review playbook rehearsal | Must | 1.5 h |
-| M8 | Hardening | Dockerfile targets (runtime/mock), CI smoke (`make demo` diff vs samples), Python matrix, mutation testing job | Should | 1.5 h |
-| M9 | Security baseline (ASVS L2) | JWT validation + scopes (V8/V9), security headers, rate/size limits, per-recipient cap, outbound allow-list, DB roles + `REVOKE`, secrets via `/run/secrets`, `asvs` pytest marker + traceability report, security CI gates, cheat-sheet checklists, `SECURITY.md` | Must | 4 h |
-| M10 | Observability stack | `compose.observability.yaml`, Prometheus config + alert rules (`promtool` in CI), Grafana provisioning + dashboard JSON, Loki, Alloy OTLP pipeline | Should | 2 h |
-| — | **Total** | | | **≈ 25 h** (core M0–M5 + M9 ≈ 17.5 h) |
+| M8 | Hardening (B) | Dockerfile targets (runtime/mock), image tests, Trivy by digest, CI smoke (`make demo` diff vs samples), Schemathesis + ZAP, 10k benchmark, mutation testing job | Should | 2.5 h |
+| M9 | Security evidence (B) | JWT validation + scopes (V8/V9), security headers, rate/size limits, per-recipient cap, outbound allow-list, DB roles + `REVOKE`, secrets via `/run/secrets`, `asvs` pytest marker + traceability report, security CI gates, cheat-sheet checklists | Should | 3 h |
+| M10 | Observability stack (B) | `compose.observability.yaml`, Prometheus config + alert rules (`promtool` in CI), Grafana provisioning + dashboard JSON, Loki, Alloy OTLP pipeline | Should | 2 h |
+| — | **Total** | | | **≈ 33 h** — Tier A (M0, M1–M5, M6a, M7, M11a) ≈ 19 h; Tier B ≈ 14 h |
 
-Critical path: M0 → M1 → (M2 ∥ M3) → M4 → M5 → M6 → M9 → M7. M8 and
-M10 can run in parallel with M7. Security is not bolted on at the end: the
+Critical path (Tier A): M0 → M1 → (M2 ∥ M3) → M4 → M5 → M11a → M6a →
+M7. Tier B items are independent of each other and can be cut at any
+point without breaking the demo. Security is not bolted on at the end: the
 M9 controls that shape code (placeholder renderer, outbound allow-list, DB
 roles, strict models) are built inside M1–M4; M9 adds the remaining
 controls, gates and evidence.

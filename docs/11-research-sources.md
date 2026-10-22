@@ -65,6 +65,21 @@ Primary sources first; secondary sources only where they corroborate.
   <https://grafana.com/docs/alloy/latest/>
 * uv — Docker integration guide: <https://docs.astral.sh/uv/guides/integration/docker/>
 
+## Supply-chain incident and tooling (added 2026-10-22, third pass)
+
+* Trivy compromise (v0.69.4, images 0.69.5–0.69.6) and LiteLLM follow-on:
+  <https://www.theregister.com/2026/03/24/trivy_compromise_litellm/>,
+  <https://semgrep.dev/blog/2026/the-teampcp-credential-infostealer-chain-attack-reaches-pythons-litellm/>
+* uv + Dependabot (support and known gaps): <https://docs.astral.sh/uv/guides/integration/dependency-bots/>
+* Gemini structured outputs — JSON Schema support incl. `additionalProperties`
+  (`response_json_schema`): <https://blog.google/technology/developers/gemini-api-structured-outputs/>
+* GitHub code scanning on private repositories requires GitHub Advanced
+  Security (hence SARIF kept as artefacts):
+  <https://docs.github.com/en/enterprise-server@3.16/code-security/how-tos/find-and-fix-code-vulnerabilities/integrate-with-existing-tools/upload-sarif-file>
+* Candidate-supplied *Python Libraries Field Manual* (2026 edition) —
+  consulted for tool selection (Ruff, Bandit, Semgrep, vulture, radon/xenon,
+  pre-commit, SLSA/CIS/CWE guidance, universal project template).
+
 ## Python tooling
 
 * Python 3.15.0 release (2026-10-09) — reason to keep it as a CI canary, not

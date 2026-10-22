@@ -55,6 +55,24 @@ Notes on the table:
 * All thresholds live in `config/policy.toml`; a live-review change such as
   "escalate after 3 days" is a one-line config edit plus a golden update.
 
+## 2a. Delivery-time rules (added after the senior audit, `16` #26)
+
+These run **after** the decision, when the action is enqueued or claimed;
+they never change *what* we decide, only *whether/when/to whom* it can be
+delivered.
+
+| Rule | Condition | Effect |
+|------|-----------|--------|
+| D-1 `owner_contact_unknown` | target is a person whose name is not in the contact directory | decision kept for audit; the outbound action is re-targeted to the project coordinator as `clarify_missing_info` (`missing: owner_contact`) — never dropped, never guessed |
+| D-2 per-recipient cap | recipient already got `recipient_daily_cap` messages today | `next_attempt_at` = next day; `security.rate_limited` event |
+| D-3 quiet hours (Should) | local time of the project (`routing.toml` timezone) outside `08:00–19:00` | `next_attempt_at` = start of next window; escalations to managers exempt by config |
+| D-4 kill switch | `FOLLOWUP_DISPATCH_ENABLED=false` | nothing is claimed; actions accumulate as `pending` |
+
+Time-zone note: the brief fixes the evaluation date in UTC, so the policy
+works on UTC calendar dates. Production design: each project carries an
+IANA time zone in `routing.toml`; `Δ` is computed on the project's local
+date; tests pin both behaviours.
+
 ## 3. When is the LLM called?
 
 ```text
@@ -138,6 +156,10 @@ never to a state change.
 * **Data isolation**: the note goes into a dedicated user turn wrapped in
   `<task_note id="…">…</task_note>`; any `<`/`>` in the note are escaped so
   the note cannot close the tag.
+* **Evaluation**: every prompt version is scored by the eval harness
+  (`06` §2b) before it can become the default; the report (per-class
+  precision/recall, macro-F1, unsafe-outcome count) is committed next to
+  the prompt.
 * **Few-shot**: 4 short synthetic examples (materials, upstream, none,
   injection → `unclear`/`none` with confidence ≤ 0.3).
 * **Determinism**: temperature 0, fixed seed when the provider supports it,

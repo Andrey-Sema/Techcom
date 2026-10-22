@@ -22,7 +22,7 @@ throttle, fail or time out after a successful write.
    no Redis/Celery needed.
 5. **100 % branch coverage**, strict PEP 8 (79 cols), `mypy --strict`,
    property and mutation tests.
-6. **OWASP ASVS 5.0 Level 2** baseline with per-requirement traceability,
+6. **OWASP ASVS 5.0 Level 2 design target** with per-requirement traceability,
    OWASP Cheat Sheets and LLM Top 10; observability via Prometheus,
    Grafana, Loki and Alloy provisioned as code.
 
@@ -60,12 +60,16 @@ throttle, fail or time out after a successful write.
 | [12 Plan self-review](docs/12-plan-review.md) | Red-team findings and fixes |
 | [13 Repository blueprint](docs/13-repository-blueprint.md) | `.gitignore`, `.dockerignore`, `pyproject.toml`, Dockerfile, compose, Prometheus, Grafana, Loki, Alloy, CI |
 | [14 Logging & observability](docs/14-logging-and-observability.md) | Log inventory, schema, event catalogue, classification, metrics, SLOs |
-| [15 Security baseline](docs/15-security-asvs-l2.md) | OWASP ASVS 5.0 L2 checklist, cheat sheets, threat model, security CI |
-| [ADRs](docs/adr/) | Architecture decision records 0001–0010 |
+| [15 Security baseline](docs/15-security-asvs-l2.md) | OWASP ASVS 5.0 L2 design target, cheat sheets, API Top 10, supply chain, threat model |
+| [16 Senior audit](docs/16-senior-audit.md) | Strict 30-point audit: proving mechanisms, gaps, fixes, expected score |
+| [17 Tooling & repo hygiene](docs/17-tooling-and-repo-hygiene.md) | Ruff `ALL`, **Bandit**, Semgrep rules, mypy, vulture, xenon, deptry, full `.gitignore`/`.gitattributes`/`.editorconfig`, pre-commit, Makefile, CI |
+| [18 Runbook](docs/18-runbook.md) | Alert playbooks, global levers, diagnostics, backup/restore |
+| [ADRs](docs/adr/) | Architecture decision records 0001–0012 |
 
 ## Planned stack
 
-Python ≥ 3.13 (CI 3.13/3.14) · uv · ruff · mypy · Pydantic v2 · FastAPI ·
+Python ≥ 3.13 (CI 3.13/3.14) · uv · Ruff (`ALL`) · **Bandit** · Semgrep ·
+mypy · import-linter · xenon · vulture · deptry · Pydantic v2 · FastAPI ·
 Typer · httpx + stamina · SQLAlchemy 2.0 + psycopg 3 + Alembic ·
 PostgreSQL 18 · google-genai (Gemini) + deterministic stub · structlog ·
 prometheus-client · OpenTelemetry (OTLP logs) · PyJWT (EdDSA) ·
@@ -79,7 +83,9 @@ zizmor, ZAP.
 make demo        # compose up, migrate, run, dispatch, rerun, report
 make test        # full suite, fails below 100 % branch coverage
 make test-fast   # unit + property tests, no Docker
-make lint type   # ruff (79 cols) + import-linter, mypy --strict
+make quality     # ruff, mypy, bandit, import-linter, xenon, vulture, deptry
+make eval        # LLM eval harness on recorded responses
+make bench       # 10k-task benchmark
 make security    # gitleaks, pip-audit, SBOM, Trivy
 make up-obs      # + Prometheus, Grafana, Loki, Alloy
 ```
