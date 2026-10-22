@@ -1,0 +1,124 @@
+# 08 — Implementation Plan
+
+## 0. Scope vs. timebox (read first)
+
+The brief suggests **4 hours** and says *"keep the solution limited to the
+timebox; document any unfinished work."* The reviewers grade outcomes and
+reasoning, not volume. Therefore:
+
+* The **core** (Milestones M0–M5) is designed so that the reliability story
+  is complete even if nothing else ships.
+* Polish (M6–M8) raises the grade from "working" to "demonstrated, correct
+  and tested" (the rubric's 100 % band) but must not bloat the code: target
+  **≤ 2,500 lines of `src/`**, every module explainable in two minutes.
+* The README states honestly how long it took and what was intentionally
+  left out (see §4).
+
+## 1. Work breakdown (MoSCoW, estimates)
+
+| M | Milestone | Deliverables | Must/Should/Could | Est. |
+|---|-----------|--------------|-------------------|------|
+| M0 | Bootstrap | `uv init`, `pyproject.toml` (ruff 79, mypy strict, pytest, coverage 100 %), pre-commit, Makefile, CI skeleton, `compose.yaml` with `postgres:18`, `.env.example`, import-linter contract | Must | 1 h |
+| M1 | Domain core | `models.py`, `normalize.py`, `identity.py`, `injection.py`, `policy.py` (R1–R9), `messages.py` (templates + validator); unit + property tests; golden snapshot for fixture decisions | Must | 3 h |
+| M2 | Mock API | `techcom_mocks`: `GET /v1/tasks`, `POST /v1/messages` (idempotent receiver, payload hash), `GET /v1/messages/{op}`, fault plan, JSONL delivery log; `FaultInjectingTransport` for tests | Must | 1.5 h |
+| M3 | Persistence | SQLAlchemy Core tables, Alembic migration (PG18 `uuidv7()`), `PgRepository` + `InMemoryRepository`, repository contract tests, testcontainers fixtures | Must | 2.5 h |
+| M4 | Use cases | `ProcessTasks`, `DispatchActions`, `ReconcileUnknown`, HTTP adapters with stamina retries, retry budget, circuit breaker; scenario tests S1–S6 | Must | 3 h |
+| M5 | LLM | `LLMClient` port, stub (scripted responses incl. malformed), Gemini adapter (`google-genai`, structured output), interpreter (cache, grounding, breaker, fallback), drafter (placeholders + validator); S7, S8 tests | Must | 2.5 h |
+| M6 | Interfaces & ops | Typer CLI (`run/dispatch/reconcile/report/demo/token`), FastAPI (`/v1/runs`, `/v1/actions`, health), metrics on internal port, structlog + redaction + OTLP, run report, samples export | Must | 2.5 h |
+| M7 | Docs | README (setup, run, assumptions, trade-offs, incomplete, production), ADRs final, `samples/` regenerated, live-review playbook rehearsal | Must | 1.5 h |
+| M8 | Hardening | Dockerfile targets (runtime/mock), CI smoke (`make demo` diff vs samples), Python matrix, mutation testing job | Should | 1.5 h |
+| M9 | Security baseline (ASVS L2) | JWT validation + scopes (V8/V9), security headers, rate/size limits, per-recipient cap, outbound allow-list, DB roles + `REVOKE`, secrets via `/run/secrets`, `asvs` pytest marker + traceability report, security CI gates, cheat-sheet checklists, `SECURITY.md` | Must | 4 h |
+| M10 | Observability stack | `compose.observability.yaml`, Prometheus config + alert rules (`promtool` in CI), Grafana provisioning + dashboard JSON, Loki, Alloy OTLP pipeline | Should | 2 h |
+| — | **Total** | | | **≈ 25 h** (core M0–M5 + M9 ≈ 17.5 h) |
+
+Critical path: M0 → M1 → (M2 ∥ M3) → M4 → M5 → M6 → M9 → M7. M8 and
+M10 can run in parallel with M7. Security is not bolted on at the end: the
+M9 controls that shape code (placeholder renderer, outbound allow-list, DB
+roles, strict models) are built inside M1–M4; M9 adds the remaining
+controls, gates and evidence.
+
+## 2. Step-by-step detail per milestone
+
+### M0 — Bootstrap
+
+1. `uv init --package techcom-followup --python 3.13`; add `src/` layout.
+2. Dev deps: `ruff mypy pytest pytest-asyncio pytest-cov pytest-xdist
+   pytest-randomly hypothesis respx syrupy testcontainers[postgres]
+   import-linter pre-commit mutmut pip-audit`.
+3. Runtime deps: `pydantic pydantic-settings fastapi uvicorn typer httpx
+   stamina sqlalchemy[asyncio] psycopg[binary,pool] alembic structlog
+   prometheus-client google-genai pyjwt[crypto] opentelemetry-sdk
+   opentelemetry-exporter-otlp-proto-http`.
+   Infrastructure files exactly as in `13-repository-blueprint.md`
+   (`.gitignore`, `.dockerignore`, Dockerfile, compose, deploy/).
+4. Ruff config: `line-length = 79`, `target-version = "py313"`, select
+   `E W F I N UP B S A C4 DTZ T20 RET SIM PTH ERA PL RUF ASYNC TRY D`
+   (Google docstrings); per-file ignores for tests (`S101`).
+5. CI workflow: jobs `lint`, `type`, `test` (matrix 3.13/3.14, Docker
+   available), `smoke`; cache uv.
+6. Commit: "chore: bootstrap project tooling".
+
+### M1 — Domain core (TDD order)
+
+1. `normalize` tests from `04` §1 table → implementation.
+2. `identity` tests: canonical JSON, fingerprint, key, uuid5 stability.
+3. `injection` tests: pattern corpus (positive + benign negatives such as
+   "ignore the old permit number").
+4. `policy` tests: one test per rule + boundaries (Δ = 0, −1, −5, −6;
+   due-soon edges) → implementation as an ordered tuple of `Rule` objects.
+5. Property tests 1–6, 8.
+6. Golden test for the fixture (`00` §6).
+
+### M2 — Mock API
+
+1. In-memory store + JSONL appender (fsync per line).
+2. Idempotency: `key → (payload_sha256, status, body)`; mismatch → 422.
+3. Fault plan parser `kind:fault@n` + per-endpoint counters.
+4. Tests through `ASGITransport`.
+
+### M3 — Persistence
+
+1. Alembic `0001_initial` (DDL from `02` §7), downgrade drops cleanly.
+2. Repository contract tests parametrized over in-memory and PG.
+3. Concurrency tests: two sessions inserting the same key; two dispatchers
+   claiming.
+
+### M4 — Use cases & resilience
+
+1. `RetryPolicy` (pure: given attempt + `Retry-After` → delay) unit tests.
+2. `CircuitBreaker` with injected clock.
+3. `HttpTaskSource` with stamina; `HttpDeliveryGateway` single-attempt
+   classifier.
+4. `ProcessTasks` → S1–S4; `DispatchActions` + `ReconcileUnknown` → S5–S6,
+   F10–F14.
+
+### M5 — LLM
+
+1. Port + stub (scripted per cache key; modes: valid, malformed, timeout).
+2. Interpreter: needs-LLM predicate, cache, validation pipeline, breaker,
+   fallback; S7 parametrized.
+3. Gemini adapter: constructor-injected client, `response_mime_type =
+   "application/json"`, `response_schema = NoteInterpretation`, temperature
+   0, timeout; usage → tokens/cost metrics. Tests with fake client.
+4. Drafter + validator; S8.
+
+### M6–M8 — see table; each ends with a green CI and a regenerated sample.
+
+## 3. Branching & commits
+
+* Trunk-based on `main` with short feature branches per milestone; PRs with
+  CI green; Conventional Commits (`feat:`, `fix:`, `test:`, `docs:`).
+* Tag `v1.0.0` for the submission; the ZIP is produced from the tag
+  (`git archive`) so it contains exactly what CI tested.
+
+## 4. Explicitly out of scope (documented as "production next steps")
+
+* Real monday.com adapter (GraphQL + webhooks) — seam exists.
+* Real e-mail/SMS providers — mock only by requirement.
+* Re-reminder cadence / escalation ladder over days (needs product input).
+* Real IdP integration (OIDC client credentials) — local token issuer with
+  identical claims for the exercise.
+* Internal TLS between containers and dynamic DB credentials — documented
+  ASVS deviations for local compose, required in production (`15`).
+* OpenTelemetry tracing export — logs + metrics are enough here.
+* Second LLM provider for failover — template fallback covers availability.
