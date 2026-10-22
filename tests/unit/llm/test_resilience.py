@@ -219,3 +219,18 @@ def test_foreign_permit_cannot_complete_breaker(clock: FakeClock) -> None:
     cb.record_failure(foreign)
     cb.record_failure()
     assert cb.state is BreakerState.OPEN
+
+
+def test_closed_success_does_not_hide_later_concurrent_failure(
+    clock: FakeClock,
+) -> None:
+    cb = CircuitBreaker(
+        failure_threshold=1, cooldown_s=30, monotonic=clock.monotonic
+    )
+    healthy = cb.admit()
+    failing = cb.admit()
+    assert healthy is not None
+    assert failing is not None
+    cb.record_success(healthy)
+    cb.record_failure(failing)
+    assert cb.state is BreakerState.OPEN
