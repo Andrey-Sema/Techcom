@@ -1,7 +1,8 @@
 .PHONY: bootstrap quality gates semgrep semgrep-test complexity deadcode \
         deps audit spelling yaml workflows pyproject-check docs \
         test test-fast test-integration mock db-up db-down \
-        obs-secrets up-obs down-obs obs-check obs-smoke
+        obs-secrets up-obs down-obs obs-check obs-smoke \
+        images dockerfile-lint image-scan image-test mutation
 
 GATES = uv run --locked --group gates
 # Semgrep conflicts with the project's dependency set, so it runs in an
@@ -22,7 +23,7 @@ quality:
 # Tier B gates (M0b): project invariants, complexity, dead code,
 # dependency hygiene and vulnerabilities, spelling, YAML, workflows.
 gates: semgrep-test semgrep complexity deadcode deps audit spelling yaml \
-       workflows pyproject-check docs
+       workflows pyproject-check docs dockerfile-lint
 
 semgrep:
 	$(SEMGREP) scan --error --metrics=off --quiet \
@@ -79,6 +80,14 @@ test-fast:
 test-integration:
 	uv run --locked pytest -m integration --no-cov
 
+# Mutation testing of the decision core (docs/06 s. 6); nightly in CI.
+# Scope and test selection live in [tool.mutmut] in pyproject.toml.
+mutation:
+	rm -rf mutants
+	uv run --locked --group mutation mutmut run --max-children 4
+	uv run --locked --group mutation mutmut export-cicd-stats
+	uv run --locked python scripts/mutation_gate.py
+
 mock:
 	mkdir -p var
 	FOLLOWUP_MOCK_JOURNAL=var/delivery_log.jsonl uv run --locked uvicorn techcom_mocks.app:create_app --factory --host 127.0.0.1 --port 8081 --workers 1
@@ -126,3 +135,45 @@ obs-check: obs-secrets
 
 obs-smoke: up-obs
 	uv run --locked python scripts/obs_smoke.py
+
+# Container images (M8). Scanners run from images pinned by digest; Trivy
+# releases 0.69.4-0.69.6 were compromised, so never use a floating tag.
+# Behind a TLS-intercepting proxy pass, for example,
+#   DOCKER_BUILD_FLAGS="--network host --build-arg HTTPS_PROXY
+#     --secret id=ca_bundle,src=/path/to/ca.crt"
+#   DOCKER_RUN_FLAGS="--network host -e HTTPS_PROXY -e SSL_CERT_FILE=/ca.crt
+#     -v /path/to/ca.crt:/ca.crt:ro"
+IMAGE ?= techcom-followup:dev
+MOCK_IMAGE ?= techcom-mock:dev
+DOCKER_BUILD_FLAGS ?=
+DOCKER_RUN_FLAGS ?=
+HADOLINT_IMAGE = hadolint/hadolint:v2.15.1@sha256:32dac94127fd60b7b7e3fbfc65e1383b9b5e25c9bfd7b8536de7a539fe68a12d
+TRIVY_IMAGE = aquasec/trivy:0.75.0@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa
+TRIVY = docker run --rm $(DOCKER_RUN_FLAGS) \
+	  -v $(CURDIR)/Dockerfile:/scan/Dockerfile:ro \
+	  -v $(CURDIR)/var/images:/scan/images:ro \
+	  -v $(CURDIR)/var/trivy-cache:/root/.cache/trivy $(TRIVY_IMAGE)
+TRIVY_IMAGE_SCAN = image --exit-code 1 --severity HIGH,CRITICAL \
+	  --ignore-unfixed --scanners vuln,secret
+
+images:
+	docker build $(DOCKER_BUILD_FLAGS) --target runtime -t $(IMAGE) .
+	docker build $(DOCKER_BUILD_FLAGS) --target mock -t $(MOCK_IMAGE) .
+
+dockerfile-lint:
+	docker run --rm -i \
+	  -v $(CURDIR)/.hadolint.yaml:/.config/hadolint.yaml:ro \
+	  $(HADOLINT_IMAGE) hadolint --config /.config/hadolint.yaml - < Dockerfile
+
+image-scan: images
+	mkdir -p var/images var/trivy-cache
+	docker save $(IMAGE) -o var/images/runtime.tar
+	docker save $(MOCK_IMAGE) -o var/images/mock.tar
+	$(TRIVY) config --exit-code 1 --severity MEDIUM,HIGH,CRITICAL \
+	  /scan/Dockerfile
+	$(TRIVY) $(TRIVY_IMAGE_SCAN) --input /scan/images/runtime.tar
+	$(TRIVY) $(TRIVY_IMAGE_SCAN) --input /scan/images/mock.tar
+
+image-test: images
+	FOLLOWUP_TEST_IMAGE=$(IMAGE) FOLLOWUP_TEST_MOCK_IMAGE=$(MOCK_IMAGE) \
+	  uv run --locked pytest -m image --no-cov -p no:randomly tests/image

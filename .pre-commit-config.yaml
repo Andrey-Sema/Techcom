@@ -41,6 +41,12 @@ repos:
         entry: make quality
         language: system
         pass_filenames: false
+      - id: hadolint
+        name: hadolint (image pinned by digest)
+        entry: make dockerfile-lint
+        language: system
+        files: ^Dockerfile$
+        pass_filenames: false
       - id: no-coverage-suppression
         name: no coverage suppression
         entry: 'pragma:\s*no\s*(cover|branch)'

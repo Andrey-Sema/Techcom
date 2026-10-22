@@ -72,6 +72,10 @@ the policy) — coverage is the floor, not the proof.
 * Schemathesis against the running API (`/openapi.json`) with all checks
   (status-code conformance, response schema, server errors) using a CI
   service token; plus negative-auth stateful checks.
+* As built (M8): the same harness runs in-process against the mock
+  receiver (`tests/contract/api/test_mock_openapi.py`). Its first run
+  found that the mock's OpenAPI described FastAPI's default 422 body and
+  omitted 400/404/409/413/503; the routes now document what they send.
 
 ## 3. Property-based invariants (hypothesis)
 
@@ -149,6 +153,24 @@ exclude_also = [
 `domain/messages.py` — target **≥ 90 % killed** mutants; run in a nightly /
 manual CI job (too slow for every push). Surviving mutants are either killed
 with a new test or documented as equivalent.
+
+As built (M8): `make mutation` (scope in `[tool.mutmut]`,
+gate in `scripts/mutation_gate.py`), nightly workflow `nightly.yaml`. The
+first run killed 583/613 (95.1 %); the survivors exposed missing boundary
+tests (R5 priority at one day, R6 dependency due today, R8 kind and
+reason, message length limits, fact caps), a dead branch in the blocker
+logic (removed) and one real gap: the draft validator replaced
+placeholders with a space, so `{project}.com` passed (fixed, see `04`
+§2b). Current score **602/608 (99.0 %)**. The six survivors are
+equivalent:
+
+| Mutant | Why it is equivalent |
+|--------|----------------------|
+| `encode("utf-8")` → `encode("UTF-8")` | Same codec. |
+| `ensure_ascii=False` → `ensure_ascii=None` | Both falsy. |
+| `body.replace("\n", "")` → `replace("\n", "XXXX")` | Only removes newlines before the control-character search; either replacement has no control characters. |
+| placeholder stand-in `"x"` → `"XXxXX"` / `"X"` (2) | Any word stand-in keeps the adjacency check; case is ignored by the patterns. |
+| recipient error message padded with `XX` | Tests match a substring of the message. |
 
 ## 7. Test data
 
