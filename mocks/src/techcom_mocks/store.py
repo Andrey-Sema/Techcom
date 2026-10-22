@@ -133,5 +133,7 @@ class DeliveryStore:
         """Find a receipt; uncertain writes never become 404."""
         async with self._lock:
             self._require_healthy()
+            if operation_id in self._pending:
+                raise InProgressError
             entry = self._entries.get(operation_id)
             return None if entry is None else entry.receipt

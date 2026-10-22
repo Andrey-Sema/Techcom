@@ -27,7 +27,7 @@ without changing its state does not re-notify.
 |------|-------------|------------------|
 | Fetch + normalize | none (read-only) | Run marked failed; rerun is safe. |
 | Per-task persist: decision + action(`pending`) | **one TX per task** (`INSERT … ON CONFLICT (idempotency_key) DO NOTHING RETURNING id`) | Either both rows exist or neither; rerun recreates the same key. |
-| Claim batch | short TX (`FOR UPDATE SKIP LOCKED`, set `in_flight`, `lease_until`) | Lease expires → back to `pending`. |
+| Claim batch | short TX (`FOR UPDATE SKIP LOCKED`, set `in_flight`, lease and fencing token) | Lease expiry or cancellation → `unknown`; lookup before resend. |
 | HTTP send | **outside** any DB TX | Never hold DB locks during network I/O. |
 | Apply outcome | short TX | Lost update → lease expiry → resend with same key → receiver replays. |
 

@@ -111,7 +111,12 @@ class Receiver:
         injected = await _apply_fault(self._faults.next_fault("lookup"))
         if injected is not None:
             return injected
-        receipt = await self._store.lookup(operation_id)
+        try:
+            receipt = await self._store.lookup(operation_id)
+        except InProgressError as exc:
+            raise HTTPException(
+                409, "operation in progress", headers={"Retry-After": "1"}
+            ) from exc
         if receipt is None:
             raise HTTPException(404, "operation not found")
         return JSONResponse(receipt.model_dump(mode="json"))

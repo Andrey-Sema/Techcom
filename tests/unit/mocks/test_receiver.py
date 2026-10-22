@@ -121,6 +121,24 @@ async def test_cancelled_reservation_can_be_retried() -> None:
     assert store.count == 1
 
 
+@pytest.mark.asvs
+async def test_pending_lookup_never_signals_safe_to_resend() -> None:
+    store = DeliveryStore()
+    operation_id = uuid4()
+    original = asyncio.create_task(
+        store.deliver(operation_id, payload(), idempotent=False)
+    )
+    await asyncio.sleep(0)
+    async with client_for(store) as client:
+        uncertain = await client.get(f"/v1/messages/{operation_id}")
+        assert uncertain.status_code == 409
+        assert uncertain.headers["Retry-After"] == "1"
+        await original
+        found = await client.get(f"/v1/messages/{operation_id}")
+        assert found.status_code == 200
+    assert store.count == 1
+
+
 async def test_non_idempotent_receiver_really_duplicates() -> None:
     store = DeliveryStore()
     operation_id = uuid4()

@@ -269,7 +269,10 @@ Why these constraints matter:
   same logical action produces the same header and the receiver dedupes.
 * Claiming work: `UPDATE actions SET status='in_flight', lease_until=now()+…
   WHERE id IN (SELECT id … FOR UPDATE SKIP LOCKED LIMIT n) RETURNING *` —
-  multiple dispatchers never double-send; expired leases are recovered.
+  multiple dispatchers own disjoint claims. A random fencing token and
+  expiry guard every outcome update. Expired sends become `unknown` and
+  require reconciliation before any resend; row leases alone cannot
+  prevent a provider side effect after a worker loses ownership.
 
 ## 8. Inbound interfaces
 

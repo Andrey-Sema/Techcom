@@ -137,6 +137,21 @@ class ActionUpdate:
             message = "errors must be closed codes of at most 200 characters"
             raise ValueError(message)
 
+    def validate_defer(self) -> None:
+        """Require closed operational codes for unsent deferrals."""
+        self.validate()
+        if self.status != ActionStatus.PENDING:
+            message = "unsent claims can only be deferred to pending"
+            raise ValueError(message)
+        if self.error not in {
+            None,
+            "circuit_open",
+            "retry_budget",
+            "dispatch_stopped",
+        }:
+            message = "unsent deferrals require a closed error code"
+            raise ValueError(message)
+
 
 @dataclass(frozen=True, slots=True)
 class RunRecord:
@@ -243,6 +258,14 @@ class Repository(Protocol):
 
     async def apply_outcome(self, update: ActionUpdate) -> bool:
         """Apply an unexpired claim; false means lost ownership."""
+        ...
+
+    async def defer_claim(self, update: ActionUpdate) -> bool:
+        """Return an unsent claim to pending without an attempt.
+
+        Call only before starting any delivery I/O. Unknown outcomes
+        cannot use this path and require lookup before becoming pending.
+        """
         ...
 
     async def release_claim(

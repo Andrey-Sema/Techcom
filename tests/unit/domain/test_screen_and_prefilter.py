@@ -218,3 +218,30 @@ class TestNeedsLlm:
             source=InterpretationSource.KEYWORD,
         )
         assert self.gate(hit=weak)
+
+
+@pytest.mark.parametrize(
+    "note",
+    [
+        "All materials arrived; there is no blocker.",
+        "Upstream work is confirmed complete; there is no obstacle.",
+        'The log quotes "permit pending" as an old issue, now resolved.',
+        "Materials are available, but the permit remains pending.",
+        "We received the parts. The upstream handover is still uncertain.",
+        "No materials delay is expected.",
+        "Historical status: permit pending.",
+        "Previously waiting for the crew; now ready.",
+    ],
+)
+def test_resolution_history_and_conflicting_signals_need_interpretation(
+    note: str,
+) -> None:
+    value = NOTE(note)
+    assert prefilter(value) is None
+    assert needs_llm(
+        make_task(notes=note, due_date=AS_OF),
+        CLEAN_SCREEN,
+        None,
+        as_of=AS_OF,
+        due_soon_days=1,
+    )
