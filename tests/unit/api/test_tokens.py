@@ -102,6 +102,8 @@ def test_wrong_signature_key() -> None:
         {"scope": "runs:delete"},
         {"projects": ["A", "A"]},
         {"projects": []},
+        {"projects": ["A\0"]},
+        {"projects": ["\ud800"]},
         {"projects": ["*", "A"]},
         {"projects": ["*"], "sub": "scoped-service"},
         {"owner": "injected"},

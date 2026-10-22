@@ -3,7 +3,6 @@
 import asyncio
 import hashlib
 from dataclasses import dataclass
-from itertools import islice
 from typing import Annotated, Literal, NoReturn
 from uuid import UUID
 
@@ -12,6 +11,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.routing import compile_path
 
 from techcom_followup.adapters.inbound.api.middleware import (
     ApiSettings,
@@ -40,6 +40,7 @@ from techcom_followup.adapters.inbound.api.security import (
     TokenVerifier,
 )
 from techcom_followup.application.repository import (
+    ActionReadQuery,
     ActionRecord,
     Repository,
     RunRecord,
@@ -132,6 +133,9 @@ class _Handlers:
 
     async def authenticate(self, request: Request) -> Principal:
         """Verify signatures and apply limits across rotated tokens."""
+        cached = getattr(request.state, "api_principal", None)
+        if isinstance(cached, Principal):
+            return cached
         headers = request.headers.getlist("authorization")
         if len(headers) != 1 or not headers[0].startswith("Bearer "):
             self._unauthenticated(request)
@@ -153,6 +157,17 @@ class _Handlers:
         )
         return principal
 
+    async def preflight(self, request: Request) -> None:
+        """Authenticate business routes before reading their body."""
+        path = _relative_path(request)
+        if path != "/v1" and not path.startswith("/v1/"):
+            return
+        if request.method not in {method for method, _ in ROUTE_SCOPES}:
+            raise HTTPException(405)
+        principal = await self.authenticate(request)
+        self.scope(request, principal, _required_scope(request.method, path))
+        request.state.api_principal = principal
+
     def _unauthenticated(self, request: Request) -> NoReturn:
         peer = request.client.host if request.client is not None else "unknown"
         key = hashlib.sha256(peer.encode()).hexdigest()
@@ -167,8 +182,10 @@ class _Handlers:
     def scope(
         self, request: Request, principal: Principal, required: str
     ) -> None:
-        """Deny capabilities absent from the verified token."""
-        if required not in principal.scopes:
+        """Check capability and project authority before global work."""
+        if required not in principal.scopes or (
+            required == "runs:trigger" and not principal.all_projects
+        ):
             self.event(
                 request, "security.authz_denied", 403, principal.actor_id
             )
@@ -179,11 +196,6 @@ class _Handlers:
     ) -> TriggerView:
         """Allow global processing only to all-project services."""
         self.scope(request, principal, "runs:trigger")
-        if not principal.all_projects:
-            self.event(
-                request, "security.authz_denied", 403, principal.actor_id
-            )
-            raise HTTPException(403)
         if self._trigger_lock.locked():
             raise HTTPException(409)
         async with self._trigger_lock:
@@ -241,23 +253,44 @@ class _Handlers:
     ) -> list[ActionView]:
         """Apply project authorization before filters and limits."""
         self.scope(request, principal, "actions:read")
-        actions = await self.resources.repository.list_actions()
-        visible = (
-            (action, target)
-            for action in actions
-            if (target := action.decision.target) is not None
-            and principal.can_access(target.project)
-            and (
-                query.task_id is None
-                or action.decision.task_id == query.task_id
+        actions = await self.resources.repository.query_actions(
+            ActionReadQuery(
+                projects=(
+                    frozenset()
+                    if principal.all_projects
+                    else principal.projects
+                ),
+                all_projects=principal.all_projects,
+                project=query.project,
+                task_id=query.task_id,
+                status=query.status,
+                limit=query.limit,
             )
-            and (query.status is None or action.status == query.status)
-            and (query.project is None or target.project == query.project)
         )
         return [
             _action_view(action, target)
-            for action, target in islice(visible, query.limit)
+            for action in actions
+            if (target := action.decision.target) is not None
+            and principal.can_access(target.project)
         ]
+
+
+def _relative_path(request: Request) -> str:
+    path = str(request.scope["path"])
+    root = str(request.scope.get("root_path", ""))
+    if root and path.startswith(root):
+        suffix = path[len(root) :]
+        if not suffix or suffix.startswith("/"):
+            return suffix
+    return path
+
+
+def _required_scope(method: str, path: str) -> str:
+    for (candidate_method, template), required in ROUTE_SCOPES.items():
+        pattern, _format, _converters = compile_path(template)
+        if method == candidate_method and pattern.fullmatch(path):
+            return required
+    return ""
 
 
 def _routes(handlers: _Handlers) -> APIRouter:
@@ -346,7 +379,10 @@ def create_app(
         openapi_url=None,
     )
     app.add_middleware(
-        SecurityMiddleware, settings=configured, observer=resources.observer
+        SecurityMiddleware,
+        settings=configured,
+        observer=resources.observer,
+        guard=handlers.preflight,
     )
     app.include_router(_routes(handlers))
     _errors(app, handlers)

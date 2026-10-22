@@ -9,9 +9,18 @@ from typing import Annotated
 import jwt
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+)
 
-from techcom_followup.application.repository import require_aware
+from techcom_followup.application.repository import (
+    require_aware,
+    require_storage_text,
+)
 
 MAX_TOKEN_BYTES = 8192
 MAX_TOKEN_LIFETIME_S = 900
@@ -48,9 +57,13 @@ class _Claims(BaseModel):
     iat: int
     nbf: int
     scope: str = Field(max_length=200)
-    projects: list[Annotated[str, Field(min_length=1, max_length=200)]] = (
-        Field(min_length=1, max_length=128)
-    )
+    projects: list[
+        Annotated[
+            str,
+            Field(min_length=1, max_length=200),
+            AfterValidator(require_storage_text),
+        ]
+    ] = Field(min_length=1, max_length=128)
 
 
 @dataclass(frozen=True, slots=True)

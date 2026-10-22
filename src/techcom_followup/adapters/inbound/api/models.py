@@ -7,7 +7,10 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic_core import PydanticCustomError
 
-from techcom_followup.application.repository import ActionStatus
+from techcom_followup.application.repository import (
+    ActionStatus,
+    require_storage_text,
+)
 from techcom_followup.domain.models import DecisionKind, TargetKind
 
 
@@ -81,6 +84,12 @@ class ActionQuery(ApiModel):
     status: ActionStatus | None = None
     project: str | None = Field(default=None, max_length=200)
     limit: int = Field(default=100, ge=1, le=100)
+
+    @field_validator("project")
+    @classmethod
+    def portable_project(cls, value: str | None) -> str | None:
+        """Reject text that cannot be bound to database queries."""
+        return None if value is None else require_storage_text(value)
 
 
 class TargetView(ApiModel):

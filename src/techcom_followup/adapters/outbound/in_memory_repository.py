@@ -5,11 +5,13 @@ from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import replace
 from datetime import date, datetime
+from heapq import nsmallest
 from uuid import UUID, uuid4
 
 from pydantic import JsonValue
 
 from techcom_followup.application.repository import (
+    ActionReadQuery,
     ActionRecord,
     ActionStatus,
     ActionUpdate,
@@ -127,6 +129,18 @@ class InMemoryRepository:
     async def list_actions(self) -> tuple[ActionRecord, ...]:
         """Return immutable outbox snapshots in insertion order."""
         return tuple(self._actions.values())
+
+    async def query_actions(
+        self, query: ActionReadQuery
+    ) -> tuple[ActionRecord, ...]:
+        """Filter authority using at most ``limit`` working rows."""
+        query.validate()
+        visible = (
+            action
+            for action in self._actions.values()
+            if _visible(action, query)
+        )
+        return tuple(nsmallest(query.limit, visible, key=lambda row: row.id))
 
     def _recover(self, now: datetime) -> None:
         for action in tuple(self._actions.values()):
@@ -288,3 +302,14 @@ class InMemoryRepository:
     async def list_audit(self) -> tuple[AuditEvent, ...]:
         """Detach nested payloads from append-only storage."""
         return deepcopy(tuple(self._audit))
+
+
+def _visible(action: ActionRecord, query: ActionReadQuery) -> bool:
+    target = action.decision.target
+    return (
+        target is not None
+        and (query.all_projects or target.project in query.projects)
+        and (query.project is None or target.project == query.project)
+        and (query.task_id is None or action.decision.task_id == query.task_id)
+        and (query.status is None or action.status == query.status)
+    )

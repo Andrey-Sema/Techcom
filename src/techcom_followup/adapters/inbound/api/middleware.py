@@ -1,6 +1,7 @@
 """HTTP limits, request correlation and security headers."""
 
-from collections.abc import Mapping
+import asyncio
+from collections.abc import Awaitable, Callable, Mapping
 from contextlib import suppress
 from dataclasses import dataclass
 from http import HTTPStatus
@@ -8,6 +9,8 @@ from math import isfinite
 from urllib.parse import parse_qsl
 from uuid import UUID, uuid4
 
+from starlette.exceptions import HTTPException
+from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from structlog.contextvars import bind_contextvars, reset_contextvars
@@ -18,6 +21,7 @@ from techcom_followup.adapters.inbound.api.ports import SecurityEvent
 MAX_REQUEST_BYTES = 65_536
 MAX_QUERY_BYTES = 4096
 MAX_QUERY_FIELDS = 16
+MAX_BODY_TIMEOUT_S = 30
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,6 +32,7 @@ class ApiSettings:
     rate_capacity: int = 60
     rate_refill_s: float = 60
     max_rate_subjects: int = 1024
+    body_timeout_s: float = 5
 
     def __post_init__(self) -> None:
         """Keep local rate guards bounded and nonzero."""
@@ -36,8 +41,10 @@ class ApiSettings:
             or self.rate_refill_s <= 0
             or not isfinite(self.rate_refill_s)
             or self.max_rate_subjects < 1
+            or not isfinite(self.body_timeout_s)
+            or not 0 < self.body_timeout_s <= MAX_BODY_TIMEOUT_S
         ):
-            message = "rate limiting requires positive bounded settings"
+            message = "API limits require positive finite bounds"
             raise ValueError(message)
 
 
@@ -117,10 +124,15 @@ class SecurityMiddleware:
     """Bound request bytes and attach security headers."""
 
     def __init__(
-        self, app: ASGIApp, settings: ApiSettings, observer: Observer
+        self,
+        app: ASGIApp,
+        settings: ApiSettings,
+        observer: Observer,
+        guard: Callable[[Request], Awaitable[None]] | None = None,
     ) -> None:
         """Inject settings and an isolated observer instance."""
         self._app, self._settings, self._observer = app, settings, observer
+        self._guard = guard
 
     async def __call__(
         self, scope: Scope, receive: Receive, send: Send
@@ -148,11 +160,38 @@ class SecurityMiddleware:
 
         secure_send = self._secured_send(send, headers, state)
 
+        completed = False
+        # Keep guard, stream and dependency exceptions inside the HTTP
+        # boundary so the ASGI server cannot log their sensitive text.
+        with suppress(Exception):
+            await self._request(scope, receive, secure_send, request_id)
+            completed = True
+        if not completed:
+            await self._failed_response(
+                scope, receive, secure_send, request_id, state
+            )
+
+    async def _request(
+        self, scope: Scope, receive: Receive, send: Send, request_id: UUID
+    ) -> None:
+        if self._guard is not None:
+            try:
+                await self._guard(Request(scope))
+            except HTTPException as error:
+                await self._reject(scope, receive, send, request_id, error)
+                return
         query_error = _query_error(scope)
         if query_error is not None:
-            await problem(query_error, request_id)(scope, receive, secure_send)
+            await problem(query_error, request_id)(scope, receive, send)
             return
-        body = await self._body(scope, receive, secure_send, request_id)
+        try:
+            async with asyncio.timeout(self._settings.body_timeout_s):
+                body = await self._body(scope, receive, send, request_id)
+        except TimeoutError:
+            await self._reject(
+                scope, receive, send, request_id, HTTPException(408)
+            )
+            return
         if body is None:
             return
         consumed = False
@@ -164,17 +203,24 @@ class SecurityMiddleware:
             consumed = True
             return {"type": "http.request", "body": body}
 
-        completed = False
-        # The outer ASGI server logs uncaught exception messages. Keep
-        # dependency errors inside this HTTP boundary, with no raw text.
-        # CancelledError and all other BaseExceptions still propagate.
-        with suppress(Exception):
-            await self._app(scope, buffered_receive, secure_send)
-            completed = True
-        if not completed:
-            await self._failed_response(
-                scope, receive, secure_send, request_id, state
+        await self._app(scope, buffered_receive, send)
+
+    async def _reject(
+        self,
+        scope: Scope,
+        receive: Receive,
+        send: Send,
+        request_id: UUID,
+        error: HTTPException,
+    ) -> None:
+        self._observer.emit(
+            SecurityEvent(
+                "security.request_rejected", request_id, error.status_code
             )
+        )
+        await problem(error.status_code, request_id, headers=error.headers)(
+            scope, receive, send
+        )
 
     def _secured_send(
         self, send: Send, headers: Mapping[str, str], state: _ResponseState
