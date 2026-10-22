@@ -20,6 +20,7 @@ from techcom_followup.application.repository import (
     ClaimRequest,
     Repository,
 )
+from techcom_followup.application.resilience_ports import BreakerPermit
 from techcom_followup.application.retry import RetryBudget, RetryPolicy
 
 _RANDOM = SystemRandom()
@@ -42,15 +43,15 @@ class DeliveryBreaker(Protocol):
         """Expose closed/open/half_open without reserving a probe."""
         ...
 
-    def allow(self) -> bool:
-        """Admit one call or half-open probe."""
+    def admit(self) -> BreakerPermit | None:
+        """Reserve a call or half-open probe with attempt ownership."""
         ...
 
-    def record_success(self) -> None:
+    def record_success(self, permit: BreakerPermit | None = None) -> None:
         """Close after healthy communication."""
         ...
 
-    def record_failure(self) -> None:
+    def record_failure(self, permit: BreakerPermit | None = None) -> None:
         """Count consecutive dependency failures."""
         ...
 
@@ -106,12 +107,19 @@ class DispatchActions:
             if action.attempts > 1 and not admitted.take():
                 await self._defer(action, "retry_budget")
                 break
-            if self._breaker is not None and not self._breaker.allow():
+            allowed, permit = self._admit()
+            if not allowed:
                 await self._defer(action, "circuit_open")
                 break
-            await self._deliver(action)
+            await self._deliver(action, permit)
             completed += 1
         return completed
+
+    def _admit(self) -> tuple[bool, BreakerPermit | None]:
+        if self._breaker is None:
+            return True, None
+        permit = self._breaker.admit()
+        return permit is not None, permit
 
     async def _defer(self, action: ActionRecord, error: str) -> None:
         if action.lease_token is None:
@@ -129,22 +137,24 @@ class DispatchActions:
             )
         )
 
-    async def _deliver(self, action: ActionRecord) -> None:
+    async def _deliver(
+        self, action: ActionRecord, permit: BreakerPermit | None
+    ) -> None:
         try:
             try:
                 result = await self._deps.gateway.send(action)
             except BaseException:
                 if self._breaker is not None:
-                    self._breaker.record_failure()
+                    self._breaker.record_failure(permit)
                 raise
             if self._breaker is not None:
                 if result.kind in {
                     DeliveryKind.UNKNOWN,
                     DeliveryKind.RETRYABLE,
                 }:
-                    self._breaker.record_failure()
+                    self._breaker.record_failure(permit)
                 else:
-                    self._breaker.record_success()
+                    self._breaker.record_success(permit)
             await self._apply(action, result)
         except BaseException:
             await asyncio.shield(self._release(action))

@@ -647,3 +647,62 @@ async def test_cancelled_half_open_probe_recovers_after_cooldown() -> None:
     assert breaker.allow()
     breaker.record_success()
     assert breaker.state == "closed"
+
+
+async def test_stale_cancel_cannot_release_another_delivery_probe() -> None:
+    elapsed = 0
+    breaker = CircuitBreaker(
+        failure_threshold=1, cooldown_s=30, monotonic=lambda: elapsed
+    )
+    entered_old, entered_probe = asyncio.Event(), asyncio.Event()
+    release_old, release_probe = asyncio.Event(), asyncio.Event()
+
+    class RacingGateway(Gateway):
+        @override
+        async def send(self, action: ActionRecord) -> DeliveryResult:
+            self.sends.append(action.identity.operation_id)
+            number = len(self.sends)
+            if number == 1:
+                entered_old.set()
+                await release_old.wait()
+            elif number == 2:
+                return DeliveryResult(DeliveryKind.RETRYABLE)
+            elif number == 3:
+                entered_probe.set()
+                await release_probe.wait()
+            return DeliveryResult(DeliveryKind.ACCEPTED, "ref")
+
+    repository = InMemoryRepository()
+    for task_id in ("TC-1", "TC-2", "TC-3", "TC-4"):
+        await repository.record_decision(
+            await action_write(repository, task_id), NOW
+        )
+    gateway = RacingGateway()
+    deps = DeliveryDependencies(repository, gateway, FixedClock(NOW))
+    dispatcher = DispatchActions(deps, breaker=breaker)
+    old = asyncio.create_task(dispatcher.execute(limit=1))
+    probe: asyncio.Task[int] | None = None
+    try:
+        await entered_old.wait()
+        assert await dispatcher.execute(limit=1) == 1
+        assert breaker.state == "open"
+        elapsed = 31
+        probe = asyncio.create_task(dispatcher.execute(limit=1))
+        await entered_probe.wait()
+        old.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await old
+        assert breaker.state == "half_open"
+        assert await dispatcher.execute(limit=1) == 0
+        assert len(gateway.sends) == 3
+        release_probe.set()
+        assert await probe == 1
+        assert breaker.state == "closed"
+    finally:
+        release_old.set()
+        release_probe.set()
+        await asyncio.gather(
+            old,
+            *(() if probe is None else (probe,)),
+            return_exceptions=True,
+        )
