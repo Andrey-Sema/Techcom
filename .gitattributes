@@ -1,0 +1,10 @@
+* text=auto eol=lf
+*.py   text diff=python
+*.md   text diff=markdown
+*.sh   text eol=lf
+*.png  binary
+*.jpg  binary
+*.pdf  binary
+uv.lock         linguist-generated=true
+samples/**      linguist-generated=true
+docs/**         linguist-documentation

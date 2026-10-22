@@ -100,7 +100,7 @@ phrasing in unseen fixtures. This is the cost lever for 10k tasks/day.
 class NoteInterpretation(BaseModel):
     model_config = ConfigDict(strict=True, extra="forbid", frozen=True)
 
-    blocker: BlockerCategory               # closed enum
+    blocker: BlockerCategory  # closed enum
     needs_eta: bool
     confidence: float = Field(ge=0.0, le=1.0)
     evidence: str = Field(max_length=200)  # verbatim quote from the note

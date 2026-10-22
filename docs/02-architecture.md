@@ -22,7 +22,7 @@ Enforced by `import-linter` contracts in CI.
 flowchart LR
     ops([Ops manager / reviewer]) -->|CLI / REST| svc[AI Follow-up Service]
     svc -->|GET /tasks| taskapi[(Mock Task API<br/>fixture-backed;<br/>monday.com later)]
-    svc -->|structured prompts| llm[(LLM provider<br/>Gemini / Stub)]
+    svc -->|Responses API, strict JSON schema| llm[(LLM router<br/>OpenAI gpt-6.1/6/5.6-sol<br/>+ stub)]
     svc -->|POST /messages<br/>Idempotency-Key| delivery[(Mock Delivery API<br/>delivery_log.jsonl)]
     svc --> db[(PostgreSQL 18<br/>state, outbox, audit)]
 ```
@@ -60,7 +60,7 @@ flowchart TB
     subgraph outbound[Outbound adapters]
         TS[HttpTaskSource]
         DL[HttpDeliveryGateway]
-        LLMA[GeminiClient / StubClient]
+        LLMA[LLMRouter → OpenAIResponsesBackend / Stub]
         REPO[PgRepository · SQLAlchemy]
         CLK[SystemClock / FixedClock]
     end
@@ -118,7 +118,8 @@ flowchart TB
 │   │   ├── adapters/
 │   │   │   ├── inbound/{cli.py, api/}
 │   │   │   └── outbound/{task_source_http.py, delivery_http.py,
-│   │   │                 llm_gemini.py, llm_stub.py, pg_repository.py,
+│   │   │                 llm/{router,openai_responses,catalog,config,factory}.py,
+│   │   │                 llm_stub.py, pg_repository.py,
 │   │   │                 orm.py, clock.py}
 │   │   └── infrastructure/
 │   │       ├── settings.py     # pydantic-settings
@@ -303,9 +304,11 @@ startup, fail fast on error).
 | `FOLLOWUP_DATABASE_URL` | `postgresql+psycopg://…` | |
 | `FOLLOWUP_TASK_API_URL` | `http://mock-api:8081` | |
 | `FOLLOWUP_DELIVERY_API_URL` | `http://mock-api:8081` | |
-| `FOLLOWUP_LLM_PROVIDER` | `stub` | `stub` \| `gemini` |
-| `FOLLOWUP_LLM_MODEL` | *(set explicitly)* | Gemini Flash-Lite tier; pin a stable model id from the official model list at implementation time. |
-| `FOLLOWUP_GEMINI_API_KEY` | — | Docker secret file; never committed. |
+| `FOLLOWUP_LLM_PROVIDER` | `stub` | `stub` \| `router` (OpenAI routes from `config/llm.toml`) |
+| `FOLLOWUP_OPENAI_AUTH_MODE` | `api_key` | `api_key` (secret file `followup_openai_api_key`) \| `workload_identity` (no static key) |
+| `FOLLOWUP_OPENAI_PROJECT` | — | OpenAI project id (keys are project-scoped) |
+| `FOLLOWUP_OPENAI_BASE_URL` / `_ALLOWED_HOSTS` | `https://api.openai.com/v1` | outbound allow-list; `OPENAI_BASE_URL` from the environment is ignored |
+| `FOLLOWUP_OPENAI_API_KEY` | — | Docker secret file `followup_openai_api_key`; never committed, never logged (`hide_input_in_errors`). |
 | `FOLLOWUP_LLM_TIMEOUT_S` | `10` | |
 | `FOLLOWUP_HTTP_TIMEOUT_S` | `5` | connect/read split |
 | `FOLLOWUP_JWT_AUDIENCE` / `_ISSUER` / `_PUBLIC_KEY_FILE` | — | Service-token validation (EdDSA). |
@@ -331,7 +334,7 @@ startup, fail fast on error).
 | DB | **PostgreSQL 18** | `uuidv7()`, `ON CONFLICT`, `SKIP LOCKED`, transactional DDL; SQLite acceptable per brief but cannot show concurrent-safe outbox claims. |
 | DB access | **SQLAlchemy 2.0** (Core-first) + **psycopg 3** | One driver for async app *and* sync Alembic; 2.1 is beta → avoid for a graded project. |
 | Migrations | **Alembic** | Up/down tested in CI. |
-| LLM | **google-genai** SDK (Gemini) behind `LLMClient` port; deterministic **stub** | Real integration with native structured output (`response_schema`); candidate's production experience. |
+| LLM | **openai** SDK 3.x (Responses API) behind an `LLMRouter` implementing the `LLMClient` port — routes `gpt-6.1-sol` → `gpt-6-sol` → `gpt-5.6-sol`; deterministic **stub**; Gemini optional as a second backend (`ADR-0013`) | Real integration with native structured output (`response_schema`); candidate's production experience. |
 | Logging | **structlog** (JSON) + OpenTelemetry logs SDK (OTLP) | Context binding, redaction; shipped to Loki via Alloy — see `14`. |
 | Auth | **PyJWT[crypto]** (EdDSA) | Short-lived service tokens (ASVS 13.2.1, V9). |
 | Observability | Prometheus, Grafana, Loki, Grafana Alloy (compose profile) | Provisioned as code — see `13` §7–10. |

@@ -100,7 +100,7 @@ failing gate exists that would catch the violation".
 ## 4. Residual gaps that remain *by choice*
 
 * No real IdP, no internal TLS locally (documented ASVS deviations).
-* Gemini only; second provider deferred (template fallback covers
-  availability).
+* One provider (OpenAI, three Sol generations as failover); a second
+  provider backend (Gemini) plugs into the same router later.
 * Re-reminder cadence for unchanged overdue tasks is a product decision.
 * OpenTelemetry traces prepared, not enabled.

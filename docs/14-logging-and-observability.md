@@ -98,6 +98,8 @@ Field names follow the OWASP Logging Vocabulary / ECS spirit (`event`,
 | `delivery.unknown` / `delivery.reconciled` | warning / info | `operation_id`, `reason` |
 | `delivery.dead` | error | `operation_id`, `status_code`, `attempts` |
 | `llm.call` | info | `purpose`, `model`, `prompt_version`, `result`, `tokens_in/out`, `cost_usd`, `latency_ms` |
+| `llm.route_failover` | warning | `purpose`, `model`, `kind` (`transient`/`rejected`), `detail` (status code / error class) |
+| `llm.unavailable` / `llm.budget_exhausted` | error / warning | `purpose`, `attempts` |
 | `llm.fallback` | warning | `purpose`, `stage` (`transport`/`json`/`schema`/`grounding`/`confidence`/`breaker`), `output_sha256` |
 | `dependency.circuit_opened` / `circuit_closed` | warning / info | `dependency` |
 | `http.retry` | warning | `dependency`, `status_code`, `delay_s`, `attempt` |

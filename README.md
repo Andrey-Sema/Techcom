@@ -1,6 +1,8 @@
 # TechCom AI Operations & Follow-up Service
 
-> Status: **design complete, implementation not started** (plan for the
+> Status: **design complete; first slice implemented — LLM router
+> (`src/techcom_followup/adapters/outbound/llm/`), 71 tests, 100 %
+> branch coverage** (plan for the
 > TechCom AI Engineer final assessment). Evaluation date: 2026-10-21 UTC.
 
 A Python service that reads construction project tasks through a mock API,
@@ -64,14 +66,15 @@ throttle, fail or time out after a successful write.
 | [16 Senior audit](docs/16-senior-audit.md) | Strict 30-point audit: proving mechanisms, gaps, fixes, expected score |
 | [17 Tooling & repo hygiene](docs/17-tooling-and-repo-hygiene.md) | Ruff `ALL`, **Bandit**, Semgrep rules, mypy, vulture, xenon, deptry, full `.gitignore`/`.gitattributes`/`.editorconfig`, pre-commit, Makefile, CI |
 | [18 Runbook](docs/18-runbook.md) | Alert playbooks, global levers, diagnostics, backup/restore |
-| [ADRs](docs/adr/) | Architecture decision records 0001–0012 |
+| [ADRs](docs/adr/) | Architecture decision records 0001–0013 |
 
 ## Planned stack
 
 Python ≥ 3.13 (CI 3.13/3.14) · uv · Ruff (`ALL`) · **Bandit** · Semgrep ·
 mypy · import-linter · xenon · vulture · deptry · Pydantic v2 · FastAPI ·
 Typer · httpx + stamina · SQLAlchemy 2.0 + psycopg 3 + Alembic ·
-PostgreSQL 18 · google-genai (Gemini) + deterministic stub · structlog ·
+PostgreSQL 18 · **OpenAI router** (Responses API, `gpt-6.1-sol` → `gpt-6-sol` →
+`gpt-5.6-sol`) + deterministic stub · structlog ·
 prometheus-client · OpenTelemetry (OTLP logs) · PyJWT (EdDSA) ·
 Prometheus + Grafana + Loki + Alloy · pytest + hypothesis +
 testcontainers + syrupy + mutmut · gitleaks, pip-audit, Trivy, Semgrep,

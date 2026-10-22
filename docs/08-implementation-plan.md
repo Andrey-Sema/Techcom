@@ -30,7 +30,7 @@ Two declared tiers (decision from the senior audit, `16` #30):
 | M2 | Mock API | `techcom_mocks`: `GET /v1/tasks`, `POST /v1/messages` (idempotent receiver, payload hash), `GET /v1/messages/{op}`, fault plan, JSONL delivery log; `FaultInjectingTransport` for tests | Must | 1.5 h |
 | M3 | Persistence | SQLAlchemy Core tables, Alembic migration (PG18 `uuidv7()`), `PgRepository` + `InMemoryRepository`, repository contract tests, testcontainers fixtures | Must | 2.5 h |
 | M4 | Use cases (A) | `ProcessTasks`, `DispatchActions`, `ReconcileUnknown`, HTTP adapters with stamina retries, retry budget, circuit breaker, advisory-lock single run, reconcile-before-resend, kill switch, dry-run, graceful shutdown; scenario tests S1–S6 incl. `non_idempotent` receiver | Must | 3.5 h |
-| M5 | LLM | `LLMClient` port, stub (scripted responses incl. malformed), Gemini adapter (`google-genai`, structured output), interpreter (cache, grounding, breaker, fallback), drafter (placeholders + validator); S7, S8 tests | Must | 2.5 h |
+| M5 | LLM | `LLMClient` port, stub (scripted responses incl. malformed), **OpenAI router — done** (`ADR-0013`), optional Gemini backend, interpreter (cache, grounding, breaker, fallback), drafter (placeholders + validator); S7, S8 tests | Must | 2.5 h |
 | M6a | CLI & reporting (A) | Typer + Rich CLI (`run/dispatch/reconcile/report/demo`), structlog + redaction, run report, samples export | Must | 1.5 h |
 | M6b | REST API (B) | FastAPI (`/v1/runs`, `/v1/actions`, health), service JWT + scopes, security headers, metrics on internal port, OTLP log export | Should | 2 h |
 | M11a | Eval harness, minimal (A) | 20 labelled notes + injection variants, recorded responses, metrics script | Must | 1 h |
@@ -59,7 +59,7 @@ controls, gates and evidence.
    import-linter pre-commit mutmut pip-audit`.
 3. Runtime deps: `pydantic pydantic-settings fastapi uvicorn typer httpx
    stamina sqlalchemy[asyncio] psycopg[binary,pool] alembic structlog
-   prometheus-client google-genai pyjwt[crypto] opentelemetry-sdk
+   prometheus-client openai pyjwt[crypto] opentelemetry-sdk
    opentelemetry-exporter-otlp-proto-http`.
    Infrastructure files exactly as in `13-repository-blueprint.md`
    (`.gitignore`, `.dockerignore`, Dockerfile, compose, deploy/).

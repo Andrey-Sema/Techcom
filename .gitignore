@@ -1,0 +1,91 @@
+# ---------- Python build & bytecode ----------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+build/
+dist/
+*.egg-info/
+.eggs/
+wheels/
+pip-wheel-metadata/
+
+# ---------- Environments & tool caches ----------
+.venv/
+venv/
+.python-version.local
+.direnv/
+.envrc
+.cache/
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+.hypothesis/
+.import_linter_cache/
+.tox/
+.nox/
+
+# ---------- Tests, coverage, mutation, benchmarks ----------
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+junit*.xml
+mutants/
+.mutmut-cache
+.benchmarks/
+schemathesis-report/
+
+# ---------- Profiling & debugging artefacts ----------
+*.prof
+*.pstats
+profile*.svg
+memray-*.bin
+*.trace
+
+# ---------- Runtime output (samples/ IS committed) ----------
+var/
+*.log
+*.pid
+*.sqlite
+*.db
+
+# ---------- Secrets — never commit (ASVS 13.3.1) ----------
+.env
+.env.*
+!.env.example
+secrets/
+*.pem
+*.key
+*.crt
+*.csr
+*.p12
+*.pfx
+*.jks
+*.kdbx
+id_rsa*
+id_ed25519*
+
+# ---------- Security tooling output ----------
+*.sarif
+bandit-report.*
+semgrep-report.*
+sbom*.json
+trivy-*.json
+.trivycache/
+
+# ---------- Docs build ----------
+site/
+
+# ---------- Editors & OS ----------
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+*.orig
+*.rej

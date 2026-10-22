@@ -95,7 +95,7 @@ dependencies = [
     "fastapi>=0.115",
     "opentelemetry-exporter-otlp-proto-http>=1.28",
     "opentelemetry-sdk>=1.28",
-    "google-genai>=1.0",
+    "openai>=3.36,<4",
     "httpx>=0.28",
     "prometheus-client>=0.21",
     "psycopg[binary,pool]>=3.2",
@@ -233,7 +233,9 @@ root_packages = ["techcom_followup"]
 name = "Hexagonal layers"
 type = "layers"
 layers = [
-    "techcom_followup.adapters | techcom_followup.infrastructure",
+    "techcom_followup.bootstrap",          # composition root only
+    "techcom_followup.adapters",
+    "techcom_followup.infrastructure",     # settings, resilience, logging
     "techcom_followup.application",
     "techcom_followup.domain",
 ]
@@ -383,7 +385,11 @@ services:
     image: techcom-followup:local
     <<: *hardening
     env_file: [.env]
-    secrets: [app_dsn, jwt_public_key, gemini_api_key]
+    secrets:
+      - app_dsn
+      - jwt_public_key
+      - source: openai_api_key
+        target: followup_openai_api_key   # name read by pydantic-settings
     depends_on:
       migrate: { condition: service_completed_successfully }
       mock-api: { condition: service_started }
@@ -405,7 +411,7 @@ secrets:
   app_dsn:               { file: ./secrets/app_dsn }
   migrator_dsn:          { file: ./secrets/migrator_dsn }
   jwt_public_key:        { file: ./secrets/jwt_public_key.pem }
-  gemini_api_key:        { file: ./secrets/gemini_api_key }
+  openai_api_key:        { file: ./secrets/openai_api_key }
 ```
 
 `make secrets` generates random passwords (`secrets.token_urlsafe(32)`),
@@ -621,8 +627,9 @@ FOLLOWUP_LOG_LEVEL=INFO
 FOLLOWUP_LOG_FORMAT=json           # json | console
 FOLLOWUP_TASK_API_URL=http://mock-api:8081
 FOLLOWUP_DELIVERY_API_URL=http://mock-api:8081
-FOLLOWUP_LLM_PROVIDER=stub         # stub | gemini
-FOLLOWUP_LLM_MODEL=                # set a stable Gemini Flash-Lite id
+FOLLOWUP_LLM_PROVIDER=stub         # stub | router (OpenAI, config/llm.toml)
+FOLLOWUP_OPENAI_AUTH_MODE=api_key  # api_key | workload_identity
+FOLLOWUP_OPENAI_PROJECT=           # proj_... (non-secret)
 FOLLOWUP_LLM_TIMEOUT_S=10
 FOLLOWUP_LLM_DAILY_BUDGET_USD=5
 FOLLOWUP_HTTP_TIMEOUT_S=5

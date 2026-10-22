@@ -1,6 +1,6 @@
 # ADR-0004: LLM as a constrained classifier and drafter inside a workflow
 
-* Status: Accepted
+* Status: Accepted (provider choice superseded by ADR-0013)
 * Date: 2026-10-21
 
 ## Context
