@@ -3,7 +3,7 @@
 import html
 import time
 from collections.abc import Callable
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta
 from hashlib import sha256
 
 from pydantic import Field, ValidationError
@@ -62,8 +62,13 @@ class InterpretationOutput(StrictOutput):
         )
 
 
-def _utc_now() -> datetime:
-    return datetime.now(UTC)
+def _require_clock(
+    now: Callable[[], datetime] | None,
+) -> Callable[[], datetime]:
+    if now is None:
+        message = "interpretation cache requires an injected clock"
+        raise ValueError(message)
+    return now
 
 
 class NoteInterpreter:
@@ -81,7 +86,7 @@ class NoteInterpreter:
         repository: Repository | None = None,
         *,
         model: str = "stub.v1",
-        now: Callable[[], datetime] = _utc_now,
+        now: Callable[[], datetime] | None = None,
         monotonic: Callable[[], float] = time.monotonic,
         due_soon_days: int = 1,
     ) -> None:
@@ -89,7 +94,7 @@ class NoteInterpreter:
         self.calls = LanguageCall(client, monotonic=monotonic)
         self._repository = repository
         self._model = model
-        self._now = now
+        self._now = _require_clock(now) if repository is not None else now
         self._due_soon_days = due_soon_days
 
     async def interpret(
@@ -114,7 +119,9 @@ class NoteInterpreter:
     async def _cached(self, key: str, note: str) -> NoteInterpretation | None:
         if self._repository is None:
             return None
-        entry = await self._repository.get_cached_llm(key, self._now())
+        entry = await self._repository.get_cached_llm(
+            key, _require_clock(self._now)()
+        )
         if entry is None or (
             entry.model != self._model
             or entry.prompt_version != PROMPT_VERSION
@@ -157,7 +164,7 @@ class NoteInterpreter:
             **output.model_dump(), source=InterpretationSource.LLM
         )
         if self._repository is not None:
-            now = self._now()
+            now = _require_clock(self._now)()
             await self._repository.put_cached_llm(
                 CacheEntry(
                     key=key,

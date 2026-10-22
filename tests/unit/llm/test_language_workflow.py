@@ -24,7 +24,6 @@ from techcom_followup.application.interpreter import (
     PROMPT_VERSION,
     InterpretationOutput,
     NoteInterpreter,
-    _utc_now,
 )
 from techcom_followup.application.llm_workflow import (
     MAX_OUTPUT_CHARS,
@@ -252,10 +251,9 @@ async def test_language_breaker_recovers_with_exactly_one_probe(
     assert calls._opened_at is None
 
 
-def test_strict_output_bounds_and_utc_clock() -> None:
+def test_strict_output_bounds() -> None:
     with pytest.raises(InvalidOutputError, match="size"):
         parse_output("x" * (MAX_OUTPUT_CHARS + 1), InterpretationOutput)
-    assert _utc_now().tzinfo is UTC
 
 
 def draft_json(subject: str | None = None, body: str | None = None) -> str:
@@ -513,3 +511,10 @@ async def test_fallback_changes_neither_policy_action_nor_recipient(
     assert actual.kind is baseline.kind
     assert actual.target == baseline.target
     assert actual.reason_code is baseline.reason_code
+
+
+def test_cache_requires_an_explicit_clock() -> None:
+    with pytest.raises(ValueError, match="injected clock"):
+        NoteInterpreter(repository=InMemoryRepository())
+    interpreter = NoteInterpreter()
+    assert interpreter._now is None
