@@ -225,6 +225,25 @@ class Commands:
 
         self._execute(options, command, output)
 
+    def prune(self) -> None:
+        """Apply data retention (docs/18) with the maintenance role."""
+
+        async def command(services: CommandServices) -> dict[str, JsonValue]:
+            _require_persistent(services)
+            total, complete = await services.pruner().execute()
+            return {
+                "deleted": {
+                    "llm_cache": total.cache,
+                    "actions": total.actions,
+                    "decisions": total.decisions,
+                    "audit_events": total.audit,
+                    "runs": total.runs,
+                },
+                "complete": complete,
+            }
+
+        self._execute(CommandOptions(_date(None)), command, None)
+
 
 def _require_persistent(services: CommandServices) -> None:
     if not services.persistent:
@@ -238,4 +257,10 @@ def create_cli(factory: RuntimeFactory) -> typer.Typer:
     app = typer.Typer(no_args_is_help=True, pretty_exceptions_enable=False)
     for name in ("run", "dispatch", "reconcile", "report", "demo"):
         app.command(name=name)(getattr(commands, name))
+    maintenance = typer.Typer(
+        no_args_is_help=True,
+        help="Data retention; run with the maintenance database role.",
+    )
+    maintenance.command(name="prune")(commands.prune)
+    app.add_typer(maintenance, name="maintenance")
     return app

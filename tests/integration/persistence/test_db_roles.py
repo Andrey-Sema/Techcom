@@ -17,17 +17,29 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlalchemy.pool import NullPool
 
 from persistence_support import NOW, action_write
+from support import AS_OF, make_task, repo_policy
 from techcom_followup.adapters.outbound.pg_repository import PgRepository
 from techcom_followup.application.repository import (
     ActionStatus,
     ActionUpdate,
     AuditEvent,
     ClaimRequest,
+    DecisionWrite,
 )
+from techcom_followup.application.retention import PruneData, RetentionPolicy
+from techcom_followup.domain.identity import state_fingerprint
 
 pytestmark = pytest.mark.integration
 
 INSUFFICIENT_PRIVILEGE = "42501"
+RETENTION = RetentionPolicy(
+    version="2026-10-22.1",
+    decision_days=90,
+    action_days=365,
+    audit_days=365,
+    batch_size=100,
+    max_batches=10,
+)
 type LoginFactory = Callable[[str], Awaitable[AsyncEngine]]
 
 
@@ -122,3 +134,37 @@ async def test_other_roles_cannot_even_connect(
     with pytest.raises(DBAPIError, match="permission denied for database"):
         async with engine.connect():
             pass
+
+
+@pytest.mark.asvs("13.2.2")
+async def test_maintenance_role_prunes_but_cannot_write(
+    login_as: LoginFactory,
+) -> None:
+    service = PgRepository(await login_as(" IN ROLE followup_app"))
+    old = NOW - timedelta(days=400)
+    task = make_task()
+    decision = repo_policy().decide(task, as_of=AS_OF)
+    run = await service.start_run(AS_OF, "v", old)
+    await service.record_decision(
+        DecisionWrite(run.id, decision, state_fingerprint(task)), old
+    )
+    maintenance = await login_as(" IN ROLE followup_maintenance")
+    total, complete = await PruneData(
+        PgRepository(maintenance), RETENTION, lambda: NOW
+    ).execute()
+    assert complete
+    assert (total.decisions, total.audit, total.runs) == (1, 1, 1)
+    async with maintenance.connect() as connection:
+        for statement in (
+            (
+                "INSERT INTO audit_events (kind, at, payload)"
+                " VALUES ('forged', now(), '{}')"
+            ),
+            "UPDATE actions SET status = 'sent'",
+            "UPDATE audit_events SET kind = 'forged'",
+        ):
+            with pytest.raises(DBAPIError) as caught:
+                await connection.execute(text(statement))
+            assert isinstance(caught.value.orig, psycopg.Error)
+            assert caught.value.orig.sqlstate == INSUFFICIENT_PRIVILEGE
+            await connection.rollback()

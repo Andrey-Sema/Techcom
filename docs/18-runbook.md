@@ -14,8 +14,12 @@ is lost, nothing is duplicated) and investigate.
 | `FOLLOWUP_DISPATCH_ENABLED=false` | Dispatcher stops claiming; actions stay `pending` | yes |
 | `FOLLOWUP_LLM_PROVIDER=stub` | Keyword prefilter + templates only | yes |
 | `followup run --dry-run` | Decisions computed and reported, nothing enqueued | n/a |
-| `followup actions requeue --status dead --id <uuid>` | Moves a reviewed dead letter back to `pending` (same key) | yes |
-| `followup maintenance prune` | Applies retention | no (by design) |
+| `followup maintenance prune` | Applies retention (see below); run it with the maintenance role | no (by design) |
+
+`dead` is terminal by design (ASVS 2.3.1): there is no command that
+moves a dead letter back to `pending`. After the cause is fixed, a human
+follows up on the listed tasks; the next run proposes a new action only
+if the task state changed.
 
 ## followup-dead-letters {#followup-dead-letters}
 
@@ -90,7 +94,7 @@ is lost, nothing is duplicated) and investigate.
 | CPU hot path right now | py-spy | Run a **separate debug container** sharing the PID namespace with `cap_add: [SYS_PTRACE]` (the app container keeps `cap_drop: ALL`): `py-spy dump --pid 1`, `py-spy record -o var/profile.svg` |
 | Memory growth | memray | Reproduce locally with the same input: `memray run -o var/memray.bin -m techcom_followup ...` |
 | Slow queries | PostgreSQL | `log_min_duration_statement`, `EXPLAIN (ANALYZE, BUFFERS)` |
-| "Why did task X get message Y?" | audit trail | `followup report --task TC-1001` (decision, rule, key, attempts, delivery) |
+| "Why did task X get message Y?" | audit trail | `followup report --run-id <uuid>` (decisions with rule, reason, key and message; actions with attempts and delivery state); across runs, read-only SQL: `SELECT kind, at, run_id FROM audit_events WHERE task_id = 'TC-1001' ORDER BY id` |
 
 ## Database roles (least privilege, D3)
 
@@ -112,9 +116,40 @@ is lost, nothing is duplicated) and investigate.
   `TRUNCATE`; `tests/integration/persistence/test_db_roles.py` lists
   what it must not be able to do.
 
+## Retention (`followup maintenance prune`)
+
+* Limits live in `config/retention.toml` and follow the data
+  classification (`15` §8): decisions without actions and empty runs
+  after 90 days; sent and dead actions, and the audit trail, after one
+  year; expired LLM cache entries at once. Pending, in-flight and
+  unknown actions, and decisions they refer to, are never deleted.
+* Run it daily, with a login role that is a member of
+  `followup_maintenance` (migration `0003`: `SELECT` and `DELETE` only,
+  no `INSERT`/`UPDATE`, so it cannot forge history):
+
+  ```bash
+  FOLLOWUP_DATABASE_URL=postgresql+psycopg://followup_retention:...@db/followup \
+      followup maintenance prune
+  ```
+
+* Each invocation deletes at most `batch_size` rows per table per
+  transaction and stops after `max_batches`; `"complete": false` in the
+  output means the next run continues.
+* Trade-off: deleting a sent action deletes its idempotency key, so a
+  task whose state stays exactly the same for more than a year gets one
+  new reminder.
+
 ## Backup & restore
 
-* `make db-backup` → `pg_dump --format=custom` to `var/backups/`;
-  `make db-restore FILE=…` into a fresh database.
-* Restore is verified by a weekly scheduled CI job that restores the
-  latest dump into a throwaway container and runs `followup report`.
+* `make db-backup` → `pg_dump --format=custom` into `var/backups/`
+  (owner-only directory and files: dumps contain personal data).
+* `make db-restore FILE=var/backups/…` restores into the compose
+  database with `--clean --if-exists --exit-on-error
+  --single-transaction`: it either fully succeeds or changes nothing.
+* Restoring into a **new cluster**: create the NOLOGIN roles first
+  (`CREATE ROLE followup_app NOLOGIN; CREATE ROLE followup_maintenance
+  NOLOGIN;`) so the table grants restore, then grant `CONNECT` on the
+  database to both (database-level grants are not part of the dump).
+* `tests/integration/persistence/test_backup_restore.py` proves the round
+  trip with the same commands: rows, migration version and grants
+  survive.
