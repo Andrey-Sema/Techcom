@@ -1,8 +1,10 @@
 # 15 — Security Baseline: OWASP ASVS 5.0 Level 2 + OWASP Cheat Sheets
 
 > Implementation status: this document specifies the design target.
-> Planned controls require implementation evidence before promotion;
-> the verified M0/M2/M3 subset is recorded in
+> Planned controls require implementation evidence before promotion.
+> *Built* rows and the tests behind them are listed in the generated
+> [traceability report](asvs-traceability.md) (M9); the verified
+> M0/M2/M3 subset is also recorded in
 > [the foundation review](19-foundation-review.md).
 
 ## 1. Target and rules of the game
@@ -79,27 +81,27 @@ the claim "L2" is evidence-backed, not aspirational.
 
 | ID | L | Control | Verification | Status |
 |----|---|---------|--------------|--------|
-| 1.1.1 | 2 | Normalizer canonicalizes once (NFKC, whitespace) at the trust boundary; no later re-decoding | unit tests | Planned |
+| 1.1.1 | 2 | Normalizer canonicalizes once (NFKC, whitespace) at the trust boundary; no later re-decoding | unit tests | Built |
 | 1.1.2 | 2 | Encoding at the last step: JSON by serializer, SQL by driver binds, prompt delimiters escaped when the prompt is built | unit tests | Planned |
 | 1.2.1 | 1 | Only JSON responses via framework serializer | API tests | Planned |
 | 1.2.2 | 1 | URLs built with `httpx` params / validated UUID path segments, never string concatenation of untrusted data | adapter tests | Planned |
 | 1.2.3 | 1 | JSON produced only by `json`/Pydantic serializers | tests | Planned |
-| 1.2.4 | 1 | SQLAlchemy Core with bound parameters; ruff `S608` | CI lint, integration tests | Planned |
-| 1.2.5 | 1 | No OS command execution; ruff `S602–S607` | CI lint | Planned |
+| 1.2.4 | 1 | SQLAlchemy Core with bound parameters; ruff `S608` | CI lint, integration tests | Built |
+| 1.2.5 | 1 | No OS command execution; ruff `S602–S607` | CI lint | Built |
 | 1.2.6–1.2.8 | 2 | No LDAP/XPath/LaTeX | — | N/A |
-| 1.2.9 | 2 | Any dynamic regex input goes through `re.escape` (routing names, synonyms) | unit test | Planned |
+| 1.2.9 | 2 | Any dynamic regex input goes through `re.escape` (routing names, synonyms) | unit test | Built |
 | 1.3.1 | 1 | No HTML input | — | N/A |
-| 1.3.2 | 1 | No `eval`/`exec`/dynamic import of untrusted names; ruff `S307`, `S102` | CI lint | Planned |
+| 1.3.2 | 1 | No `eval`/`exec`/dynamic import of untrusted names; ruff `S307`, `S102` | CI lint | Built |
 | 1.3.3 | 2 | Untrusted notes wrapped in `UntrustedText`; prompt tags escaped; control chars stripped | unit tests | Planned |
 | 1.3.4, 1.3.5 | 2 | No SVG/Markdown/template-language rendering (messages are plain text) | — | N/A |
 | 1.3.6 | 2 | No user-supplied URLs; outbound allow-list (D4) | adapter tests | Planned |
-| 1.3.7 | 2 | Templates are code constants; regex placeholder renderer (D5) | unit + property tests | Planned |
+| 1.3.7 | 2 | Templates are code constants; regex placeholder renderer (D5) | unit + property tests | Built |
 | 1.3.8, 1.3.9 | 2 | No JNDI/memcache | — | N/A |
-| 1.3.10 | 2 | No `str.format`/`%` on untrusted or LLM text (D5) | test with `{x.__class__}` payload | Planned |
-| 1.3.11 | 2 | Message subject/body CR/LF and header-like content stripped before delivery (future SMTP safe) | unit test | Planned |
+| 1.3.10 | 2 | No `str.format`/`%` on untrusted or LLM text (D5) | test with `{x.__class__}` payload | Built |
+| 1.3.11 | 2 | Message subject/body CR/LF and header-like content stripped before delivery (future SMTP safe) | unit test | Built |
 | 1.4.1–1.4.3 | 2 | Memory-safe language; numeric ranges bounded by Pydantic `Field` constraints | unit tests | Planned / N/A |
 | 1.5.1 | 1 | No XML parsing (if ever: `defusedxml`) | — | N/A |
-| 1.5.2 | 2 | Only JSON deserialization into strict models; no `pickle`/`yaml.load`; ruff `S301`, `S506` | CI lint | Planned |
+| 1.5.2 | 2 | Only JSON deserialization into strict models; no `pickle`/`yaml.load`; ruff `S301`, `S506` | CI lint | Built |
 
 ### V2 Validation and Business Logic
 
@@ -110,11 +112,11 @@ the claim "L2" is evidence-backed, not aspirational.
 | 2.1.3 | 2 | Limits documented: max tasks/run (10,000), max note length, per-recipient daily cap, LLM daily budget, retry budget | doc (`04`, `05`) | Doc |
 | 2.2.1 | 1 | Positive validation: enums, regex for ids, ranges, `extra="forbid"` | unit + property tests | Planned |
 | 2.2.2 | 1 | All validation server-side (no client) | — | Planned |
-| 2.2.3 | 2 | Combination rules enforced in normalizer (flags, rejection) | unit tests | Planned |
-| 2.3.1 | 1 | Outbox state machine forbids skipped/illegal transitions | state-machine tests | Planned |
+| 2.2.3 | 2 | Combination rules enforced in normalizer (flags, rejection) | unit tests | Built |
+| 2.3.1 | 1 | Outbox state machine forbids skipped/illegal transitions | state-machine tests | Built |
 | 2.3.2 | 2 | Limits from 2.1.3 enforced (cap, budget, max size) | tests per limit | Planned |
-| 2.3.3 | 2 | Decision + action written in one DB transaction | integration test (fault between inserts) | Planned |
-| 2.3.4 | 2 | `UNIQUE(idempotency_key)`, `SKIP LOCKED` claims — no double send | concurrency tests | Planned |
+| 2.3.3 | 2 | Decision + action written in one DB transaction | integration test (fault between inserts) | Built |
+| 2.3.4 | 2 | `UNIQUE(idempotency_key)`, `SKIP LOCKED` claims — no double send | concurrency tests | Built |
 | 2.4.1 | 2 | API rate limit, LLM budget + breaker, retry budget, per-recipient cap (D6, D7) | tests | Planned |
 
 ### V3 Web Frontend Security (headers only)
@@ -198,7 +200,7 @@ the claim "L2" is evidence-backed, not aspirational.
 | 11.2.2 | 2 | Algorithms are configuration (agility) | config test | Planned |
 | 11.2.3 | 2 | ≥ 128-bit security (SHA-256, Ed25519) | doc | Planned |
 | 11.3.x | 1–2 | No application-level encryption (DB/disk encryption by platform) | — | N/A / Prod |
-| 11.4.1 | 1 | SHA-256 only; ruff `S324` bans MD5/SHA-1 | CI lint | Planned |
+| 11.4.1 | 1 | SHA-256 only; ruff `S324` bans MD5/SHA-1 | CI lint | Built |
 | 11.4.2–11.4.4 | 2 | No password storage or password-derived keys | — | N/A |
 | 11.5.1 | 2 | `secrets` (CSPRNG) for `jti`, generated passwords. UUIDs (`operation_id`, ids) are identifiers, never secrets | unit test | Planned |
 | 11.6.1 | 2 | Key generation via `cryptography` Ed25519 | — | Planned |
@@ -212,7 +214,7 @@ the claim "L2" is evidence-backed, not aspirational.
 | 12.1.3 | 2 | No mTLS client-certificate authentication | N/A |
 | 12.2.1, 12.2.2 | 1 | Public endpoints only via TLS with publicly trusted certs | Prod |
 | 12.3.1 | 2 | Internal TLS: DB `sslmode=verify-full`, OTLP over TLS, Prometheus scrape over TLS | Prod (**Deviation locally**: isolated compose networks, plain TCP) |
-| 12.3.2 | 2 | Certificate verification always on; ruff `S501`; test asserts no `verify=False` | Planned |
+| 12.3.2 | 2 | Certificate verification always on; ruff `S501`; test asserts no `verify=False` | Built |
 | 12.3.3, 12.3.4 | 2 | Internal services use TLS with internal CA trusted by clients | Prod |
 
 ### V13 Configuration
@@ -226,7 +228,7 @@ the claim "L2" is evidence-backed, not aspirational.
 | 13.2.4, 13.2.5 | 2 | Outbound allow-list in HTTP client factory (D4) + `internal: true` backend network | adapter test | Planned |
 | 13.3.1 | 2 | Docker secrets locally (`/run/secrets`, mode 0600, git-ignored); secret manager in prod | config | Planned / Prod |
 | 13.3.2 | 2 | Each container receives only its own secrets (compose `secrets:` per service) | compose review | Planned |
-| 13.4.1 | 1 | `.dockerignore` allow-list → no `.git` in image | CI image inspection | Planned |
+| 13.4.1 | 1 | `.dockerignore` allow-list → no `.git` in image | CI image inspection | Built |
 | 13.4.2 | 2 | `debug=False`, no `--reload`, `ENV=prod` guard | config test | Planned |
 | 13.4.3 | 2 | No static file serving | — | Planned |
 | 13.4.4 | 2 | `TRACE` → 405 | API test | Planned |
@@ -252,9 +254,9 @@ the claim "L2" is evidence-backed, not aspirational.
 | 15.1.1 | 1 | Remediation SLAs: critical 7 d, high 30 d, medium 90 d; dependency update cadence weekly (Dependabot) | `SECURITY.md` | Doc |
 | 15.1.2 | 2 | CycloneDX SBOM per build (CI artefact + image attestation); packages only from PyPI via `uv.lock` hashes | CI | Planned |
 | 15.1.3 | 2 | Resource-heavy functions documented: full run, LLM calls, dispatch batches | `05`, `09` | Doc |
-| 15.2.1 | 1 | `pip-audit` + Trivy gate in CI | CI | Planned |
+| 15.2.1 | 1 | `pip-audit` + Trivy gate in CI | CI | Built |
 | 15.2.2 | 2 | Limits for heavy functions: run concurrency 1, max tasks/run, LLM semaphore + budget, request body cap, timeouts | tests | Planned |
-| 15.2.3 | 2 | Prod image = product package only (mocks/dev tools excluded) | CI image inspection test | Planned |
+| 15.2.3 | 2 | Prod image = product package only (mocks/dev tools excluded) | CI image inspection test | Built |
 | 15.3.1 | 1 | Explicit response models | API tests | Planned |
 | 15.3.2 | 2 | `follow_redirects=False` on all clients | adapter test | Planned |
 | 15.3.3 | 2 | Request models `extra="forbid"`, separate input/output models | API test (extra field → 422) | Planned |

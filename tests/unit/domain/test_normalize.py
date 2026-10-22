@@ -89,6 +89,7 @@ def test_task_id_is_canonical(raw: str) -> None:
 
 
 @pytest.mark.parametrize("raw", [None, "", "1001", "TC1001", "T-1", 1001])
+@pytest.mark.asvs("2.2.1")
 def test_invalid_task_id_is_rejected(raw: object) -> None:
     result = normalize([record(task_id=raw)], AS_OF)
     assert result.tasks == ()
@@ -124,6 +125,7 @@ def test_dates_accept_iso_dates_and_datetimes(
 @pytest.mark.parametrize(
     "raw", ["18/10/2026", "2026-13-40", "2026-10-18Tnoon", "soon", 20261018]
 )
+@pytest.mark.asvs("2.2.3")
 def test_bad_due_date_becomes_none_and_is_flagged(raw: object) -> None:
     task = one(due_date=raw)
     assert task.due_date is None
@@ -142,12 +144,14 @@ def test_bad_last_update_is_flagged() -> None:
     assert task.flags == {Flag.INVALID_LAST_UPDATE}
 
 
+@pytest.mark.asvs("2.2.3")
 def test_future_last_update_is_kept_and_flagged() -> None:
     task = one(last_update="2026-10-25")
     assert task.last_update == date(2026, 10, 25)
     assert Flag.FUTURE_LAST_UPDATE in task.flags
 
 
+@pytest.mark.asvs("1.1.1")
 def test_labels_are_single_line_and_never_empty() -> None:
     task = one(project="  ", task="Splice\r\nBcc: x\tverify")
     assert task.project == UNKNOWN_LABEL
@@ -159,6 +163,7 @@ def test_long_title_is_capped() -> None:
     assert len(one(task="x" * 500).title) == 80
 
 
+@pytest.mark.asvs("1.3.3")
 def test_notes_are_untrusted_cleaned_and_capped() -> None:
     task = one(notes="  line one\r\nline\u202e two\x00  ")
     assert task.notes == UntrustedText("line one\nline two")
@@ -170,6 +175,7 @@ def test_notes_are_untrusted_cleaned_and_capped() -> None:
     assert not one(notes={"x": 1}).notes
 
 
+@pytest.mark.asvs("1.1.1")
 def test_full_width_text_is_nfkc_normalised() -> None:
     assert (
         one(
@@ -186,6 +192,7 @@ def test_extra_fields_are_ignored() -> None:
 
 
 class TestDuplicates:
+    @pytest.mark.asvs("2.2.3")
     def test_latest_update_wins(self) -> None:
         records = [
             record(last_update="2026-10-10", notes="old"),

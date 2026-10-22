@@ -84,6 +84,7 @@ def test_runtime_runs_as_the_unprivileged_service_user() -> None:
     assert docker("run", *HARDENED, RUNTIME, "id", "-u") == "10001"
 
 
+@pytest.mark.asvs("13.4.1", "15.2.3")
 def test_runtime_ships_only_the_product() -> None:
     found = json.loads(
         docker("run", *HARDENED, RUNTIME, "python", "-c", INVENTORY)
@@ -97,6 +98,7 @@ def test_runtime_ships_only_the_product() -> None:
     }
 
 
+@pytest.mark.asvs("15.2.3")
 def test_service_user_cannot_modify_its_own_code() -> None:
     # Without --read-only: file ownership alone must already deny it.
     output = docker("run", "--rm", RUNTIME, "python", "-c", WRITE_PROBE)

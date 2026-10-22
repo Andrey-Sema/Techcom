@@ -47,6 +47,11 @@ repos:
         language: system
         files: ^Dockerfile$
         pass_filenames: false
+      - id: gitleaks
+        name: gitleaks on staged changes (image pinned by digest)
+        entry: make secrets-staged
+        language: system
+        pass_filenames: false
       - id: no-coverage-suppression
         name: no coverage suppression
         entry: 'pragma:\s*no\s*(cover|branch)'

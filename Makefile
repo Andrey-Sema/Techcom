@@ -2,7 +2,8 @@
         deps audit spelling yaml workflows pyproject-check docs \
         test test-fast test-integration mock db-up db-down \
         obs-secrets up-obs down-obs obs-check obs-smoke \
-        images dockerfile-lint image-scan image-test mutation
+        images dockerfile-lint image-scan image-test mutation sbom \
+        secrets-scan secrets-staged
 
 GATES = uv run --locked --group gates
 # Semgrep conflicts with the project's dependency set, so it runs in an
@@ -152,6 +153,7 @@ TRIVY_IMAGE = aquasec/trivy:0.75.0@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a
 TRIVY = docker run --rm $(DOCKER_RUN_FLAGS) \
 	  -v $(CURDIR)/Dockerfile:/scan/Dockerfile:ro \
 	  -v $(CURDIR)/var/images:/scan/images:ro \
+	  -v $(CURDIR)/var/sbom:/scan/sbom \
 	  -v $(CURDIR)/var/trivy-cache:/root/.cache/trivy $(TRIVY_IMAGE)
 TRIVY_IMAGE_SCAN = image --exit-code 1 --severity HIGH,CRITICAL \
 	  --ignore-unfixed --scanners vuln,secret
@@ -166,14 +168,36 @@ dockerfile-lint:
 	  $(HADOLINT_IMAGE) hadolint --config /.config/hadolint.yaml - < Dockerfile
 
 image-scan: images
-	mkdir -p var/images var/trivy-cache
+	mkdir -p var/images var/trivy-cache var/sbom
 	docker save $(IMAGE) -o var/images/runtime.tar
 	docker save $(MOCK_IMAGE) -o var/images/mock.tar
 	$(TRIVY) config --exit-code 1 --severity MEDIUM,HIGH,CRITICAL \
 	  /scan/Dockerfile
 	$(TRIVY) $(TRIVY_IMAGE_SCAN) --input /scan/images/runtime.tar
 	$(TRIVY) $(TRIVY_IMAGE_SCAN) --input /scan/images/mock.tar
+	$(TRIVY) image --format cyclonedx --output /scan/sbom/runtime-image.cdx.json \
+	  --input /scan/images/runtime.tar
 
 image-test: images
 	FOLLOWUP_TEST_IMAGE=$(IMAGE) FOLLOWUP_TEST_MOCK_IMAGE=$(MOCK_IMAGE) \
 	  uv run --locked pytest -m image --no-cov -p no:randomly tests/image
+
+# Supply chain (M9). CycloneDX SBOM of the locked runtime dependency set;
+# image-scan adds the SBOM of the runtime image. CI keeps both as build
+# artefacts (ASVS 15.1.2).
+sbom:
+	mkdir -p var/sbom
+	uv export --locked --no-dev --package techcom-followup \
+	  --format cyclonedx1.5 -q -o var/sbom/techcom-followup.cdx.json
+
+# Secret scanning with gitleaks, pinned by digest: the whole history in
+# CI, staged changes in the pre-commit hook.
+GITLEAKS_IMAGE = zricethezav/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
+GITLEAKS = docker run --rm -v $(CURDIR):/repo:ro $(GITLEAKS_IMAGE)
+
+secrets-scan:
+	$(GITLEAKS) git /repo --redact --no-banner --exit-code 1
+
+secrets-staged:
+	$(GITLEAKS) git /repo --pre-commit --staged --redact --no-banner \
+	  --exit-code 1

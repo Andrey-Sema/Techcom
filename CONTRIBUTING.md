@@ -7,8 +7,17 @@ make bootstrap      # uv sync (dev, gates, docs) + pre-commit hooks
 make quality        # Ruff, mypy --strict, Bandit, import-linter
 make test           # full suite, 100 % branch coverage (needs Docker)
 make gates          # Semgrep rules, complexity, dead code, deps, audit,
-                    # spelling, YAML, workflows, pyproject, docs
+                    # spelling, YAML, workflows, pyproject, docs, hadolint
+make image-scan     # build images, Trivy config/image scans, image SBOM
+make image-test     # run the images hardened (tests/image)
+make mutation       # mutation score of the decision core (>= 90 %)
+make secrets-scan   # gitleaks over the whole git history
 ```
+
+The pre-commit hooks for gitleaks and hadolint run their scanners from
+images pinned by digest, so committing needs a running Docker daemon.
+After changing an `@pytest.mark.asvs` marker or a status in `docs/15`,
+regenerate the report with `uv run python scripts/asvs_traceability.py`.
 
 Python 3.13 and 3.14 are supported; `uv.lock` is the single source of
 dependency versions. Never edit it by hand: run `uv lock`.
