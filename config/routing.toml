@@ -1,0 +1,30 @@
+# Who receives routed messages.
+#
+# Recipients come only from this file or from the task owner field,
+# never from task notes or a language model. Names are role mailboxes;
+# the delivery adapter resolves them to contacts.
+
+fallback_team = "Operations desk"
+
+[blocker_teams]
+materials = "Warehouse team"
+
+[projects."SURF Illinois"]
+coordinator = "SURF Illinois coordinator"
+manager = "SURF Illinois project manager"
+
+[projects."Michigan Expansion"]
+coordinator = "Michigan Expansion coordinator"
+manager = "Michigan Expansion project manager"
+
+[projects."Wisconsin Build"]
+coordinator = "Wisconsin Build coordinator"
+manager = "Wisconsin Build project manager"
+
+[projects."Indiana OSP"]
+coordinator = "Indiana OSP coordinator"
+manager = "Indiana OSP project manager"
+
+[projects."Minnesota Fiber"]
+coordinator = "Minnesota Fiber coordinator"
+manager = "Minnesota Fiber project manager"

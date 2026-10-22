@@ -1,7 +1,8 @@
 # TechCom AI Operations & Follow-up Service
 
-> Status: **design complete; first slice implemented — LLM router
-> (`src/techcom_followup/adapters/outbound/llm/`), 71 tests, 100 %
+> Status: **design complete; implemented — domain core (M1,
+> `src/techcom_followup/domain/`) and LLM router
+> (`src/techcom_followup/adapters/outbound/llm/`); 298 tests, 100 %
 > branch coverage** (plan for the
 > TechCom AI Engineer final assessment). Evaluation date: 2026-10-21 UTC.
 

@@ -1,15 +1,35 @@
-from pathlib import Path
+"""Fixtures shared by the whole test suite."""
+
+import json
+from datetime import date
 
 import pytest
-from llm_doubles import FakeClock
 
+from llm_doubles import FakeClock
+from support import AS_OF, ROOT, repo_policy
 from techcom_followup.adapters.outbound.llm.config import (
     RoutingConfig,
     load_routing_config,
 )
 from techcom_followup.application.ports import LLMPurpose, LLMRequest
+from techcom_followup.domain.policy import DecisionPolicy
 
-ROOT = Path(__file__).resolve().parents[3]
+
+@pytest.fixture
+def as_of() -> date:
+    return AS_OF
+
+
+@pytest.fixture
+def policy() -> DecisionPolicy:
+    return repo_policy()
+
+
+@pytest.fixture
+def fixture_records() -> list[object]:
+    text = (ROOT / "fixtures" / "tasks.json").read_text(encoding="utf-8")
+    records: list[object] = json.loads(text)
+    return records
 
 
 @pytest.fixture

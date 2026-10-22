@@ -75,6 +75,10 @@ the policy) — coverage is the floor, not the proof.
 
 ## 3. Property-based invariants (hypothesis)
 
+Implemented with M1 (`tests/property/test_domain_properties.py`): 1–6, 8,
+9, 10. Invariants 7, 11 and 12 need the use cases and the LLM
+interpreter and arrive with M4/M5.
+
 1. **Totality**: every normalized task yields exactly one decision.
 2. **Done is quiet**: `status == DONE ⇒ decision == no_action`.
 3. **No invention**: `target` is the task owner, or a value from the routing

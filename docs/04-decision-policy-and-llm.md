@@ -73,6 +73,33 @@ works on UTC calendar dates. Production design: each project carries an
 IANA time zone in `routing.toml`; `Δ` is computed on the project's local
 date; tests pin both behaviours.
 
+## 2b. Implementation notes (M1, as built)
+
+Choices made while coding the table, each pinned by a unit test:
+
+* **Precedence inside R7.** A blocked task with no usable blocker gets
+  `blocked_reason_unclear` even when it is also overdue: the more
+  specific question is the more useful one.
+* **R2 drops the interpretation.** For a flagged note the policy ignores
+  any keyword or LLM reading and uses `UNCLEAR`; an attacker cannot steer
+  a task into `request_eta` or `escalate` through the note.
+* **R8 and a missing `last_update`.** No update date counts as stale (a
+  reminder asks a human; it never invents a fact).
+* **Unknown project.** Coordinator and manager lookups fall back to
+  `fallback_team` (`Operations desk`); the target is never empty.
+* **Recipient names** are role mailboxes from `config/routing.toml`
+  (`Warehouse team`, `SURF Illinois project manager`); the delivery
+  adapter resolves them to contacts (rule D-1).
+* **Fact scrubbing.** Before a task value reaches a message, braces
+  become parentheses and links / e-mail addresses are replaced
+  (`[link removed]`), so a hostile task title cannot plant a phishing
+  link. Facts are capped at 80 characters, which keeps subjects within
+  120 and bodies within 800 characters (property-tested).
+* **Code location.** `domain/{normalize,injection,interpretation,
+  policy,identity,messages}.py`; thresholds in `config/policy.toml`,
+  recipients in `config/routing.toml`, both validated at load
+  (`infrastructure/policy_files.py`).
+
 ## 3. When is the LLM called?
 
 ```text

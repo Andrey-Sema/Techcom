@@ -90,7 +90,7 @@ flowchart TB
 ├── deploy/                     # prometheus, grafana, loki, alloy, initdb
 ├── config/
 │   ├── routing.toml            # project → coordinator/manager, blocker → team
-│   └── policy.toml             # thresholds, status synonyms
+│   └── policy.toml             # rule thresholds, policy version
 ├── fixtures/tasks.json
 ├── migrations/                 # Alembic (sync psycopg 3)
 ├── samples/                    # committed demo outputs
@@ -102,6 +102,7 @@ flowchart TB
 │   ├── techcom_followup/
 │   │   ├── domain/
 │   │   │   ├── models.py       # Task, Decision, ActionRecord, enums
+│   │   │   ├── text.py         # NFKC, control/format char stripping
 │   │   │   ├── normalize.py    # raw dict → Task | RejectedRecord
 │   │   │   ├── policy.py       # ordered rule table, pure
 │   │   │   ├── interpretation.py  # NoteInterpretation, keyword prefilter
@@ -123,6 +124,7 @@ flowchart TB
 │   │   │                 orm.py, clock.py}
 │   │   └── infrastructure/
 │   │       ├── settings.py     # pydantic-settings
+│   │       ├── policy_files.py # policy.toml / routing.toml loaders
 │   │       ├── http_client.py  # httpx factory, allow-list, retry policy
 │   │       ├── resilience.py   # circuit breaker, retry budget
 │   │       ├── log_config.py   # structlog JSON + OTLP, redaction

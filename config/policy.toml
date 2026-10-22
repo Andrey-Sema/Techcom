@@ -1,0 +1,10 @@
+# Thresholds of the decision policy (docs/04 section 2).
+#
+# Changing a threshold changes decisions: bump `version` and update the
+# golden test in the same commit.
+
+version = "2026-10-21.1"
+escalate_after_days = 5   # overdue by this many days -> escalate
+due_soon_days = 1         # 0..N days before the due date -> reminder
+stale_days = 3            # no update for N days counts as stale
+min_confidence = 0.6      # below this an interpretation is "unclear"
