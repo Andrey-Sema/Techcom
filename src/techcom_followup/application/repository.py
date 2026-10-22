@@ -245,6 +245,14 @@ class Repository(Protocol):
         """Apply an unexpired claim; false means lost ownership."""
         ...
 
+    async def defer_claim(self, update: ActionUpdate) -> bool:
+        """Return an unsent claim to pending without an attempt.
+
+        Call only before starting any delivery I/O. Unknown outcomes
+        cannot use this path and require lookup before becoming pending.
+        """
+        ...
+
     async def release_claim(
         self, action_id: UUID, lease_token: UUID, now: datetime
     ) -> bool:
