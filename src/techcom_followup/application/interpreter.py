@@ -9,7 +9,6 @@ from hashlib import sha256
 from pydantic import Field, ValidationError
 
 from techcom_followup.application.llm_workflow import (
-    InvalidOutputError,
     LanguageCall,
     StrictOutput,
     parse_output,
@@ -149,17 +148,11 @@ class NoteInterpreter:
             json_schema=InterpretationOutput.model_json_schema(),
             prompt_version=PROMPT_VERSION,
         )
-        text = await self.calls.call(request)
-        if text is None:
+        output = await self.calls.call(
+            request, lambda text: _validate_interpretation(text, note)
+        )
+        if output is None:
             return fallback()
-        try:
-            output = parse_output(text, InterpretationOutput)
-            require_output(output.grounded(note), "ungrounded")
-            require_output(output.confidence >= MIN_CONFIDENCE, "confidence")
-        except InvalidOutputError as exc:
-            self.calls.reject(str(exc), request, text)
-            return fallback()
-        self.calls.accept()
         interpretation = NoteInterpretation(
             **output.model_dump(), source=InterpretationSource.LLM
         )
@@ -176,3 +169,10 @@ class NoteInterpreter:
                 )
             )
         return interpretation
+
+
+def _validate_interpretation(text: str, note: str) -> InterpretationOutput:
+    output = parse_output(text, InterpretationOutput)
+    require_output(output.grounded(note), "ungrounded")
+    require_output(output.confidence >= MIN_CONFIDENCE, "confidence")
+    return output

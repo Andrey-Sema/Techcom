@@ -1,18 +1,22 @@
-"""Shared bounded, fail-closed execution of language-only requests.
+"""Bounded, fail-closed execution of language-only requests.
 
-No retries or tools live here. Audit events contain closed failure codes
-and a digest, never provider errors or untrusted input/output text.
+Validation settles the same attempt that obtained admission. Stale
+requests cannot release another request's half-open probe or reset its
+breaker generation. Audit records omit provider errors and raw text.
 """
 
+import asyncio
 import time
 from collections import Counter
 from collections.abc import Callable
 from hashlib import sha256
+from math import isfinite
 
 import structlog
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from techcom_followup.application.ports import LLMClient, LLMError, LLMRequest
+from techcom_followup.application.resilience_ports import BreakerPermit
 
 MAX_OUTPUT_CHARS = 16_384
 BREAKER_COOLDOWN_S = 30
@@ -31,44 +35,50 @@ class InvalidOutputError(Exception):
 
 
 class LanguageCall:
-    """One-attempt language calls with a local availability breaker.
-
-    Synchronous admission and settlement run on one event loop. An open
-    breaker admits one probe after thirty seconds. Cancellation releases
-    the probe and propagates to the caller.
-    """
+    """One-attempt calls with an owned breaker and total deadline."""
 
     def __init__(
         self,
         client: LLMClient | None,
         *,
         monotonic: Callable[[], float] = time.monotonic,
+        timeout_s: float = 10,
     ) -> None:
-        """Use an optional client; absent clients always fall back."""
+        """Inject a language port and a finite total call deadline."""
+        if not isfinite(timeout_s) or timeout_s <= 0:
+            message = "language timeout must be finite and positive"
+            raise ValueError(message)
         self.client = client
         self.failures: Counter[str] = Counter()
         self._monotonic = monotonic
+        self._timeout_s = timeout_s
         self._consecutive = 0
         self._opened_at: float | None = None
-        self._probe = False
+        self._probe: BreakerPermit | None = None
+        self._generation = 0
+        self._identity = object()
 
-    def _allow(self) -> bool:
-        if self._opened_at is None:
-            return True
-        if (
-            self._probe
+    def _admit(self) -> BreakerPermit | None:
+        if self._opened_at is not None and (
+            self._probe is not None
             or self._monotonic() - self._opened_at < BREAKER_COOLDOWN_S
         ):
-            return False
-        self._probe = True
-        return True
+            return None
+        permit = BreakerPermit(self._identity, self._generation)
+        if self._opened_at is not None:
+            self._probe = permit
+        return permit
 
-    def reject(self, stage: str, request: LLMRequest, text: str = "") -> None:
-        """Count a validation failure without exposing its contents."""
+    def _reject(
+        self, stage: str, request: LLMRequest, text: str, permit: BreakerPermit
+    ) -> None:
         self.failures[stage] += 1
-        self._consecutive += 1
-        if self._consecutive >= BREAKER_FAILURE_THRESHOLD:
-            self._opened_at = self._monotonic()
+        if permit.generation == self._generation:
+            self._consecutive += 1
+            if self._consecutive >= BREAKER_FAILURE_THRESHOLD:
+                self._opened_at = self._monotonic()
+                self._generation += 1
+                self._probe = None
         _log.warning(
             "llm.validation_failed",
             stage=stage,
@@ -78,30 +88,45 @@ class LanguageCall:
             ).hexdigest(),
         )
 
-    async def call(self, request: LLMRequest) -> str | None:
-        """Return text or a safe failure; propagate cancellation."""
-        if self.client is None or not self._allow():
+    async def call[Output](
+        self, request: LLMRequest, validate: Callable[[str], Output]
+    ) -> Output | None:
+        """Validate locally and propagate external cancellation."""
+        permit = self._admit()
+        if self.client is None or permit is None:
             self.failures["unavailable"] += 1
             return None
+        text = ""
         try:
-            result = await self.client.generate_json(request)
+            async with asyncio.timeout(self._timeout_s):
+                result = await self.client.generate_json(request)
+            text = result.text
+            output = validate(text)
+        except InvalidOutputError as exc:
+            self._reject(str(exc), request, text, permit)
         except (LLMError, TimeoutError):
-            self.reject("transport", request)
-            return None
+            self._reject("transport", request, "", permit)
+        else:
+            self._accept(permit)
+            return output
         finally:
-            self._probe = False
-        return result.text
+            if self._probe is permit:
+                self._probe = None
+        return None
 
-    def accept(self) -> None:
-        """Close the breaker only after local validation succeeds."""
-        self._consecutive = 0
-        self._opened_at = None
+    def _accept(self, permit: BreakerPermit) -> None:
+        if permit.generation == self._generation:
+            if self._opened_at is not None:
+                self._generation += 1
+            self._consecutive = 0
+            self._opened_at = None
+            self._probe = None
 
 
 def parse_output[Output: StrictOutput](
     text: str, schema: type[Output]
 ) -> Output:
-    """Validate bounded JSON using strict JSON-mode enum semantics.
+    """Validate bounded JSON with strict JSON-mode enum semantics.
 
     Raises:
         InvalidOutputError: A closed syntax or schema failure code.
