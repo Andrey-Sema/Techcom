@@ -1,0 +1,101 @@
+# Project invariants (docs/17 section 7). Each rule encodes a design
+# decision so that it cannot regress silently. Every rule has positive
+# and negative cases in project-invariants.py (run: make semgrep-test).
+rules:
+  - id: no-str-format-in-messages
+    message: >-
+      Messages are rendered by the one-pass placeholder renderer only;
+      str.format/format_map/% on templates allows attribute lookup
+      ({x.__class__}) - ASVS 1.3.7.
+    severity: ERROR
+    languages: [python]
+    paths:
+      include:
+        - "**/domain/messages.py"
+        - "**/application/drafter.py"
+        - "project-invariants.py"
+    pattern-either:
+      - pattern: $TEXT.format(...)
+      - pattern: $TEXT.format_map(...)
+      - pattern: '"..." % $ARGS'
+
+  - id: no-tls-verify-false
+    message: TLS verification must stay on - ASVS 12.3.2.
+    severity: ERROR
+    languages: [python]
+    pattern: $CALL(..., verify=False, ...)
+
+  - id: no-follow-redirects
+    message: >-
+      Outbound calls must not follow redirects: a redirect can leave the
+      outbound allow-list - ASVS 15.3.2.
+    severity: ERROR
+    languages: [python]
+    pattern: $CALL(..., follow_redirects=True, ...)
+
+  - id: no-naive-clock-in-core
+    message: >-
+      Domain and application code receive time through the Clock port;
+      reading the system clock makes decisions non-deterministic.
+    severity: ERROR
+    languages: [python]
+    paths:
+      include:
+        - "**/techcom_followup/domain/**"
+        - "**/techcom_followup/application/**"
+        - "project-invariants.py"
+    pattern-either:
+      - pattern: datetime.now(...)
+      - pattern: datetime.datetime.now(...)
+      - pattern: datetime.utcnow()
+      - pattern: date.today()
+      - pattern: datetime.date.today()
+      - pattern: time.time()
+
+  - id: no-raw-sql-interpolation
+    message: >-
+      SQL text must be constant; pass values as bound parameters -
+      ASVS 1.2.4.
+    severity: ERROR
+    languages: [python]
+    pattern-either:
+      - pattern: $SA.text(f"...")
+      - pattern: text(f"...")
+      - pattern: $SA.text("..." + $X)
+      - pattern: text("..." + $X)
+      - pattern: $SA.text($T.format(...))
+      - pattern: text($T.format(...))
+      - pattern: $SA.text("..." % $X)
+      - pattern: text("..." % $X)
+
+  - id: no-untrusted-text-in-logs
+    message: >-
+      Task notes, prompts and raw model output never go to logs; log a
+      hash or a length instead - ASVS 16.2.5.
+    severity: ERROR
+    languages: [python]
+    patterns:
+      - pattern-either:
+          - pattern: $LOG.$METHOD(..., notes=$V, ...)
+          - pattern: $LOG.$METHOD(..., prompt=$V, ...)
+          - pattern: $LOG.$METHOD(..., raw_output=$V, ...)
+          - pattern: $LOG.$METHOD(..., input_text=$V, ...)
+      - metavariable-regex:
+          metavariable: $METHOD
+          regex: ^(debug|info|warning|warn|error|exception|critical|msg|log)$
+
+  - id: no-direct-env-access
+    message: >-
+      Configuration is read only by infrastructure/settings.py
+      (pydantic-settings); everything else receives settings objects.
+    severity: ERROR
+    languages: [python]
+    paths:
+      include:
+        - "**/src/techcom_followup/**"
+        - "project-invariants.py"
+      exclude:
+        - "**/infrastructure/settings.py"
+    pattern-either:
+      - pattern: os.environ
+      - pattern: os.getenv(...)

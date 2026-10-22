@@ -34,7 +34,8 @@ Two declared tiers (decision from the senior audit, `16` #30):
 | M2 | **done** | Separate mock distribution, task/message/lookup endpoints, canonical payload dedupe, 409/422 semantics, fsynced recovery journal, fault transport, bounded/redacted requests, concurrent/cancellation/Hypothesis tests | Single local worker per journal; production receiver is out of scope |
 | M3 | **done** | Frozen PG18 migration, SQLAlchemy Core, memory/PG repository contract, atomic decision/action/audit, UUIDv7, `SKIP LOCKED`, fencing tokens, unknown-state recovery, cache expiry, real PostgreSQL concurrency/rollback tests | Production least-privilege DB roles remain M9 |
 | M4 | in progress | Development in an isolated worktree | Use cases, delivery/reconciliation and end-to-end scenarios |
-| M0b, M6–M12 | not started | — | see §1 |
+| M0b | **done** | `make gates` (CI job `gates`): Semgrep project invariants with `semgrep --test` cases, xenon, vulture, deptry (app and mocks), pip-audit on the locked runtime set, codespell, yamllint, zizmor, workflow/Dependabot schemas, validate-pyproject, MkDocs `--strict` (`mkdocs.yml`), commitizen `commit-msg` hook; Dependabot with cooldown, CODEOWNERS, PR/issue templates, `SECURITY.md`, `CONTRIBUTING.md`, `CHANGELOG.md` | Semgrep registry packs (`p/python`, `p/owasp-top-ten`) need a networked first run to triage; gitleaks, hadolint (no Dockerfile yet), Trivy and SBOM move to M8/M9 |
+| M6–M12 | not started | — | see §1 |
 
 Current batch: **M0 + M2 + M3**. Next batch: **M4 + remaining M5 + M6a**.
 Each batch receives independent review and its own pull request. Existing
