@@ -190,6 +190,7 @@ class _RuntimeScope:
         self._client: httpx.AsyncClient | None = None
         self._processor: ProcessTasks | None = None
         self._dispatcher: DispatchActions | None = None
+        self._stopping = False
 
     def _endpoint(self, url: str) -> HttpEndpoint:
         if self._client is None:
@@ -261,7 +262,8 @@ class _RuntimeScope:
                     monotonic=time.monotonic,
                 ),
                 enabled=lambda: (
-                    self._settings.dispatch_enabled
+                    not self._stopping
+                    and self._settings.dispatch_enabled
                     and os.environ.get(
                         "FOLLOWUP_DISPATCH_ENABLED", "true"
                     ).lower()
@@ -275,7 +277,8 @@ class _RuntimeScope:
         return ReconcileUnknown(self._delivery())
 
     def stop_claiming(self) -> None:
-        """Stop an existing dispatcher without opening a client."""
+        """Close admission even before lazy construction."""
+        self._stopping = True
         if self._dispatcher is not None:
             self._dispatcher.stop()
 

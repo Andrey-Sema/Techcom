@@ -215,3 +215,25 @@ async def test_crash_after_send_reconciles_before_any_resend() -> None:
             0
         ].status is ActionStatus.SENT
         assert len(app.store._entries) == 1
+
+
+@pytest.mark.parametrize(
+    "note",
+    [
+        "All materials arrived; there is no blocker.",
+        "Upstream work is confirmed complete; there is no obstacle.",
+        'The log quotes "permit pending" as an old issue, now resolved.',
+    ],
+)
+async def test_resolved_blockers_do_not_automatically_route_to_other_teams(
+    note: str,
+) -> None:
+    records = fixture_records()[:1]
+    assert isinstance(records[0], dict)
+    records[0]["notes"] = note
+    records[0]["due_date"] = "2026-10-20"
+    async with stack(records) as app:
+        result = await app.processor.execute(as_of=AS_OF)
+        assert result.decisions[0].kind is DecisionKind.FOLLOW_UP_OWNER
+        assert result.decisions[0].target is not None
+        assert result.decisions[0].target.name == "John Smith"

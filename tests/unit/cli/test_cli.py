@@ -446,3 +446,20 @@ async def test_command_stop_preserves_pending_work_without_opening_new_clients(
         services.stop_claiming()
         assert await dispatcher.execute() == 0
         assert len(await services.repository.list_actions()) == 7
+
+
+async def test_shutdown_before_lazy_dispatcher_creation_prevents_later_sends(
+    http_receiver: Receiver,
+) -> None:
+    _, store, clients, requests = http_receiver
+    async with bootstrap.RuntimeBuilder(
+        bootstrap.RuntimeSettings(config_dir=ROOT / "config")
+    )(CommandOptions(AS_OF, ROOT / "fixtures/tasks.json")) as services:
+        await services.processor().execute(as_of=AS_OF)
+        # SIGTERM during processing closes later delivery admission.
+        services.stop_claiming()
+        assert not clients
+        assert await services.dispatcher().execute() == 0
+        assert len(await services.repository.list_actions()) == 7
+    assert not requests
+    assert not store._entries
