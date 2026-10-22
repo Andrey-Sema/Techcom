@@ -1,0 +1,10 @@
+# Retention per data class (docs/15 section 8), applied by
+# `followup maintenance prune` with the maintenance database role
+# (docs/18). Bounds are validated at load time.
+
+version = "2026-10-22.1"
+decision_days = 90   # internal: decisions without actions, empty runs
+action_days = 365    # confidential-personal: sent and dead actions
+audit_days = 365     # confidential-personal: the audit trail
+batch_size = 1000    # rows per table and transaction
+max_batches = 100    # bound one invocation; the next one continues

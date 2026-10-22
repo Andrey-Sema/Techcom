@@ -58,6 +58,7 @@ from techcom_followup.application.processing_ports import (
 )
 from techcom_followup.application.reconcile import ReconcileUnknown
 from techcom_followup.application.repository import Repository
+from techcom_followup.application.retention import PruneData
 from techcom_followup.application.retry import RetryBudget
 from techcom_followup.infrastructure.http_client import (
     HttpEndpoint,
@@ -66,6 +67,7 @@ from techcom_followup.infrastructure.http_client import (
 from techcom_followup.infrastructure.log_config import configure_logging
 from techcom_followup.infrastructure.policy_files import (
     load_decision_policy,
+    load_retention_policy,
 )
 from techcom_followup.infrastructure.resilience import CircuitBreaker
 from techcom_followup.infrastructure.settings import load_openai_settings
@@ -272,6 +274,16 @@ class _RuntimeScope:
         """Recover using delivery settings without LLM credentials."""
         return ReconcileUnknown(self._delivery())
 
+    def pruner(self) -> PruneData:
+        """Apply retention; needs neither HTTP nor LLM clients."""
+        return PruneData(
+            self._storage.repository,
+            load_retention_policy(
+                self._settings.config_dir / "retention.toml"
+            ),
+            self._clock.now,
+        )
+
     def stop_claiming(self) -> None:
         """Close admission even before lazy construction."""
         self._stopping = True
@@ -321,6 +333,7 @@ class RuntimeBuilder:
                 scope.stop_claiming,
                 storage.persistent,
                 partial(_advance, clock),
+                scope.pruner,
             )
 
 

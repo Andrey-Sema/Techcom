@@ -26,12 +26,15 @@ from techcom_followup.application.repository import (
     ClaimRequest,
     DecisionOutcome,
     DecisionWrite,
+    PruneCounts,
+    RetentionCutoffs,
     RunRecord,
     StoredDecision,
     require_aware,
 )
 
 _FOREIGN_KEY_VIOLATION = "23503"
+_TERMINAL = ("sent", "dead")
 _WRITE = TypeAdapter(DecisionWrite)
 _ACTION = TypeAdapter(ActionRecord)
 _RUN = TypeAdapter(RunRecord)
@@ -418,3 +421,61 @@ class PgRepository:
                 )
                 for row in result.mappings()
             )
+
+    async def prune(
+        self, cutoffs: RetentionCutoffs, limit: int
+    ) -> PruneCounts:
+        """Delete one bounded batch per table in a single transaction.
+
+        Order matters: actions go first, so their decisions become
+        eligible in the same batch, and runs go last.
+        """
+        unreferenced = ~sa.exists().where(
+            actions.c.decision_id == decisions.c.id
+        )
+        old_runs = sa.select(runs.c.id).where(
+            runs.c.started_at < cutoffs.decisions
+        )
+        steps = (
+            (
+                llm_cache,
+                llm_cache.c.cache_key,
+                llm_cache.c.expires_at <= cutoffs.cache,
+            ),
+            (
+                actions,
+                actions.c.id,
+                actions.c.status.in_(_TERMINAL)
+                & (
+                    sa.func.coalesce(
+                        actions.c.sent_at, actions.c.next_attempt_at
+                    )
+                    < cutoffs.actions
+                ),
+            ),
+            (
+                decisions,
+                decisions.c.id,
+                decisions.c.run_id.in_(old_runs) & unreferenced,
+            ),
+            (
+                audit_events,
+                audit_events.c.id,
+                audit_events.c.at < cutoffs.audit,
+            ),
+            (
+                runs,
+                runs.c.id,
+                (runs.c.started_at < cutoffs.decisions)
+                & ~sa.exists().where(decisions.c.run_id == runs.c.id),
+            ),
+        )
+        deleted: list[int] = []
+        async with self._engine.begin() as connection:
+            for table, key, condition in steps:
+                victims = sa.select(key).where(condition).limit(limit)
+                result = await connection.execute(
+                    sa.delete(table).where(key.in_(victims))
+                )
+                deleted.append(result.rowcount)
+        return PruneCounts(*deleted)

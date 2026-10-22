@@ -204,6 +204,44 @@ class CacheEntry:
             raise ValueError(message)
 
 
+@dataclass(frozen=True, slots=True)
+class RetentionCutoffs:
+    """Rows strictly older than these instants are eligible."""
+
+    cache: datetime
+    decisions: datetime
+    actions: datetime
+    audit: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class PruneCounts:
+    """Rows deleted per table in one batch or in total."""
+
+    cache: int = 0
+    actions: int = 0
+    decisions: int = 0
+    audit: int = 0
+    runs: int = 0
+
+    @property
+    def total(self) -> int:
+        """All deleted rows."""
+        return (
+            self.cache + self.actions + self.decisions + self.audit + self.runs
+        )
+
+    def __add__(self, other: "PruneCounts") -> "PruneCounts":
+        """Sum two batches."""
+        return PruneCounts(
+            self.cache + other.cache,
+            self.actions + other.actions,
+            self.decisions + other.decisions,
+            self.audit + other.audit,
+            self.runs + other.runs,
+        )
+
+
 def require_aware(value: datetime) -> None:
     """Reject ambiguous local datetimes at persistence boundaries."""
     if value.tzinfo is None or value.utcoffset() is None:
@@ -290,4 +328,14 @@ class Repository(Protocol):
 
     async def list_audit(self) -> tuple[AuditEvent, ...]:
         """Read detached audit snapshots."""
+        ...
+
+    async def prune(
+        self, cutoffs: RetentionCutoffs, limit: int
+    ) -> PruneCounts:
+        """Delete at most ``limit`` eligible rows per table, atomically.
+
+        Never deletes pending, in-flight or unknown actions, a decision
+        an action still refers to, or a run that still has decisions.
+        """
         ...

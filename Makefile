@@ -3,7 +3,7 @@
         test test-fast test-integration mock demo db-up db-down \
         obs-secrets up-obs down-obs obs-check obs-smoke \
         images dockerfile-lint image-scan image-test mutation sbom \
-        secrets-scan secrets-staged bench demo-check
+        secrets-scan secrets-staged bench demo-check db-backup db-restore
 
 GATES = uv run --locked --group gates
 # Semgrep conflicts with the project's dependency set, so it runs in an
@@ -110,6 +110,20 @@ db-up:
 
 db-down:
 	docker compose down
+
+# Backup and restore of the compose database (docs/18). Dumps contain
+# personal data: owner-only files under var/backups (git-ignored).
+DB = docker compose exec -T db
+db-backup:
+	mkdir -p var/backups
+	chmod 700 var/backups
+	umask 077 && $(DB) pg_dump -U followup --format=custom followup \
+	  > var/backups/followup-$$(date -u +%Y%m%dT%H%M%SZ).dump
+
+db-restore:
+	@test -n "$(FILE)" || { echo "usage: make db-restore FILE=var/backups/..."; exit 2; }
+	$(DB) pg_restore -U followup --dbname=followup --clean --if-exists \
+	  --exit-on-error --single-transaction < $(FILE)
 
 # Observability stack (M10, ADR-0010). Validators run inside the same
 # pinned images as the stack, taken from compose.observability.yaml.
