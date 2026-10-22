@@ -128,8 +128,9 @@ def test_cancelled_probe_is_released_without_forging_success(
     cb.record_failure()
     cb.record_failure()
     clock.advance(30)
-    assert cb.allow()
-    cb.abandon()
+    permit = cb.admit()
+    assert permit is not None
+    cb.abandon(permit)
     assert cb.state is BreakerState.HALF_OPEN
     assert cb.allow()
 
@@ -188,3 +189,33 @@ def test_reported_overage_is_charged_and_permanently_blocks_admission() -> (
     assert budget.spent_usd == 0
     assert budget.overage_usd == Decimal("0.7")
     assert budget.reserve(Decimal(0)) is None
+
+
+def test_stale_completion_cannot_release_or_change_new_probe(
+    clock: FakeClock,
+) -> None:
+    cb = breaker(clock)
+    stale = cb.admit()
+    assert stale is not None
+    cb.record_failure()
+    cb.record_failure()
+    clock.advance(30)
+    probe = cb.admit()
+    assert probe is not None
+    cb.abandon(stale)
+    cb.record_success(stale)
+    cb.record_failure(stale)
+    assert cb.admit() is None
+    cb.record_success(probe)
+    assert cb.state is BreakerState.CLOSED
+
+
+def test_foreign_permit_cannot_complete_breaker(clock: FakeClock) -> None:
+    cb = breaker(clock)
+    foreign = breaker(clock).admit()
+    assert foreign is not None
+    cb.record_failure()
+    cb.record_success(foreign)
+    cb.record_failure(foreign)
+    cb.record_failure()
+    assert cb.state is BreakerState.OPEN

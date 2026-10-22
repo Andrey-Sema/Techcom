@@ -10,6 +10,8 @@ from datetime import date
 from decimal import Decimal
 from enum import StrEnum
 
+from techcom_followup.application.resilience_ports import BreakerPermit
+
 
 class BreakerState(StrEnum):
     """Circuit breaker states."""
@@ -50,7 +52,9 @@ class CircuitBreaker:
         self._monotonic = monotonic
         self._failures = 0
         self._opened_at: float | None = None
-        self._probe_in_flight = False
+        self._probe: BreakerPermit | None = None
+        self._generation = 0
+        self._identity = object()
 
     @property
     def state(self) -> BreakerState:
@@ -61,32 +65,51 @@ class CircuitBreaker:
             return BreakerState.HALF_OPEN
         return BreakerState.OPEN
 
-    def allow(self) -> bool:
-        """Return whether a call may proceed right now."""
+    def admit(self) -> BreakerPermit | None:
+        """Admit an attempt with exclusive half-open probe ownership."""
         state = self.state
-        if state is BreakerState.CLOSED:
-            return True
-        if state is BreakerState.OPEN or self._probe_in_flight:
-            return False
-        self._probe_in_flight = True
-        return True
+        if state is BreakerState.OPEN or (
+            state is BreakerState.HALF_OPEN and self._probe is not None
+        ):
+            return None
+        permit = BreakerPermit(self._identity, self._generation)
+        if state is BreakerState.HALF_OPEN:
+            self._probe = permit
+        return permit
 
-    def abandon(self) -> None:
-        """Release a cancelled half-open probe."""
-        self._probe_in_flight = False
+    def allow(self) -> bool:
+        """Admit a legacy call; concurrent callers use ``admit``."""
+        return self.admit() is not None
 
-    def record_success(self) -> None:
-        """Close the breaker and reset the failure count."""
+    def abandon(self, permit: BreakerPermit) -> None:
+        """Release only the probe owned by this cancelled attempt."""
+        if self._probe is permit:
+            self._probe = None
+
+    def _current(self, permit: BreakerPermit | None) -> bool:
+        return permit is None or (
+            permit.owner is self._identity
+            and permit.generation == self._generation
+        )
+
+    def record_success(self, permit: BreakerPermit | None = None) -> None:
+        """Close the current generation; ignore stale completions."""
+        if not self._current(permit):
+            return
         self._failures = 0
         self._opened_at = None
-        self._probe_in_flight = False
+        self._probe = None
+        self._generation += 1
 
-    def record_failure(self) -> None:
-        """Count a failure; open the breaker at the threshold."""
-        self._probe_in_flight = False
+    def record_failure(self, permit: BreakerPermit | None = None) -> None:
+        """Count current failures without disturbing newer probes."""
+        if not self._current(permit):
+            return
         self._failures += 1
         if self._failures >= self._threshold:
             self._opened_at = self._monotonic()
+            self._generation += 1
+            self._probe = None
 
 
 @dataclass(frozen=True, slots=True)
