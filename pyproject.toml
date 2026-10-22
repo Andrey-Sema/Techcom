@@ -33,6 +33,22 @@ dev = [
     "testcontainers[postgres]>=4.8",
     "types-docker>=7.1",
 ]
+docs = [
+    "mkdocs>=1.6,<2",
+    "mkdocs-material>=9.7.7",
+]
+gates = [
+    "check-jsonschema>=0.38.2",
+    "codespell>=2.4.3",
+    "commitizen>=4.19.2",
+    "deptry>=0.25.1",
+    "pip-audit>=2.10.1",
+    "validate-pyproject[all]>=0.26",
+    "vulture>=2.16",
+    "xenon>=0.9.3",
+    "yamllint>=1.38.0",
+    "zizmor>=1.31.1",
+]
 
 [build-system]
 requires = ["hatchling>=1.25"]
@@ -55,6 +71,8 @@ techcom-mocks = { workspace = true }
 line-length = 79                       # strict PEP 8
 target-version = "py313"               # keep in sync with mypy
 src = ["src", "mocks/src", "tests"]
+# Semgrep rule fixtures are deliberately insecure code.
+extend-exclude = [".semgrep"]
 
 [tool.ruff.lint]
 select = ["ALL"]
@@ -168,3 +186,34 @@ layers = [
 name = "Mock isolation"
 type = "independence"
 modules = ["techcom_followup", "techcom_mocks"]
+
+# ------------------------------------------------------------ gates --
+[tool.vulture]
+paths = ["src", "mocks/src"]
+min_confidence = 80
+sort_by_size = true
+
+[tool.deptry]
+known_first_party = ["techcom_followup", "techcom_mocks"]
+# The mock distribution declares its own dependencies in
+# mocks/pyproject.toml; deptry checks it in a separate run.
+extend_exclude = ["mocks", "migrations", "scripts", "docs", ".semgrep"]
+
+[tool.deptry.per_rule_ignores]
+# alembic runs the migrations/ scripts; psycopg is the SQLAlchemy
+# driver selected by the "postgresql+psycopg" URL. Neither is imported.
+DEP002 = ["alembic", "psycopg"]
+
+[tool.codespell]
+skip = """*.lock,./fixtures/*,./.git/*,./.venv/*,./.*_cache/*,./var/*,\
+./.hypothesis/*,*.svg,./tests/golden/__snapshots__/*"""
+check-hidden = true
+# "nd" (2nd), "cancell" (regex stem), "caf" (test data), "ot" (OTLP).
+ignore-words-list = "nd,cancell,caf,ot"
+
+[tool.commitizen]
+name = "cz_conventional_commits"
+version_provider = "uv"
+tag_format = "v$version"
+update_changelog_on_bump = true
+major_version_zero = true
