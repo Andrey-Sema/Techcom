@@ -2,8 +2,8 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
-from llm_doubles import FakeClock
 
+from llm_doubles import FakeClock
 from techcom_followup.infrastructure.resilience import (
     BreakerState,
     CircuitBreaker,

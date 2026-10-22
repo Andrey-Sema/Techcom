@@ -2,9 +2,9 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
-from llm_doubles import FakeClock
 from structlog.testing import capture_logs
 
+from llm_doubles import FakeClock
 from techcom_followup.adapters.outbound.llm.config import (
     RouteConfig,
     RoutingConfig,

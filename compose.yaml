@@ -1,0 +1,24 @@
+name: techcom
+services:
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: followup
+      POSTGRES_USER: followup
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets: [postgres_password]
+    ports: ["127.0.0.1:5432:5432"]
+    volumes: ["pgdata:/var/lib/postgresql"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U followup -d followup"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    security_opt: ["no-new-privileges:true"]
+
+volumes:
+  pgdata:
+
+secrets:
+  postgres_password:
+    file: ./secrets/postgres_password

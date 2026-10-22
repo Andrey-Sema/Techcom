@@ -1,10 +1,10 @@
 from typing import Any
 
-import llm_doubles as sdk
 import openai
 import pytest
 from openai.types.responses import Response
 
+import llm_doubles as sdk
 from techcom_followup.adapters.outbound.llm.config import (
     RouteConfig,
     RoutingConfig,
