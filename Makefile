@@ -7,7 +7,7 @@ quality:
 	uv run --locked ruff check .
 	uv run --locked ruff format --check .
 	uv run --locked mypy
-	uv run --locked bandit -c pyproject.toml -r src mocks/src
+	uv run --locked bandit -c pyproject.toml -r src mocks/src migrations scripts
 	uv run --locked lint-imports
 
 test:

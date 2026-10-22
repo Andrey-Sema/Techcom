@@ -1,0 +1,199 @@
+[
+  {
+    "decision": "follow_up_owner",
+    "flags": [
+      "llm_fallback"
+    ],
+    "idempotency_key": "sha256:e12c8d7ba06d08b2d631d4338ebcabf29733b65baf4c9050a7ec8245b2ecb3e7",
+    "message": {
+      "body": "Hi John Smith, task TC-1001 'Fiber splicing' (SURF Illinois) was due on 2026-10-18 and is 3 day(s) overdue. Could you share the current status and a realistic completion date?",
+      "source": "template",
+      "subject": "Follow-up: TC-1001 Fiber splicing",
+      "template_id": "follow_up.overdue.v1"
+    },
+    "operation_id": "c5d55398-d208-5869-9331-0a27f2591486",
+    "outcome": "enqueued",
+    "reason": "3 day(s) overdue; no blocker explained.",
+    "reason_code": "overdue_no_explanation",
+    "rule_id": "R7",
+    "target": {
+      "kind": "person",
+      "name": "John Smith",
+      "project": "SURF Illinois"
+    },
+    "task_id": "TC-1001"
+  },
+  {
+    "decision": "request_eta",
+    "flags": [],
+    "idempotency_key": "sha256:21070d2c9edd2406f5f1683af69c64f3b8bdf9efc42007bdaf72fb1d62a1c126",
+    "message": {
+      "body": "Hello Warehouse team, TC-1002 'Install handholes' (SURF Illinois) is blocked waiting for materials. Please confirm the expected delivery date.",
+      "source": "template",
+      "subject": "ETA needed: TC-1002 Install handholes",
+      "template_id": "request_eta.v1"
+    },
+    "operation_id": "f1a2a370-ea2f-54ef-8fb5-7c74a97b9289",
+    "outcome": "enqueued",
+    "reason": "Blocked by materials; 3 day(s) overdue; delivery date unknown.",
+    "reason_code": "materials_eta_unknown",
+    "rule_id": "R5",
+    "target": {
+      "kind": "team",
+      "name": "Warehouse team",
+      "project": "SURF Illinois"
+    },
+    "task_id": "TC-1002"
+  },
+  {
+    "decision": "no_action",
+    "flags": [],
+    "idempotency_key": null,
+    "message": null,
+    "operation_id": null,
+    "outcome": "none",
+    "reason": "Task is done.",
+    "reason_code": "completed",
+    "rule_id": "R1",
+    "target": null,
+    "task_id": "TC-1003"
+  },
+  {
+    "decision": "clarify_missing_info",
+    "flags": [],
+    "idempotency_key": "sha256:69a9ce427dee3f69a8f9f3e58a0bf0137ed28c0d379a3bb26cb4b4064eabb946",
+    "message": {
+      "body": "Hello Wisconsin Build coordinator, TC-1004 'Permit review' (Wisconsin Build) is missing: owner. Please update it so we can track it correctly.",
+      "source": "template",
+      "subject": "Missing information: TC-1004 Permit review",
+      "template_id": "clarify.v1"
+    },
+    "operation_id": "c163cdab-dd1e-530f-b8b6-91ba6d3bff9d",
+    "outcome": "enqueued",
+    "reason": "Missing: owner.",
+    "reason_code": "missing_owner",
+    "rule_id": "R3",
+    "target": {
+      "kind": "role",
+      "name": "Wisconsin Build coordinator",
+      "project": "Wisconsin Build"
+    },
+    "task_id": "TC-1004"
+  },
+  {
+    "decision": "clarify_missing_info",
+    "flags": [],
+    "idempotency_key": "sha256:3f7f4a91565b41425c041c9ee76df9ca78158ff7c068e6cf830d49c05ce5ae84",
+    "message": {
+      "body": "Hello Alex Brown, TC-1005 'As-built drawings' (Indiana OSP) is missing: due date. Please update it so we can track it correctly.",
+      "source": "template",
+      "subject": "Missing information: TC-1005 As-built drawings",
+      "template_id": "clarify.v1"
+    },
+    "operation_id": "6e4b7466-e408-5dcb-83e0-07c68bec33c7",
+    "outcome": "enqueued",
+    "reason": "Missing: due date.",
+    "reason_code": "missing_due_date",
+    "rule_id": "R3",
+    "target": {
+      "kind": "person",
+      "name": "Alex Brown",
+      "project": "Indiana OSP"
+    },
+    "task_id": "TC-1005"
+  },
+  {
+    "decision": "follow_up_owner",
+    "flags": [
+      "prompt_injection_suspected"
+    ],
+    "idempotency_key": "sha256:857d18728a1feec73dba0a60a4fc447a0f1729e2f0e6482a6181c4718a7fc24a",
+    "message": {
+      "body": "Hi Jamie Lee, task TC-1006 'Splice verification' (Minnesota Fiber) was due on 2026-10-20 and is 1 day(s) overdue. Could you share the current status and a realistic completion date?",
+      "source": "template",
+      "subject": "Follow-up: TC-1006 Splice verification",
+      "template_id": "follow_up.overdue.v1"
+    },
+    "operation_id": "cd7a7371-6449-5c6d-96e8-5c6c8fbf917d",
+    "outcome": "enqueued",
+    "reason": "1 day(s) overdue; no blocker explained.",
+    "reason_code": "overdue_no_explanation",
+    "rule_id": "R7",
+    "target": {
+      "kind": "person",
+      "name": "Jamie Lee",
+      "project": "Minnesota Fiber"
+    },
+    "task_id": "TC-1006"
+  },
+  {
+    "decision": "no_action",
+    "flags": [],
+    "idempotency_key": null,
+    "message": null,
+    "operation_id": null,
+    "outcome": "none",
+    "reason": "On track; due in 6 day(s).",
+    "reason_code": "on_track",
+    "rule_id": "R9",
+    "target": null,
+    "task_id": "TC-1007"
+  },
+  {
+    "decision": "escalate",
+    "flags": [],
+    "idempotency_key": "sha256:d3ef627e390fb6d7d5781003826669a7be43e8c2bda97f12603228646dd9b919",
+    "message": {
+      "body": "Hello SURF Illinois project manager, TC-1008 'Test fiber signal' (SURF Illinois) needs attention: Blocked by upstream dependency; 6 day(s) overdue. Owner: Chris Patel. Due: 2026-10-15.",
+      "source": "template",
+      "subject": "Escalation: TC-1008 Test fiber signal",
+      "template_id": "escalate.v1"
+    },
+    "operation_id": "81e9e4d9-1469-5ea5-beca-b74799a8d36f",
+    "outcome": "enqueued",
+    "reason": "Blocked by upstream dependency; 6 day(s) overdue.",
+    "reason_code": "blocked_dependency",
+    "rule_id": "R6",
+    "target": {
+      "kind": "role",
+      "name": "SURF Illinois project manager",
+      "project": "SURF Illinois"
+    },
+    "task_id": "TC-1008"
+  },
+  {
+    "decision": "request_eta",
+    "flags": [],
+    "idempotency_key": "sha256:c193de851410147c0a1c984001215bbeb3259a15d498eb3a9818b573ab4b921b",
+    "message": {
+      "body": "Hello Warehouse team, TC-1009 'Material reconciliation' (Michigan Expansion) is blocked waiting for materials. Please confirm the expected delivery date.",
+      "source": "template",
+      "subject": "ETA needed: TC-1009 Material reconciliation",
+      "template_id": "request_eta.v1"
+    },
+    "operation_id": "e06c021a-216f-5e62-9b92-d716b766833c",
+    "outcome": "enqueued",
+    "reason": "Blocked by materials; due today; delivery date unknown.",
+    "reason_code": "materials_eta_unknown",
+    "rule_id": "R5",
+    "target": {
+      "kind": "team",
+      "name": "Warehouse team",
+      "project": "Michigan Expansion"
+    },
+    "task_id": "TC-1009"
+  },
+  {
+    "decision": "no_action",
+    "flags": [],
+    "idempotency_key": null,
+    "message": null,
+    "operation_id": null,
+    "outcome": "none",
+    "reason": "Task is done.",
+    "reason_code": "completed",
+    "rule_id": "R1",
+    "target": null,
+    "task_id": "TC-1010"
+  }
+]

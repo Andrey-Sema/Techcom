@@ -39,17 +39,23 @@ without changing its state does not re-notify.
 | `POST /v1/messages` | Dispatcher (durable, `next_attempt_at`) | 429, 502, 503, 504, connect error | 6 per action | exp. base 2 s, cap 5 min, full jitter; `Retry-After` honoured |
 | POST read-timeout | — | **not retried** → `unknown` → reconcile | — | — |
 | `GET /v1/messages/{op}` | Reconciler | 5xx / timeout | next cycle | same as dispatcher |
-| LLM call | Interpreter / drafter | timeout, 429, 5xx | 1 retry max | 1 s + jitter; then fallback |
+| LLM call | Router only | timeout, 429, 5xx | One attempt per configured route within the language-call total deadline | Next route; then validated fallback |
 
 **No flooding** (S5):
 
-* Per-run **retry budget**: retries ≤ 20 % of requests in the run (token
-  bucket); when exhausted, remaining work is deferred, not hammered.
+* Per-operation **retry allocation**: `RetryBudget(requests)` permits at
+  most `floor(requests / 5)` retry admissions. The CLI allocates 15 request
+  units to source fetching, allowing its three retries. This is a fixed
+  allocation, not a claim that retries remain below 20% of requests
+  actually observed. When delivery retry admission is exhausted, work is
+  durably deferred before network I/O.
 * **Circuit breaker** per dependency (LLM, delivery): opens after 5
   consecutive failures, half-open after 30 s with a single probe. Open LLM
   breaker ⇒ template drafting + keyword-only interpretation (degraded but
   safe). Open delivery breaker ⇒ dispatcher stops claiming.
-* **Concurrency limits**: `asyncio.Semaphore` for LLM (4) and delivery (8).
+* **Concurrency limits**: the LLM router uses a semaphore of 4. The
+  dispatcher currently sends serially; multiple workers claim disjoint
+  rows with PostgreSQL `SKIP LOCKED` and fenced ownership.
 * Never retry 400/401/403/404; **422** on idempotency-key payload mismatch
   is a **bug signal** → `dead` + error log + alert metric. **409** (a request
   with the same key is still being processed) is retryable.
