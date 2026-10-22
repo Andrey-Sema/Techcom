@@ -194,7 +194,7 @@ class _RuntimeScope:
 
     def _endpoint(self, url: str) -> HttpEndpoint:
         if self._client is None:
-            self._client = httpx.AsyncClient()
+            self._client = httpx.AsyncClient(trust_env=not self._options.demo)
             self._stack.push_async_callback(self._client.aclose)
         return HttpEndpoint(
             self._client,

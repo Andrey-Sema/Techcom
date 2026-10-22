@@ -64,8 +64,9 @@ def http_receiver(
         async def observe(request: httpx.Request) -> None:
             requests.append(request)
 
-        def build() -> httpx.AsyncClient:
+        def build(*, trust_env: bool = True) -> httpx.AsyncClient:
             client = original(
+                trust_env=trust_env,
                 transport=FaultInjectingTransport(
                     httpx.ASGITransport(app=app), FaultPlan.parse(faults)
                 ),

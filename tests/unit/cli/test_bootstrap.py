@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock
 
+import httpx
 import pytest
 from pydantic import SecretStr
 
@@ -182,3 +183,19 @@ def test_entrypoint_installs_logging_and_calls_cli(
     configure.assert_called_once()
     assert isinstance(factory.call_args.args[0], bootstrap.RuntimeBuilder)
     command.assert_called_once()
+
+
+async def test_demo_disables_environment_proxies_without_making_network_calls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for variable in ("HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy"):
+        monkeypatch.setenv(variable, "http://untrusted-proxy.example:8080")
+    for variable in ("NO_PROXY", "no_proxy"):
+        monkeypatch.setenv(variable, "")
+    constructor = Mock(wraps=httpx.AsyncClient)
+    monkeypatch.setattr(httpx, "AsyncClient", constructor)
+    async with bootstrap.RuntimeBuilder(bootstrap.RuntimeSettings())(
+        CommandOptions(AS_OF, demo=True)
+    ) as services:
+        services.dispatcher()
+        constructor.assert_called_once_with(trust_env=False)
