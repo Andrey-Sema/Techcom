@@ -1,6 +1,7 @@
 .PHONY: bootstrap quality gates semgrep semgrep-test complexity deadcode \
         deps audit spelling yaml workflows pyproject-check docs \
-        test test-fast test-integration mock db-up db-down
+        test test-fast test-integration mock db-up db-down \
+        obs-secrets up-obs down-obs obs-check obs-smoke
 
 GATES = uv run --locked --group gates
 # Semgrep conflicts with the project's dependency set, so it runs in an
@@ -88,3 +89,40 @@ db-up:
 
 db-down:
 	docker compose down
+
+# Observability stack (M10, ADR-0010). Validators run inside the same
+# pinned images as the stack, taken from compose.observability.yaml.
+OBS = docker compose -f compose.observability.yaml
+
+obs-secrets:
+	mkdir -p secrets
+	test -s secrets/grafana_admin_user || printf 'admin' > secrets/grafana_admin_user
+	test -s secrets/grafana_admin_password || \
+	  uv run --locked python -c "import secrets; print(secrets.token_urlsafe(24), end='')" \
+	  > secrets/grafana_admin_password
+	# The directory keeps other host users out. The files must be readable
+	# by the Grafana user (uid 472): an unreadable secret makes Grafana
+	# fall back to admin/admin, which obs-smoke checks for.
+	chmod 700 secrets
+	chmod 644 secrets/grafana_admin_user secrets/grafana_admin_password
+
+up-obs: obs-secrets
+	$(OBS) up -d --wait prometheus grafana
+	$(OBS) up -d loki alloy
+
+down-obs:
+	$(OBS) down
+
+obs-check: obs-secrets
+	$(OBS) config --quiet
+	$(OBS) run --rm --no-deps --entrypoint promtool prometheus \
+	  check config /etc/prometheus/prometheus.yml
+	$(OBS) run --rm --no-deps --entrypoint promtool -w /etc/prometheus/rules \
+	  prometheus test rules followup.rules.test.yml
+	$(OBS) run --rm --no-deps --entrypoint /usr/bin/loki loki \
+	  -config.file=/etc/loki/loki.yml -verify-config
+	$(OBS) run --rm --no-deps alloy fmt --test /etc/alloy/config.alloy
+	$(OBS) run --rm --no-deps alloy validate /etc/alloy/config.alloy
+
+obs-smoke: up-obs
+	uv run --locked python scripts/obs_smoke.py

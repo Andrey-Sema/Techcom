@@ -22,7 +22,7 @@ is lost, nothing is duplicated) and investigate.
 * **Meaning:** an action reached `dead` (permanent 4xx, key mismatch, or max
   attempts).
 * **First look:** Grafana → Delivery row; Loki
-  `{service="followup"} | json | event="delivery.dead"`; read `status_code`.
+  `{service_name="followup"} | event="delivery.dead"`; read `status_code`.
 * **Decide:** 422 key mismatch → bug (payload changed for the same key):
   open an incident, do **not** requeue. 400/404 → bad target/routing: fix
   routing config, then requeue. Max attempts on 5xx → provider outage:
@@ -73,6 +73,15 @@ is lost, nothing is duplicated) and investigate.
   `wrong_audience`); source.
 * **Act:** expired → client clock/rotation issue; bad signature → possible
   attack: block source at the edge, rotate keys if leakage suspected.
+
+## followup-target-down {#followup-target-down}
+
+* **Meaning:** Prometheus has not scraped the service for 5 minutes, so
+  every other alert is blind.
+* **Check:** is the service running and attached to the
+  `techcom-observability` network? Does `/metrics` answer on the internal
+  port 9464? Until the API (M6b) exists this alert is expected in the
+  local stack.
 
 ## Diagnostics toolbox (never in the production image)
 

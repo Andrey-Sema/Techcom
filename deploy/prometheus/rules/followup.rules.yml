@@ -1,0 +1,87 @@
+# Alert rules of the follow-up service (docs/09 section 3, docs/14
+# section 9). Each alert links to its runbook section in docs/18 and is
+# covered by a promtool unit test in followup.rules.test.yml.
+groups:
+  - name: followup
+    rules:
+      - alert: FollowupDeadLetters
+        expr: sum(increase(followup_actions_total{outcome="dead"}[15m])) > 0
+        labels:
+          severity: page
+        annotations:
+          summary: Action(s) moved to the dead-letter state.
+          description: >-
+            {{ $value | humanize }} action(s) became dead in the last
+            15 minutes; each one is investigated.
+          runbook_url: docs/18-runbook.md#followup-dead-letters
+
+      - alert: FollowupOutboxStuck
+        expr: max by (status) (followup_outbox_oldest_age_seconds{status=~"pending|unknown"}) > 1800
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: Oldest {{ $labels.status }} action is older than 30 minutes.
+          description: >-
+            The follow-up latency SLO (99 % under 15 minutes) is at risk.
+          runbook_url: docs/18-runbook.md#followup-outbox-stuck
+
+      - alert: FollowupLLMFallbackRateHigh
+        expr: |
+          sum(rate(followup_llm_requests_total{result!="ok"}[15m]))
+            / clamp_min(sum(rate(followup_llm_requests_total[15m])), 1e-9)
+            > 0.05
+        for: 15m
+        labels:
+          severity: ticket
+        annotations:
+          summary: More than 5 % of LLM calls fall back to templates.
+          description: Fallback rate is {{ $value | humanizePercentage }}.
+          runbook_url: docs/18-runbook.md#followup-llm-fallback-rate-high
+
+      # Threshold = daily_budget_usd (config/llm.toml) x 1.2; a test keeps
+      # the two in sync.
+      - alert: FollowupLLMCostBudget
+        expr: sum(increase(followup_llm_cost_usd_total[24h])) > 6
+        labels:
+          severity: ticket
+        annotations:
+          summary: LLM spend over the last 24 hours exceeds budget x 1.2.
+          description: Spend is {{ $value | humanize }} USD.
+          runbook_url: docs/18-runbook.md#followup-llm-cost-budget
+
+      - alert: FollowupCircuitOpen
+        expr: max by (dependency) (followup_circuit_state{state="open"}) == 1
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: Circuit breaker for {{ $labels.dependency }} open for 5 minutes.
+          runbook_url: docs/18-runbook.md#followup-circuit-open
+
+      - alert: FollowupInjectionSpike
+        expr: sum(increase(followup_security_events_total{kind="note_flagged"}[1h])) > 10
+        labels:
+          severity: ticket
+        annotations:
+          summary: More than 10 task notes flagged as prompt injection in 1 hour.
+          runbook_url: docs/18-runbook.md#followup-injection-spike
+
+      - alert: FollowupAuthFailures
+        expr: sum(increase(followup_security_events_total{kind="authn_failed"}[5m])) > 20
+        labels:
+          severity: page
+        annotations:
+          summary: More than 20 failed authentications in 5 minutes.
+          runbook_url: docs/18-runbook.md#followup-auth-failures
+
+      - alert: FollowupTargetDown
+        expr: up{job="followup-app"} == 0
+        for: 5m
+        labels:
+          severity: ticket
+        annotations:
+          summary: Prometheus cannot scrape the follow-up service.
+          description: >-
+            Expected until the API (M6b) joins the observability network.
+          runbook_url: docs/18-runbook.md#followup-target-down
