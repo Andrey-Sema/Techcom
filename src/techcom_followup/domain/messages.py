@@ -265,7 +265,9 @@ class MessageValidator:
         names = {match.group(1) for match in _BRACED.finditer(text)}
         if names - allowed:
             found.append("unknown_placeholder")
-        found.extend(self._content_violations(_BRACED.sub(" ", text)))
+        # A word stand-in keeps adjacency visible: "{project}.com" must
+        # still read as a host name, as it will once rendered.
+        found.extend(self._content_violations(_BRACED.sub("x", text)))
         return tuple(found)
 
     def _content_violations(self, bare: str) -> list[str]:

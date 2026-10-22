@@ -1,0 +1,194 @@
+"""Container image tests (M8): run the built images, hardened.
+
+Opt-in with ``-m image`` after ``make images``; the default run excludes
+them because they need the images, not just Docker. Every container
+runs read-only, without capabilities and with ``no-new-privileges``,
+exactly as compose runs it.
+"""
+
+import json
+import os
+import shutil
+import subprocess
+import time
+from collections.abc import Iterator
+from contextlib import contextmanager
+from typing import Any
+from uuid import uuid4
+
+import httpx
+import pytest
+from testcontainers.community.postgres import PostgresContainer
+from testcontainers.core.network import Network
+
+pytestmark = pytest.mark.image
+
+RUNTIME = os.environ.get("FOLLOWUP_TEST_IMAGE", "techcom-followup:dev")
+MOCK = os.environ.get("FOLLOWUP_TEST_MOCK_IMAGE", "techcom-mock:dev")
+HARDENED = (
+    "--rm",
+    "--read-only",
+    "--cap-drop=ALL",
+    "--security-opt=no-new-privileges:true",
+)
+# Runs inside the runtime image: what must and must not be installed.
+INVENTORY = """
+import importlib.util as u, json, os, shutil
+print(json.dumps({
+    "source": [
+        p for p in ("/src", "/app/.git", "/app/src", "/app/tests")
+        if os.path.exists(p)
+    ],
+    "product": u.find_spec("techcom_followup") is not None,
+    "mocks": u.find_spec("techcom_mocks") is not None,
+    "pip": u.find_spec("pip") is not None,
+    "tools": [t for t in ("uv", "gcc", "pip", "git") if shutil.which(t)],
+}))
+"""
+DELIVERY: dict[str, Any] = {
+    "task_id": "TC-1002",
+    "target": {"kind": "team", "name": "Warehouse team"},
+    "message": {
+        "subject": "Delivery date needed",
+        "body": "Please provide the delivery date for TC-1002.",
+        "template_id": "request_eta.v1",
+    },
+}
+WRITE_PROBE = """
+import pathlib
+denied = []
+for path in ("/opt/venv/probe", "/app/probe", "/app/config/probe"):
+    try:
+        pathlib.Path(path).write_text("x")
+    except OSError:
+        denied.append(path)
+print(len(denied))
+"""
+
+
+def docker(*args: str) -> str:
+    executable = shutil.which("docker")
+    assert executable is not None, "docker CLI not found"
+    result = subprocess.run(
+        [executable, *args],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=180,
+    )
+    assert result.returncode == 0, result.stderr
+    return result.stdout.strip()
+
+
+def test_runtime_runs_as_the_unprivileged_service_user() -> None:
+    assert docker("run", *HARDENED, RUNTIME, "id", "-u") == "10001"
+
+
+def test_runtime_ships_only_the_product() -> None:
+    found = json.loads(
+        docker("run", *HARDENED, RUNTIME, "python", "-c", INVENTORY)
+    )
+    assert found == {
+        "source": [],
+        "product": True,
+        "mocks": False,
+        "pip": False,
+        "tools": [],
+    }
+
+
+def test_service_user_cannot_modify_its_own_code() -> None:
+    # Without --read-only: file ownership alone must already deny it.
+    output = docker("run", "--rm", RUNTIME, "python", "-c", WRITE_PROBE)
+    assert output == "3"
+
+
+def test_runtime_applies_migrations_to_postgres_18() -> None:
+    with (
+        Network() as network,
+        PostgresContainer("postgres:18", driver="psycopg")
+        .with_network(network)
+        .with_network_aliases("db") as postgres,
+    ):
+        url = (
+            f"postgresql+psycopg://{postgres.username}:{postgres.password}"
+            f"@db:5432/{postgres.dbname}"
+        )
+        common = (
+            *HARDENED,
+            f"--network={network.name}",
+            "--env",
+            f"FOLLOWUP_DATABASE_URL={url}",
+            RUNTIME,
+        )
+        docker("run", *common, "alembic", "upgrade", "head")
+        assert "(head)" in docker("run", *common)
+
+
+@contextmanager
+def mock_container(volume: str) -> Iterator[str]:
+    container = docker(
+        "run",
+        "--detach",
+        *HARDENED,
+        "--publish=127.0.0.1::8081",
+        f"--volume={volume}:/var/lib/mock",
+        MOCK,
+    )
+    try:
+        port = docker("port", container, "8081/tcp").rsplit(":", 1)[1]
+        url = f"http://127.0.0.1:{port}"
+        wait_for(f"{url}/v1/tasks")
+        yield url
+    finally:
+        docker("rm", "--force", container)
+
+
+@pytest.fixture
+def journal_volume() -> Iterator[str]:
+    volume = docker("volume", "create")
+    try:
+        yield volume
+    finally:
+        docker("volume", "rm", "--force", volume)
+
+
+def wait_for(url: str) -> httpx.Response:
+    deadline = time.monotonic() + 30
+    while True:
+        try:
+            return httpx.get(url, timeout=2)
+        except httpx.TransportError:
+            if time.monotonic() > deadline:
+                raise
+            time.sleep(0.2)
+
+
+def test_mock_serves_the_fixture_hardened(journal_volume: str) -> None:
+    with mock_container(journal_volume) as url:
+        response = httpx.get(f"{url}/v1/tasks", timeout=5)
+    assert response.status_code == 200
+    assert len(response.json()) == 10
+
+
+def test_mock_journal_survives_a_restart(journal_volume: str) -> None:
+    operation_id = str(uuid4())
+    headers = {"Idempotency-Key": operation_id}
+    with mock_container(journal_volume) as url:
+        first = httpx.post(
+            f"{url}/v1/messages", headers=headers, json=DELIVERY, timeout=5
+        )
+    with mock_container(journal_volume) as url:
+        replay = httpx.post(
+            f"{url}/v1/messages", headers=headers, json=DELIVERY, timeout=5
+        )
+        lookup = httpx.get(f"{url}/v1/messages/{operation_id}", timeout=5)
+    assert first.status_code == replay.status_code == 201
+    assert replay.headers["Idempotent-Replayed"] == "true"
+    assert replay.json() == first.json() == lookup.json()
+
+
+def test_mock_runs_as_its_own_user() -> None:
+    config = json.loads(docker("image", "inspect", MOCK))[0]["Config"]
+    assert config["User"] == "10002:10002"
+    assert config["Healthcheck"]["Test"][0] == "CMD"

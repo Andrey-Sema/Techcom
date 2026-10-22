@@ -229,7 +229,7 @@ class DecisionPolicy:
         facts = _Facts(
             task=task,
             owner=owner,
-            blocker=self._blocker(task, interpretation),
+            blocker=self._blocker(interpretation),
             delta=(task.due_date - as_of).days,
             days_since_update=(
                 None
@@ -255,16 +255,15 @@ class DecisionPolicy:
         return Target(TargetKind.PERSON, task.owner, task.project)
 
     def _blocker(
-        self,
-        task: Task,
-        interpretation: NoteInterpretation | None,
+        self, interpretation: NoteInterpretation | None
     ) -> BlockerCategory:
-        if interpretation is None:
-            # No usable reading of the notes: none was made, or R2
-            # dropped it because the note looked like an injection.
-            blocked = task.status is TaskStatus.BLOCKED
-            return BlockerCategory.UNCLEAR if blocked else BlockerCategory.NONE
-        if interpretation.confidence < self._config.min_confidence:
+        # No usable reading of the notes (none was made, R2 dropped an
+        # injection-like note, or the confidence is too low) leaves the
+        # blocker unknown; R7 then asks the owner of a blocked task.
+        if (
+            interpretation is None
+            or interpretation.confidence < self._config.min_confidence
+        ):
             return BlockerCategory.UNCLEAR
         return interpretation.blocker
 
