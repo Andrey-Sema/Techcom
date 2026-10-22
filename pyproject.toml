@@ -31,7 +31,6 @@ dev = [
     "syrupy>=4.8",
     "techcom-mocks",
     "testcontainers[postgres]>=4.8",
-    "types-docker>=7.1",
     "pyyaml>=6.0.3",
     "types-pyyaml>=6.0.12.20260906",
 ]
