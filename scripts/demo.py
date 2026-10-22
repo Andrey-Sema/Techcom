@@ -8,7 +8,7 @@ provider credentials or external endpoints are needed.
 import os
 import shutil
 import socket
-import subprocess
+import subprocess  # nosec B404 # Fixed argv; no shell.
 import sys
 import tempfile
 import time
@@ -60,7 +60,7 @@ def main() -> None:
             "--no-access-log",
         ]
         # Fixed arguments; no shell interprets configuration or paths.
-        with subprocess.Popen(  # noqa: S603
+        with subprocess.Popen(  # noqa: S603  # nosec B603
             arguments,
             env=environment,
             pass_fds=(listener.fileno(),),
@@ -76,7 +76,10 @@ def main() -> None:
                     "--output",
                     str(output),
                 ]
-                subprocess.run(command, check=True)  # noqa: S603
+                # Code-owned executable and arguments, without a shell.
+                subprocess.run(  # noqa: S603  # nosec B603
+                    command, check=True
+                )
                 if journal.exists():
                     shutil.copyfile(journal, output / "delivery_log.jsonl")
                     (output / "delivery_log.jsonl").chmod(0o600)

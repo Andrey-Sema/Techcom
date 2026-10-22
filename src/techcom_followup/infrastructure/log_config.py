@@ -59,6 +59,22 @@ def _validation_metadata(event: EventDict, safe: EventDict) -> None:
         safe["output_sha256"] = digest
 
 
+def _counter_metadata(event: EventDict, safe: EventDict) -> None:
+    for key in _COUNTERS:
+        value = event.get(key)
+        if type(value) is int and 0 <= value <= 2**63 - 1:
+            safe[key] = value
+
+
+def _run_metadata(event: EventDict, safe: EventDict) -> None:
+    run_id = event.get("run_id")
+    if isinstance(run_id, UUID):
+        safe["run_id"] = str(run_id)
+    latency = event.get("latency_s")
+    if isinstance(latency, float) and math.isfinite(latency) and latency >= 0:
+        safe["latency_s"] = latency
+
+
 def redact_event(
     _logger: WrappedLogger, method: str, event: EventDict
 ) -> EventDict:
@@ -72,16 +88,8 @@ def redact_event(
         if method in {"debug", "info", "warning", "error", "critical"}
         else "info",
     }
-    for key in _COUNTERS:
-        value = event.get(key)
-        if type(value) is int and 0 <= value <= 2**63 - 1:
-            safe[key] = value
-    run_id = event.get("run_id")
-    if isinstance(run_id, UUID):
-        safe["run_id"] = str(run_id)
-    latency = event.get("latency_s")
-    if isinstance(latency, float) and math.isfinite(latency) and latency >= 0:
-        safe["latency_s"] = latency
+    _counter_metadata(event, safe)
+    _run_metadata(event, safe)
     if safe["event"] == "llm.validation_failed":
         _validation_metadata(event, safe)
     return safe

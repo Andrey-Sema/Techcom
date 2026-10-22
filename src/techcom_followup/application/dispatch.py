@@ -111,20 +111,26 @@ class DispatchActions:
             )
             if not claimed:
                 break
-            action = claimed[0]
-            if not self._can_claim():
-                await self._defer(action, "dispatch_stopped")
+            if not await self._dispatch_claim(claimed[0], admitted):
                 break
-            if action.attempts > 1 and not admitted.take():
-                await self._defer(action, "retry_budget")
-                break
-            allowed, admission = self._admit()
-            if not allowed:
-                await self._defer(action, "circuit_open")
-                break
-            await self._deliver(action, admission)
             completed += 1
         return completed
+
+    async def _dispatch_claim(
+        self, action: ActionRecord, budget: RetryBudget
+    ) -> bool:
+        if not self._can_claim():
+            await self._defer(action, "dispatch_stopped")
+            return False
+        if action.attempts > 1 and not budget.take():
+            await self._defer(action, "retry_budget")
+            return False
+        allowed, admission = self._admit()
+        if not allowed:
+            await self._defer(action, "circuit_open")
+            return False
+        await self._deliver(action, admission)
+        return True
 
     def _admit(self) -> tuple[bool, _Admission | None]:
         if self._breaker is None:

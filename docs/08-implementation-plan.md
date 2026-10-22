@@ -17,8 +17,8 @@ Two declared tiers (decision from the senior audit, `16` #30):
   ASVS evidence, observability stack, benchmark, Schemathesis/ZAP, full
   eval set, mutation testing, runbook.
 * Original code budget: **≤ 2,500 lines in `src/`**. M0/M2/M3 review
-  records a deviation: approximately 3,600 lines including typed ports,
-  both repository adapters and the pre-existing domain/router. Removing
+  records a deviation: approximately 3,600 lines in M0/M2/M3, growing to 6,539 lines in
+  M4/M5/M6a (including CLI composition, typed ports and HTTP adapters). Removing
   contracts or compressing code to meet a line count would reduce
   reviewability. Ruff complexity limits remain enforced; full complexity
   tooling is M0b. Reassess size at each batch.
@@ -30,16 +30,20 @@ Two declared tiers (decision from the senior audit, `16` #30):
 |---|-------|-------------|------------------------|
 | M0 | **done** | Locked uv workspace, Ruff `ALL`, Bandit, mypy strict, pytest branch gate, import-linter, pre-commit, Makefile, pinned CI matrix 3.13/3.14, PostgreSQL 18 Compose, hygiene and non-secret configuration | Full gate set is tracked separately as M0b |
 | M1 | **done** | `domain/` (normalize, injection, interpretation, policy R1–R9, identity, messages), `config/policy.toml`, `config/routing.toml`; unit, property (1–6, 8–10) and golden tests | — |
-| M5 | partial | OpenAI model router with failover, breakers, USD budget, secret-file key / workload identity (`ADR-0013`) | LLM stub, note interpreter, drafter, S7/S8 scenarios |
+| M5 | **done** | Owned router probes, concurrent cost reservations, bounded strict interpretation/cache/grounding, approved wording, offline stub, S7/S8 and adversarial/Hypothesis tests | Live provider quality and a durable multi-process budget ledger remain unverified/out of scope here |
 | M2 | **done** | Separate mock distribution, task/message/lookup endpoints, canonical payload dedupe, 409/422 semantics, fsynced recovery journal, fault transport, bounded/redacted requests, concurrent/cancellation/Hypothesis tests | Single local worker per journal; production receiver is out of scope |
 | M3 | **done** | Frozen PG18 migration, SQLAlchemy Core, memory/PG repository contract, atomic decision/action/audit, UUIDv7, `SKIP LOCKED`, fencing tokens, unknown-state recovery, cache expiry, real PostgreSQL concurrency/rollback tests | Production least-privilege DB roles remain M9 |
-| M4 | in progress | Development in an isolated worktree | Use cases, delivery/reconciliation and end-to-end scenarios |
-| M0b, M6–M12 | not started | — | see §1 |
+| M4 | **done** | Processing, fenced dispatch/reconciliation, HTTP bounds, retry allocation, advisory lock, dry-run, kill switch, graceful drain, S1–S6 including a non-idempotent receiver | Outcome audit append follows the fenced status update in a separate transaction |
+| M6a | **done** | Lazy CLI composition, run/dispatch/reconcile/report/demo, owner-only atomic report exports, closed JSON logs, real loopback demo and samples | Standalone durable commands require PostgreSQL |
+| M0b, M6b, M11a/b | in progress | Parallel isolated branches; not included in this batch | Independent review and integration before their own PRs |
+| M7–M10, M12 | not started | — | see §1 |
 
-Current batch: **M0 + M2 + M3**. Next batch: **M4 + remaining M5 + M6a**.
-Each batch receives independent review and its own pull request. Existing
-router findings (redirects, half-open cancellation, budget reservations)
-are recorded in `19-foundation-review.md` and assigned to M5.
+Current batch: **M4 + M5 + M6a**, stacked on M0/M2/M3. Next batch:
+**M6b + M11a + M11b**. Each batch receives independent review and its own
+pull request. Router findings from `19-foundation-review.md` are addressed
+in M5; evidence, independent review findings and remaining boundaries are
+recorded in `21-workflow-review.md`. ASVS L2 remains a design target, not
+a certification claim.
 
 ## 1. Work breakdown (MoSCoW, estimates)
 
