@@ -40,6 +40,7 @@ class RunReport:
     rejected: tuple[RejectedRecord, ...] = ()
     enqueued: int = 0
     duplicates: int = 0
+    plans: tuple[DecisionWrite, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,6 +57,7 @@ class ProcessingDependencies:
 @dataclass(slots=True)
 class _Progress:
     decisions: list[Decision] = field(default_factory=list)
+    plans: list[DecisionWrite] = field(default_factory=list)
     rejected: tuple[RejectedRecord, ...] = ()
     enqueued: int = 0
     duplicates: int = 0
@@ -119,6 +121,7 @@ class ProcessTasks:
                     task, as_of, existing=existing, dry_run=dry_run
                 )
                 progress.decisions.append(write.decision)
+                progress.plans.append(write)
                 if run is not None:
                     await self._persist(run.id, write, progress)
         except (Exception, CancelledError):
@@ -136,6 +139,7 @@ class ProcessTasks:
             progress.rejected,
             progress.enqueued,
             progress.duplicates,
+            plans=tuple(progress.plans),
         )
 
     async def _prepare(

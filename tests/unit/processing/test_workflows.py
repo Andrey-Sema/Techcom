@@ -110,6 +110,15 @@ async def test_dry_run_has_no_persistence_or_llm_side_effects() -> None:
     assert report.status == "dry_run"
     assert report.run_id is None
     assert len(report.decisions) == 10
+    assert len(report.plans) == 10
+    assert tuple(plan.decision for plan in report.plans) == report.decisions
+    for plan in report.plans:
+        plan.validate()
+        assert plan.run_id == UUID(int=0)
+        if plan.decision.actionable:
+            assert plan.identity is not None
+            assert plan.message is not None
+            assert plan.message.body
     assert not repository._runs
     assert not await repository.list_actions()
     assert not await repository.list_audit()
