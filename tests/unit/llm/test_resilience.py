@@ -119,3 +119,72 @@ def test_budget_rejects_negative_values() -> None:
     budget = DailySpendBudget(limit_usd=Decimal(1), today=date.today)
     with pytest.raises(ValueError, match="cost_usd"):
         budget.add(Decimal("-0.01"))
+
+
+def test_cancelled_probe_is_released_without_forging_success(
+    clock: FakeClock,
+) -> None:
+    cb = breaker(clock)
+    cb.record_failure()
+    cb.record_failure()
+    clock.advance(30)
+    assert cb.allow()
+    cb.abandon()
+    assert cb.state is BreakerState.HALF_OPEN
+    assert cb.allow()
+
+
+def test_budget_reserves_and_settles_exactly_once_across_midnight() -> None:
+    day = [date(2026, 10, 21)]
+    budget = DailySpendBudget(limit_usd=Decimal(1), today=lambda: day[0])
+    receipt = budget.reserve(Decimal("0.7"))
+    assert receipt is not None
+    assert budget.reserve(Decimal("0.4")) is None
+    assert budget.reserved_usd == Decimal("0.7")
+    day[0] += timedelta(days=1)
+    assert budget.spent_usd == 0
+    assert budget.reserved_usd == Decimal("0.7")
+    budget.settle(receipt, Decimal("0.2"))
+    assert budget.spent_usd == Decimal("0.2")
+    assert budget.reserved_usd == 0
+    with pytest.raises(ValueError, match="settled"):
+        budget.settle(receipt)
+    unknown = budget.reserve(Decimal("0.8"))
+    assert unknown is not None
+    assert budget.exhausted()
+    budget.settle(unknown)
+    assert budget.spent_usd == Decimal(1)
+
+
+@pytest.mark.parametrize(
+    "value", [Decimal(-1), Decimal("NaN"), Decimal("Inf")]
+)
+def test_budget_rejects_invalid_reservations_and_settlements(
+    value: Decimal,
+) -> None:
+    budget = DailySpendBudget(limit_usd=Decimal(1), today=date.today)
+    with pytest.raises(ValueError, match="maximum_usd"):
+        budget.reserve(value)
+    receipt = budget.reserve(Decimal(1))
+    assert receipt is not None
+    with pytest.raises(ValueError, match="cost_usd"):
+        budget.settle(receipt, value)
+    assert budget.reserved_usd == 1
+
+
+def test_reported_overage_is_charged_and_permanently_blocks_admission() -> (
+    None
+):
+    day = [date(2026, 10, 21)]
+    budget = DailySpendBudget(limit_usd=Decimal(10), today=lambda: day[0])
+    receipt = budget.reserve(Decimal("0.5"))
+    assert receipt is not None
+    budget.settle(receipt, Decimal("1.2"))
+    assert budget.spent_usd == Decimal("1.2")
+    assert budget.overage_usd == Decimal("0.7")
+    assert budget.exhausted()
+    assert budget.reserve(Decimal("0.1")) is None
+    day[0] += timedelta(days=1)
+    assert budget.spent_usd == 0
+    assert budget.overage_usd == Decimal("0.7")
+    assert budget.reserve(Decimal(0)) is None

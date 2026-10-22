@@ -5,6 +5,7 @@ depend on wall time.
 """
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 from enum import StrEnum
@@ -70,6 +71,10 @@ class CircuitBreaker:
         self._probe_in_flight = True
         return True
 
+    def abandon(self) -> None:
+        """Release a cancelled half-open probe."""
+        self._probe_in_flight = False
+
     def record_success(self) -> None:
         """Close the breaker and reset the failure count."""
         self._failures = 0
@@ -84,12 +89,24 @@ class CircuitBreaker:
             self._opened_at = self._monotonic()
 
 
+@dataclass(frozen=True, slots=True)
+class SpendReservation:
+    """Admission receipt bound to its issuing budget."""
+
+    amount_usd: Decimal
+
+
 class DailySpendBudget:
     """In-process daily spending guard for paid API calls.
 
-    The counter resets when the (UTC) calendar day changes. Production
-    persists the counter so that several workers share one budget; this
-    class is the per-process guard and the reference behaviour.
+    Reserve a worst-case attempt cost before awaiting the provider;
+    settle exactly once with actual cost or the full bound for unknown
+    billing. Outstanding bounds survive UTC midnight. A reported overrun
+    is charged fully and latches admission closed until reconfiguration.
+
+    This guard assumes one event loop in one process. Production needs a
+    shared durable counter for multiple workers and restarts, and a
+    provider-side quota for a hard external spending cap.
     """
 
     def __init__(
@@ -100,13 +117,15 @@ class DailySpendBudget:
         Raises:
             ValueError: If the limit is negative.
         """
-        if limit_usd < 0:
+        if not limit_usd.is_finite() or limit_usd < 0:
             msg = "limit_usd must not be negative"
             raise ValueError(msg)
         self._limit = limit_usd
         self._today = today
         self._day = today()
         self._spent = Decimal(0)
+        self._reservations: dict[int, SpendReservation] = {}
+        self._overage = Decimal(0)
 
     def _roll_over(self) -> None:
         current = self._today()
@@ -122,7 +141,10 @@ class DailySpendBudget:
 
     def exhausted(self) -> bool:
         """Return whether today's limit has been reached."""
-        return self.spent_usd >= self._limit
+        return (
+            self._overage > 0
+            or self.spent_usd + self.reserved_usd >= self._limit
+        )
 
     def add(self, cost_usd: Decimal) -> None:
         """Record spending.
@@ -130,8 +152,66 @@ class DailySpendBudget:
         Raises:
             ValueError: If the cost is negative.
         """
-        if cost_usd < 0:
+        if not cost_usd.is_finite() or cost_usd < 0:
             msg = "cost_usd must not be negative"
             raise ValueError(msg)
         self._roll_over()
         self._spent += cost_usd
+
+    @property
+    def reserved_usd(self) -> Decimal:
+        """Outstanding bounds, including calls spanning UTC midnight."""
+        return sum(
+            (item.amount_usd for item in self._reservations.values()),
+            Decimal(0),
+        )
+
+    @property
+    def overage_usd(self) -> Decimal:
+        """Uncovered reported cost retained across midnight."""
+        return self._overage
+
+    def reserve(self, maximum_usd: Decimal) -> SpendReservation | None:
+        """Atomically admit a bounded attempt before its first await.
+
+        Scope is one event loop in one process. Multi-worker and restart
+        safety require a shared durable counter in production. Unsettled
+        previous-day attempts reserve against the new day too.
+
+        Raises:
+            ValueError: The requested bound is negative or non-finite.
+        """
+        if not maximum_usd.is_finite() or maximum_usd < 0:
+            message = "maximum_usd must be finite and nonnegative"
+            raise ValueError(message)
+        if (
+            self._overage > 0
+            or self.spent_usd + self.reserved_usd + maximum_usd > self._limit
+        ):
+            return None
+        receipt = SpendReservation(maximum_usd)
+        self._reservations[id(receipt)] = receipt
+        return receipt
+
+    def settle(
+        self, reservation: SpendReservation, cost_usd: Decimal | None = None
+    ) -> None:
+        """Settle actual cost or the full bound for unknown bills.
+
+        Cancellation and absent usage cannot prove a zero bill.
+        Settlement is synchronous and runs exactly once. Reported
+        contract overruns are fully charged, never truncated.
+
+        Raises:
+            ValueError: A receipt or cost is invalid.
+        """
+        cost = reservation.amount_usd if cost_usd is None else cost_usd
+        if not cost.is_finite() or cost < 0:
+            message = "cost_usd must be finite and nonnegative"
+            raise ValueError(message)
+        if self._reservations.get(id(reservation)) is not reservation:
+            message = "unknown or already settled reservation"
+            raise ValueError(message)
+        self._reservations.pop(id(reservation))
+        self._overage += max(cost - reservation.amount_usd, Decimal(0))
+        self.add(cost)

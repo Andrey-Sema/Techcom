@@ -201,3 +201,16 @@ async def test_bad_credentials_are_a_configuration_error(
     backend = OpenAIResponsesBackend(RecordingCreate(error))
     with pytest.raises(LLMConfigurationError):
         await backend.complete(request_, route, timeout_s=5)
+
+
+async def test_missing_refusal_usage_remains_unknown_for_reservation(
+    request_: LLMRequest, route: RouteConfig
+) -> None:
+    backend = OpenAIResponsesBackend(
+        RecordingCreate(
+            sdk.response(output=[sdk.refusal_message()], with_usage=False)
+        )
+    )
+    with pytest.raises(LLMRefusalError) as caught:
+        await backend.complete(request_, route, timeout_s=5)
+    assert caught.value.usage is None
