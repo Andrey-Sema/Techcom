@@ -305,6 +305,31 @@ class PgRepository:
             )
             return result.scalar_one_or_none() is not None
 
+    async def defer_claim(self, update: ActionUpdate) -> bool:
+        """Fence an unsent claim and restore its unspent attempt."""
+        update.validate_defer()
+        async with self._engine.begin() as connection:
+            result = await connection.execute(
+                actions.update()
+                .where(
+                    _ownership(
+                        update.action_id, update.lease_token, update.now
+                    ),
+                    actions.c.status == ActionStatus.IN_FLIGHT.value,
+                    actions.c.attempts >= 1,
+                )
+                .values(
+                    status=ActionStatus.PENDING.value,
+                    attempts=actions.c.attempts - 1,
+                    next_attempt_at=update.next_attempt_at,
+                    last_error=update.error,
+                    lease_token=None,
+                    lease_until=None,
+                )
+                .returning(actions.c.id)
+            )
+            return result.scalar_one_or_none() is not None
+
     async def release_claim(
         self, action_id: UUID, lease_token: UUID, now: datetime
     ) -> bool:

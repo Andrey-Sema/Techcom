@@ -38,12 +38,17 @@ def _request(
     data: bytes | None = None,
     headers: dict[str, str] | None = None,
 ) -> tuple[int, Any]:
-    # Local fixed URLs only; the scheme is always http://127.0.0.1.
+    # Enforced, not assumed: only the local stack, never file:// or a
+    # remote host, whatever a caller passes.
+    if not url.startswith("http://127.0.0.1:"):
+        msg = f"refusing non-local URL: {url}"
+        raise ValueError(msg)
     request = urllib.request.Request(  # noqa: S310
         url, data=data, headers=headers or {}
     )
     try:
-        with urllib.request.urlopen(request, timeout=5) as response:  # noqa: S310
+        # The guard above restricts the scheme and host.
+        with urllib.request.urlopen(request, timeout=5) as response:  # noqa: S310  # nosec B310
             body = response.read()
             status = response.status
     except urllib.error.HTTPError as error:

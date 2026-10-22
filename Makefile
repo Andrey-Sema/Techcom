@@ -1,6 +1,6 @@
 .PHONY: bootstrap quality gates semgrep semgrep-test complexity deadcode \
         deps audit spelling yaml workflows pyproject-check docs \
-        test test-fast test-integration mock db-up db-down \
+        test test-fast test-integration mock demo db-up db-down \
         obs-secrets up-obs down-obs obs-check obs-smoke \
         images dockerfile-lint image-scan image-test mutation sbom \
         secrets-scan secrets-staged
@@ -18,7 +18,7 @@ quality:
 	uv run --locked ruff check .
 	uv run --locked ruff format --check .
 	uv run --locked mypy
-	uv run --locked bandit -c pyproject.toml -r src mocks/src
+	uv run --locked bandit -c pyproject.toml -r src mocks/src migrations scripts
 	uv run --locked lint-imports
 
 # Tier B gates (M0b): project invariants, complexity, dead code,
@@ -92,6 +92,9 @@ mutation:
 mock:
 	mkdir -p var
 	FOLLOWUP_MOCK_JOURNAL=var/delivery_log.jsonl uv run --locked uvicorn techcom_mocks.app:create_app --factory --host 127.0.0.1 --port 8081 --workers 1
+
+demo:
+	uv run --locked python scripts/demo.py
 
 # Create secrets/postgres_password locally before starting the database.
 db-up:

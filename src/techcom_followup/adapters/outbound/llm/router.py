@@ -9,12 +9,14 @@ deterministic fallback any safer. Credential errors stop the walk
 immediately because every route of a provider shares the credentials.
 """
 
+from asyncio import Semaphore, timeout
 from collections.abc import Callable, Mapping
 from datetime import date
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 import structlog
 
+from techcom_followup.adapters.outbound.llm.accounting import maximum_usage
 from techcom_followup.adapters.outbound.llm.catalog import ModelPrice
 from techcom_followup.adapters.outbound.llm.config import (
     RouteConfig,
@@ -33,10 +35,14 @@ from techcom_followup.application.ports import (
     LLMUnavailableError,
     RouteAttempt,
 )
+from techcom_followup.application.resilience_ports import BreakerPermit
 from techcom_followup.infrastructure.resilience import (
     CircuitBreaker,
     DailySpendBudget,
 )
+
+if TYPE_CHECKING:
+    from decimal import Decimal
 
 _log = structlog.get_logger(__name__)
 
@@ -82,6 +88,7 @@ class LLMRouter:
             raise LLMConfigurationError(msg)
         self._config = config
         self._backends = dict(backends)
+        self._semaphore = Semaphore(4)
         self._monotonic = monotonic
         self._budget = DailySpendBudget(
             limit_usd=config.daily_budget_usd,
@@ -134,38 +141,75 @@ class LLMRouter:
         attempts: list[RouteAttempt],
     ) -> LLMResult | None:
         breaker = self._breakers[route.model]
-        if not breaker.allow():
+        permit = breaker.admit()
+        if permit is None:
             attempts.append(_attempt(route, "skipped_circuit_open"))
             return None
+        bound = self._price(route).maximum_cost(
+            maximum_usage(request, max_output_tokens=route.max_output_tokens)
+        )
+        reservation = self._budget.reserve(bound)
+        if reservation is None:
+            breaker.abandon(permit)
+            message = "insufficient daily LLM budget for bounded attempt"
+            raise LLMBudgetExceededError(message)
+        cost: Decimal | None = None
+        try:
+            async with timeout(self._config.request_timeout_s):
+                result = await self._reserved_route(
+                    request, route, attempts, permit
+                )
+            if result is not None:
+                cost = result.cost_usd
+        except TimeoutError:
+            breaker.record_failure(permit)
+            attempts.append(_attempt(route, "timeout"))
+            return None
+        except LLMBilledError as exc:
+            if exc.usage is not None:
+                cost = self._price(route).cost(exc.usage)
+            raise
+        else:
+            return result
+        finally:
+            breaker.abandon(permit)
+            self._budget.settle(reservation, cost)
+
+    async def _reserved_route(
+        self,
+        request: LLMRequest,
+        route: RouteConfig,
+        attempts: list[RouteAttempt],
+        permit: BreakerPermit,
+    ) -> LLMResult | None:
+        breaker = self._breakers[route.model]
         started = self._monotonic()
         backend = self._backends[route.provider]
         try:
-            reply = await backend.complete(
-                request,
-                route,
-                self._config.request_timeout_s,
-            )
+            async with self._semaphore:
+                reply = await backend.complete(
+                    request,
+                    route,
+                    self._config.request_timeout_s,
+                )
         except BackendError as exc:
-            breaker.record_failure()
+            breaker.record_failure(permit)
             attempts.append(_attempt(route, str(exc.kind)))
             _log.warning(
                 "llm.route_failover",
                 purpose=request.purpose,
                 model=route.model,
                 kind=str(exc.kind),
-                detail=exc.detail,
             )
             return None
         except LLMConfigurationError:
-            breaker.record_failure()
+            breaker.record_failure(permit)
             raise
-        except LLMBilledError as exc:
+        except LLMBilledError:
             # The model answered, so the route is healthy; bill tokens.
-            breaker.record_success()
-            if exc.usage is not None:
-                self._budget.add(self._price(route).cost(exc.usage))
+            breaker.record_success(permit)
             raise
-        breaker.record_success()
+        breaker.record_success(permit)
         return self._success(request, route, reply, started, attempts)
 
     def _success(
@@ -176,8 +220,12 @@ class LLMRouter:
         started: float,
         attempts: list[RouteAttempt],
     ) -> LLMResult:
-        cost = self._price(route).cost(reply.usage)
-        self._budget.add(cost)
+        price = self._price(route)
+        cost = (
+            price.cost(reply.usage)
+            if reply.usage_reported
+            else price.maximum_cost(reply.usage)
+        )
         attempts.append(_attempt(route, "ok"))
         latency = self._monotonic() - started
         _log.info(

@@ -105,8 +105,11 @@ interpreter and arrive with M4/M5.
 11. **Any LLM text is safe**: for arbitrary stub output (`st.text()`,
     JSON-like strings), processing never crashes and an overdue non-Done
     task is never `no_action` (`16` #8).
-12. **Retry budget**: for any sequence of dependency failures, attempts
-    never exceed the configured budget (`16` #5).
+12. **Retry allocation**: for any sequence of dependency failures, retry
+    admissions never exceed `floor(allocated_request_units / 5)`. This
+    invariant concerns the configured allocation, not the ratio of actual
+    observed network calls. Exhausted delivery admission defers the claim
+    without I/O or a consumed send attempt.
 
 ## 4. Fault-injection mechanics (hermetic, no sleeps)
 

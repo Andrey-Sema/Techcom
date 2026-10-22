@@ -7,10 +7,10 @@ stale.
 
 | Status | Rows |
 |--------|------|
-| Built | 18 |
+| Built | 19 |
 | Doc | 13 |
 | N/A | 18 |
-| Planned | 82 |
+| Planned | 81 |
 | Prod | 8 |
 
 ## Built: requirement → tests
@@ -22,6 +22,7 @@ stale.
 | 1.2.5 | No OS command execution; ruff `S602–S607` | `tests/meta/test_security_gates.py::test_bandit_scans_product_code_without_skips`<br>`tests/meta/test_security_gates.py::test_ruff_security_rules_apply_to_product_code` |
 | 1.2.9 | Any dynamic regex input goes through `re.escape` (routing names, synonyms) | `tests/unit/domain/test_messages.py::test_name_tokens_are_matched_literally` |
 | 1.3.2 | No `eval`/`exec`/dynamic import of untrusted names; ruff `S307`, `S102` | `tests/meta/test_security_gates.py::test_bandit_scans_product_code_without_skips`<br>`tests/meta/test_security_gates.py::test_ruff_security_rules_apply_to_product_code` |
+| 1.3.3 | Untrusted notes wrapped in `UntrustedText`; prompt tags escaped; control chars stripped | `tests/scenarios/test_llm_safety.py::test_s8_prompt_injection_note_is_untrusted_data`<br>`tests/unit/domain/test_normalize.py::test_notes_are_untrusted_cleaned_and_capped`<br>`tests/unit/llm/test_language_workflow.py::test_note_delimiter_is_escaped_without_fact_leaks` |
 | 1.3.7 | Templates are code constants; regex placeholder renderer (D5) | `tests/property/test_domain_properties.py::test_9_rendered_messages_are_safe`<br>`tests/unit/domain/test_messages.py::test_facts_scrub_hostile_task_data`<br>`tests/unit/domain/test_messages.py::test_render_is_one_pass_and_never_formats`<br>`tests/unit/domain/test_messages.py::test_render_rejects_unknown_placeholders` |
 | 1.3.10 | No `str.format`/`%` on untrusted or LLM text (D5) | `tests/unit/domain/test_messages.py::test_render_is_one_pass_and_never_formats`<br>`tests/unit/domain/test_messages.py::test_violations` |
 | 1.3.11 | Message subject/body CR/LF and header-like content stripped before delivery (future SMTP safe) | `tests/property/test_domain_properties.py::test_9_rendered_messages_are_safe`<br>`tests/unit/domain/test_messages.py::test_violations` |
@@ -40,12 +41,11 @@ stale.
 
 | ID | Control | Tests |
 |----|---------|-------|
-| 1.3.3 | Untrusted notes wrapped in `UntrustedText`; prompt tags escaped; control chars stripped | `tests/unit/domain/test_normalize.py::test_notes_are_untrusted_cleaned_and_capped` |
 | 2.2.1 | Positive validation: enums, regex for ids, ranges, `extra="forbid"` | `tests/unit/domain/test_normalize.py::test_invalid_task_id_is_rejected` |
-| 2.4.1 | API rate limit, LLM budget + breaker, retry budget, per-recipient cap (D6, D7) | `tests/unit/llm/test_router.py::test_exhausted_budget_blocks_calls` |
+| 2.4.1 | API rate limit, LLM budget + breaker, retry budget, per-recipient cap (D6, D7) | `tests/unit/llm/test_router.py::test_exhausted_budget_blocks_calls`<br>`tests/unit/processing/test_retry_and_http.py::test_response_size_is_checked_before_append` |
 | 13.2.1 | Service JWTs (D1); individual DB roles (D3); prod: dynamic DB creds, workload identity for LLM | `tests/unit/llm/test_settings_and_factory.py::test_workload_identity_client_has_no_static_key` |
 | 13.2.2 | Least-privilege DB roles; read-only task API token; delivery token can only create messages | `tests/integration/persistence/test_db_roles.py::test_other_roles_cannot_even_connect`<br>`tests/integration/persistence/test_db_roles.py::test_service_role_cannot_rewrite_history_or_schema`<br>`tests/integration/persistence/test_db_roles.py::test_service_role_runs_the_whole_repository` |
-| 13.2.4, 13.2.5 | Outbound allow-list in HTTP client factory (D4) + `internal: true` backend network | `tests/unit/llm/test_settings_and_factory.py::test_outbound_allow_list` |
+| 13.2.4, 13.2.5 | Outbound allow-list in HTTP client factory (D4) + `internal: true` backend network | `tests/unit/llm/test_settings_and_factory.py::test_outbound_allow_list`<br>`tests/unit/processing/test_retry_and_http.py::test_unapproved_origins_fail_closed` |
 | 13.3.1 | Docker secrets locally (`/run/secrets`, mode 0600, git-ignored); secret manager in prod | `tests/unit/llm/test_settings_and_factory.py::test_key_is_read_from_secret_file_and_never_shown` |
 | 15.1.2 | CycloneDX SBOM per build (CI artefact + image attestation); packages only from PyPI via `uv.lock` hashes | `tests/meta/test_security_gates.py::test_sboms_are_built_and_kept_as_artefacts` |
 | 15.3.2 | `follow_redirects=False` on all clients | `tests/meta/test_security_gates.py::test_semgrep_invariants_are_tested_and_gated` |

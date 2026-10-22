@@ -13,13 +13,19 @@ dependencies = [
     "alembic>=1.14",
     "psycopg[binary,pool]>=3.2",
     "sqlalchemy[asyncio]>=2.0,<2.1",
+    "httpx>=0.28",
+    "stamina>=25.1",
+    "typer>=0.15",
+    "rich>=13.9",
 ]
+
+[project.scripts]
+followup = "techcom_followup.bootstrap:main"
 
 [dependency-groups]
 dev = [
     "bandit[toml]>=1.8",
     "hypothesis>=6.120",
-    "httpx>=0.28",
     "import-linter>=2.1",
     "mypy>=1.13",
     "pytest>=8.3",

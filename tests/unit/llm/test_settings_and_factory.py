@@ -1,8 +1,12 @@
+import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
+import httpx2
+import openai
 import pytest
+from openai import DefaultAsyncHttpxClient
 from pydantic import HttpUrl, SecretStr, ValidationError
 
 import llm_doubles as sdk
@@ -102,6 +106,7 @@ def test_api_key_client_has_no_sdk_retries() -> None:
     client = factory.build_openai_client(
         OpenAISettings(api_key=SecretStr(FAKE_KEY))
     )
+    assert client._client.follow_redirects is False
     assert client.max_retries == 0
     assert client.api_key == FAKE_KEY
     assert str(client.base_url).startswith("https://api.openai.com/v1")
@@ -118,6 +123,7 @@ def test_workload_identity_client_has_no_static_key(tmp_path: Path) -> None:
         subject_token_file=token_file,
     )
     client = factory.build_openai_client(settings)
+    assert client._client.follow_redirects is False
     assert client.max_retries == 0
     assert client.workload_identity is not None
     assert client.workload_identity["service_account_id"] == "sa_1"
@@ -155,3 +161,42 @@ async def test_build_router_wires_the_responses_api(
     result = await router.generate_json(request_)
     assert result.text == '{"blocker": "x"}'
     assert stub.responses.calls == 1
+
+
+@pytest.mark.parametrize("redirect_status", [307, 308])
+async def test_factory_client_never_follows_redirect_to_unapproved_host(
+    monkeypatch: pytest.MonkeyPatch, redirect_status: int
+) -> None:
+    calls: list[httpx2.Request] = []
+
+    async def respond(request: httpx2.Request) -> httpx2.Response:
+        calls.append(request)
+        return httpx2.Response(
+            redirect_status,
+            headers={"location": "https://unapproved.example/v1/responses"},
+            request=request,
+        )
+
+    real_client = DefaultAsyncHttpxClient
+
+    def transport_client(**kwargs: Any) -> DefaultAsyncHttpxClient:
+        return real_client(transport=httpx2.MockTransport(respond), **kwargs)
+
+    monkeypatch.setattr(factory, "DefaultAsyncHttpxClient", transport_client)
+    client = factory.build_openai_client(
+        OpenAISettings(api_key=SecretStr(FAKE_KEY))
+    )
+    assert client._client.follow_redirects is False
+    # Avoid SDK user-agent discovery using a sandboxed thread executor.
+    client._platform = "Linux"
+    try:
+        with pytest.raises(openai.APIStatusError):
+            async with asyncio.timeout(5):
+                await client.responses.create(
+                    model="gpt-6.1-sol", input="offline redirect regression"
+                )
+    finally:
+        await client.close()
+    assert len(calls) == 1
+    assert calls[0].url.host == "api.openai.com"
+    assert calls[0].headers["authorization"] == f"Bearer {FAKE_KEY}"

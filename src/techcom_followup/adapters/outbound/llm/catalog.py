@@ -9,7 +9,7 @@ Capability data was checked against the installed ``openai`` SDK
 are configuration (``config/llm.toml``) because they change.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 from typing import Literal
 
@@ -124,3 +124,11 @@ class ModelPrice(BaseModel):
             usage.output_tokens * self.output_per_mtok * output_multiplier
         )
         return ((input_cost + output_cost) / _MILLION).quantize(_SIX_PLACES)
+
+    def maximum_cost(self, usage: TokenUsage) -> Decimal:
+        """Bound cached and cache-write mixes under this price table."""
+        return max(
+            self.cost(usage),
+            self.cost(replace(usage, cached_input_tokens=usage.input_tokens)),
+            self.cost(replace(usage, cache_write_tokens=usage.input_tokens)),
+        )

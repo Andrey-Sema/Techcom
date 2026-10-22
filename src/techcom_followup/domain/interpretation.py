@@ -60,9 +60,28 @@ _KEYWORDS: tuple[tuple[BlockerCategory, re.Pattern[str]], ...] = tuple(
     )
 )
 
+# A word match cannot establish whether a blocker is current. Resolution
+# or historical context needs interpretation before confident routing.
+# These cues are conservative, not a complete negation detector.
+_AMBIGUOUS_CONTEXT = re.compile(
+    r"\b(?:historical|formerly|previously|quotes?|quoted|resolved)\b"
+    r"|\bold\s+issue\b"
+    r"|\bno\s+(?:remaining\s+)?(?:(?:materials?|permit|access|upstream)\s+)?"
+    r"(?:blockers?|obstacles?|delays?)\b"
+    r"|\b(?:materials?|parts|shipments?)\b.{0,60}"
+    r"\b(?:arrived|delivered|received|available)\b"
+    r"|\b(?:arrived|delivered|received|available)\b.{0,60}"
+    r"\b(?:materials?|parts|shipments?)\b"
+    r"|\bupstream\b.{0,60}\b(?:complete(?:d)?|finished|cleared)\b"
+    r"|\b(?:complete(?:d)?|finished|cleared)\b.{0,60}\bupstream\b",
+    re.IGNORECASE | re.DOTALL,
+)
+
 
 def prefilter(note: UntrustedText) -> NoteInterpretation | None:
-    """Classify a note by keywords; ``None`` when nothing matches."""
+    """Classify obvious current blockers; defer ambiguous context."""
+    if _AMBIGUOUS_CONTEXT.search(note.value) is not None:
+        return None
     for blocker, pattern in _KEYWORDS:
         match = pattern.search(note.value)
         if match is not None:

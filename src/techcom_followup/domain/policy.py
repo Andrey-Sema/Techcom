@@ -173,6 +173,11 @@ class DecisionPolicy:
         """Return the policy version recorded with every decision."""
         return self._config.version
 
+    @property
+    def due_soon_days(self) -> int:
+        """Share the decision horizon with note interpretation."""
+        return self._config.due_soon_days
+
     def decide(
         self,
         task: Task,

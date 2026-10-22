@@ -92,7 +92,7 @@ the claim "L2" is evidence-backed, not aspirational.
 | 1.2.9 | 2 | Any dynamic regex input goes through `re.escape` (routing names, synonyms) | unit test | Built |
 | 1.3.1 | 1 | No HTML input | — | N/A |
 | 1.3.2 | 1 | No `eval`/`exec`/dynamic import of untrusted names; ruff `S307`, `S102` | CI lint | Built |
-| 1.3.3 | 2 | Untrusted notes wrapped in `UntrustedText`; prompt tags escaped; control chars stripped | unit tests | Planned |
+| 1.3.3 | 2 | Untrusted notes wrapped in `UntrustedText`; prompt tags escaped; control chars stripped | unit tests | Built |
 | 1.3.4, 1.3.5 | 2 | No SVG/Markdown/template-language rendering (messages are plain text) | — | N/A |
 | 1.3.6 | 2 | No user-supplied URLs; outbound allow-list (D4) | adapter tests | Planned |
 | 1.3.7 | 2 | Templates are code constants; regex placeholder renderer (D5) | unit + property tests | Built |
