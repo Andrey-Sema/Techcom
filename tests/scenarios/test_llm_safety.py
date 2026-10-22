@@ -73,7 +73,7 @@ INJECTIONS = (
 )
 
 
-@pytest.mark.asvs
+@pytest.mark.asvs("1.3.3")
 @pytest.mark.parametrize("note", INJECTIONS)
 async def test_s8_prompt_injection_note_is_untrusted_data(note: str) -> None:
     task = make_task(

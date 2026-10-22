@@ -1,7 +1,6 @@
 """Composition root: own resources and wire CLI use cases explicitly."""
 
 import json
-import os
 import time
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
@@ -261,13 +260,10 @@ class _RuntimeScope:
                     cooldown_s=30,
                     monotonic=time.monotonic,
                 ),
+                # FOLLOWUP_DISPATCH_ENABLED comes in through settings,
+                # loaded when each command starts.
                 enabled=lambda: (
-                    not self._stopping
-                    and self._settings.dispatch_enabled
-                    and os.environ.get(
-                        "FOLLOWUP_DISPATCH_ENABLED", "true"
-                    ).lower()
-                    in {"true", "1", "yes"}
+                    not self._stopping and self._settings.dispatch_enabled
                 ),
             )
         return self._dispatcher

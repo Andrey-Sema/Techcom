@@ -321,6 +321,22 @@ runs with `read_only: true`, `cap_drop: [ALL]`, `no-new-privileges`
 (compose). Port 8080 = API, 9464 = metrics (internal network only).
 Trivy scan in CI fails on HIGH/CRITICAL with a fix available.
 
+**As built (M8).** The committed `Dockerfile` follows this sketch with
+these differences, each for a reason found while building it:
+
+* `runtime` is the **last** stage, so a plain `docker build` produces it.
+* uv comes from `astral/uv` on Docker Hub (same Astral release, pinned
+  by digest); the first Trivy run also showed that the base image's
+  `pip` vendors vulnerable `urllib3`/`msgpack`, so both images uninstall
+  `pip` (`tests/image` asserts it is gone).
+* An optional build secret `ca_bundle` supports TLS-intercepting
+  proxies without writing the CA into a layer.
+* The mock runs `uvicorn techcom_mocks.app:create_app --factory` with
+  its journal on a `/var/lib/mock` volume, so it also works read-only.
+* `ENTRYPOINT ["followup"]` and the API `HEALTHCHECK` arrive with the
+  CLI (M6a) and the API (M6b); until then the runtime image runs
+  `alembic` (migrations are image-tested against PostgreSQL 18).
+
 ## 6. `compose.yaml` (core)
 
 ```yaml
@@ -580,7 +596,7 @@ Dashboard `followup-overview.json` — rows and panels:
 | Delivery | outbox backlog by status, oldest pending age, attempts by result, dead letters, reconciled count, replays |
 | LLM | requests by result, fallback rate, tokens in/out, cost/day vs budget, latency p95, circuit state |
 | Security | auth failures, authz denials, notes flagged, rate-limited requests, validation rejections |
-| Logs | Loki panel `{service="followup"} \| json \| level=~"warning\|error"`, linked by `run_id` |
+| Logs | Loki panel `{service_name="followup"} \| severity_text=~"(?i)warn.*\|error\|critical"`, linked by `run_id` |
 
 ## 10. Loki and Alloy
 

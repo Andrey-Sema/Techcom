@@ -36,6 +36,7 @@ def _clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv(name, raising=False)
 
 
+@pytest.mark.asvs("13.3.1")
 def test_key_is_read_from_secret_file_and_never_shown(tmp_path: Path) -> None:
     (tmp_path / "followup_openai_api_key").write_text(FAKE_KEY)
     settings = load_openai_settings(tmp_path)
@@ -71,6 +72,7 @@ def test_malformed_key_is_rejected_without_echoing_it() -> None:
         ("https://evil.example/v1", "allowed_hosts"),
     ],
 )
+@pytest.mark.asvs("13.2.4")
 def test_outbound_allow_list(base_url: str, message: str) -> None:
     with pytest.raises(ValidationError, match=message):
         OpenAISettings(api_key=SecretStr(FAKE_KEY), base_url=HttpUrl(base_url))
@@ -110,6 +112,7 @@ def test_api_key_client_has_no_sdk_retries() -> None:
     assert str(client.base_url).startswith("https://api.openai.com/v1")
 
 
+@pytest.mark.asvs("13.2.1")
 def test_workload_identity_client_has_no_static_key(tmp_path: Path) -> None:
     token_file = tmp_path / "token"
     token_file.write_text("header.payload.signature")

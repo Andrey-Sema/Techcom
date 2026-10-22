@@ -1,0 +1,180 @@
+# promtool unit tests for followup.rules.yml (make obs-check).
+# Every alert has a firing case and a quiet case.
+rule_files:
+  - followup.rules.yml
+
+evaluation_interval: 1m
+
+tests:
+  - name: dead letters fire on any new dead action, and only then
+    interval: 1m
+    input_series:
+      - series: followup_actions_total{outcome="dead"}
+        values: "0 0 0 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1"
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: FollowupDeadLetters
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: FollowupDeadLetters
+        exp_alerts:
+          - exp_labels:
+              severity: page
+            exp_annotations:
+              summary: Action(s) moved to the dead-letter state.
+              description: >-
+                1 action(s) became dead in the last 15 minutes; each one is
+                investigated.
+              runbook_url: docs/18-runbook.md#followup-dead-letters
+
+  - name: outbox stuck needs 30 minutes of age for 5 minutes
+    interval: 1m
+    input_series:
+      - series: followup_outbox_oldest_age_seconds{status="pending"}
+        values: "1700+60x15"
+      - series: followup_outbox_oldest_age_seconds{status="unknown"}
+        values: "10x15"
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: FollowupOutboxStuck
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: FollowupOutboxStuck
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              status: pending
+            exp_annotations:
+              summary: Oldest pending action is older than 30 minutes.
+              description: >-
+                The follow-up latency SLO (99 % under 15 minutes) is at risk.
+              runbook_url: docs/18-runbook.md#followup-outbox-stuck
+
+  - name: LLM fallback rate above 5 % for 15 minutes
+    interval: 1m
+    input_series:
+      - series: followup_llm_requests_total{purpose="interpret_note",result="ok"}
+        values: "0+90x60"
+      - series: followup_llm_requests_total{purpose="interpret_note",result="fallback"}
+        values: "0+10x60"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: FollowupLLMFallbackRateHigh
+        exp_alerts: []
+      - eval_time: 40m
+        alertname: FollowupLLMFallbackRateHigh
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+            exp_annotations:
+              summary: More than 5 % of LLM calls fall back to templates.
+              description: Fallback rate is 10%.
+              runbook_url: docs/18-runbook.md#followup-llm-fallback-rate-high
+
+  - name: no LLM traffic is not a fallback problem
+    interval: 1m
+    input_series:
+      - series: followup_llm_requests_total{purpose="interpret_note",result="ok"}
+        values: "0x60"
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: FollowupLLMFallbackRateHigh
+        exp_alerts: []
+
+  - name: LLM spend above budget x 1.2 in 24 hours
+    interval: 1h
+    input_series:
+      - series: followup_llm_cost_usd_total{purpose="interpret_note"}
+        values: "0+0.2x24"
+      - series: followup_llm_cost_usd_total{purpose="draft_message"}
+        values: "0+0.1x24"
+    alert_rule_test:
+      - eval_time: 12h
+        alertname: FollowupLLMCostBudget
+        exp_alerts: []
+      - eval_time: 23h
+        alertname: FollowupLLMCostBudget
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+            exp_annotations:
+              summary: LLM spend over the last 24 hours exceeds budget x 1.2.
+              description: Spend is 6.9 USD.
+              runbook_url: docs/18-runbook.md#followup-llm-cost-budget
+
+  - name: circuit open for 5 minutes
+    interval: 1m
+    input_series:
+      - series: followup_circuit_state{dependency="delivery_api",state="open"}
+        values: "0 0 1 1 1 1 1 1 1 1"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: FollowupCircuitOpen
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: FollowupCircuitOpen
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              dependency: delivery_api
+            exp_annotations:
+              summary: Circuit breaker for delivery_api open for 5 minutes.
+              runbook_url: docs/18-runbook.md#followup-circuit-open
+
+  - name: injection spike above 10 flagged notes per hour
+    interval: 5m
+    input_series:
+      - series: followup_security_events_total{kind="note_flagged"}
+        values: "0+1x24"
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: FollowupInjectionSpike
+        exp_alerts: []
+      - eval_time: 2h
+        alertname: FollowupInjectionSpike
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+            exp_annotations:
+              summary: More than 10 task notes flagged as prompt injection in 1 hour.
+              runbook_url: docs/18-runbook.md#followup-injection-spike
+
+  - name: authentication failures above 20 in 5 minutes
+    interval: 1m
+    input_series:
+      - series: followup_security_events_total{kind="authn_failed"}
+        values: "0 1 2 3 4 5 30 60"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: FollowupAuthFailures
+        exp_alerts: []
+      - eval_time: 7m
+        alertname: FollowupAuthFailures
+        exp_alerts:
+          - exp_labels:
+              severity: page
+            exp_annotations:
+              summary: More than 20 failed authentications in 5 minutes.
+              runbook_url: docs/18-runbook.md#followup-auth-failures
+
+  - name: scrape target down for 5 minutes
+    interval: 1m
+    input_series:
+      - series: up{job="followup-app",instance="app:9464"}
+        values: "1 1 0 0 0 0 0 0 0 0"
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: FollowupTargetDown
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: FollowupTargetDown
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+              job: followup-app
+              instance: app:9464
+            exp_annotations:
+              summary: Prometheus cannot scrape the follow-up service.
+              description: >-
+                Expected until the API (M6b) joins the observability network.
+              runbook_url: docs/18-runbook.md#followup-target-down

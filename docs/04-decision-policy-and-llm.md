@@ -13,7 +13,7 @@ inserted by code.
 | `task_id` | `strip().upper()`, must match `^[A-Z]{2,5}-\d{1,9}$` | Missing/invalid → `RejectedRecord(reason="invalid_task_id")` |
 | `status` | `casefold()`, collapse whitespace, map synonyms (`"in progress"`, `"working"` → `WORKING_ON_IT`; `"complete"`, `"completed"`, `"closed"` → `DONE`; `"stuck"` → `BLOCKED`; `"todo"`, `"not started"` → `NOT_STARTED`) | Unmapped → `UNKNOWN` (kept, clarified later) |
 | `assigned_to` | strip, collapse spaces; `""`, `"n/a"`, `"tbd"`, `"unassigned"`, `"none"` → `None` | — |
-| `due_date`, `last_update` | ISO `YYYY-MM-DD`; also accept ISO datetime (converted to UTC date) | Unparseable → `None` + data-quality warning (`due_date` then triggers clarification) |
+| `due_date`, `last_update` | ISO `YYYY-MM-DD`; also accept ISO datetime (converted to UTC date) | Unparsable → `None` + data-quality warning (`due_date` then triggers clarification) |
 | `notes` | Wrapped in `UntrustedText`: strip control chars (except `\n`), NFKC normalize, cap at 2,000 chars (`truncated=True`) | `None` → empty |
 | `project`, `task` | strip; empty → `"(unknown)"` | — |
 | duplicate `task_id` | keep latest `last_update` (tie → first occurrence) | others rejected `duplicate_task_id` |
@@ -95,6 +95,10 @@ Choices made while coding the table, each pinned by a unit test:
   (`[link removed]`), so a hostile task title cannot plant a phishing
   link. Facts are capped at 80 characters, which keeps subjects within
   120 and bodies within 800 characters (property-tested).
+* **Placeholders are not blind spots.** The draft validator checks the
+  text with each placeholder replaced by a word, so `{project}.com` or
+  `{recipient_name}@example.org` still read as a host or a mailbox and
+  are rejected (found by mutation testing, M8).
 * **Code location.** `domain/{normalize,injection,interpretation,
   policy,identity,messages}.py`; thresholds in `config/policy.toml`,
   recipients in `config/routing.toml`, both validated at load

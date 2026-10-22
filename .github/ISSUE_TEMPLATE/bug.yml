@@ -1,0 +1,25 @@
+name: Bug
+description: Something behaves differently from the docs or the tests.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: Observed behaviour, with the command or request.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What was expected
+      description: Expected behaviour and where it is specified.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence
+      description: >-
+        Log lines (request_id, run_id) or a failing test. Never paste
+        secrets, task notes or customer data.

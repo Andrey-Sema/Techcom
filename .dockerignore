@@ -17,3 +17,12 @@ htmlcov
 var
 dist
 build
+# Not needed to build either image; keeps the build cache stable.
+.github
+.semgrep
+deploy
+docs
+scripts
+tests
+mutants
+site

@@ -171,6 +171,7 @@ async def test_cancelled_claim_rolls_back_lease_and_attempt(
     assert len(await repository.claim_actions(ClaimRequest(NOW))) == 1
 
 
+@pytest.mark.asvs("2.3.3")
 async def test_late_failure_rolls_back_action_decision_and_audit(
     pg_engine: AsyncEngine,
 ) -> None:

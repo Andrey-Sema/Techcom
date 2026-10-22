@@ -8,7 +8,7 @@ import asyncio
 import json
 import os
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import FastAPI, Header, HTTPException, Request
@@ -17,13 +17,28 @@ from fastapi.responses import JSONResponse, Response
 
 from techcom_mocks.faults import Fault, FaultPlan, response_for
 from techcom_mocks.limits import BodyLimitMiddleware
-from techcom_mocks.models import DeliveryPayload
+from techcom_mocks.models import DeliveryPayload, ErrorBody, Receipt
 from techcom_mocks.store import (
     DeliveryStore,
     InProgressError,
     PayloadMismatchError,
     StoreUnavailableError,
 )
+
+_INJECTED = "Injected by FOLLOWUP_MOCK_FAULTS"
+
+
+def _errors(codes: dict[int, str]) -> dict[int | str, dict[str, Any]]:
+    """Document error responses so the OpenAPI matches the wire."""
+    documented = dict.fromkeys((429, 500, 503, 504), _INJECTED) | codes
+    return {
+        code: {"model": ErrorBody, "description": text}
+        for code, text in documented.items()
+    }
+
+
+_INVALID = "Invalid request; the input is never echoed"
+_IN_PROGRESS = "Operation in progress; retry after Retry-After"
 
 
 async def _timeout() -> Response:
@@ -148,9 +163,36 @@ def create_app(
     app.add_middleware(BodyLimitMiddleware)
     app.add_exception_handler(RequestValidationError, _validation_error)
     app.add_exception_handler(StoreUnavailableError, _unavailable)
-    app.add_api_route("/v1/tasks", receiver.get_tasks, methods=["GET"])
-    app.add_api_route("/v1/messages", receiver.deliver, methods=["POST"])
     app.add_api_route(
-        "/v1/messages/{operation_id}", receiver.lookup, methods=["GET"]
+        "/v1/tasks",
+        receiver.get_tasks,
+        methods=["GET"],
+        response_model=list[dict[str, Any]],
+        responses=_errors({}),
+    )
+    app.add_api_route(
+        "/v1/messages",
+        receiver.deliver,
+        methods=["POST"],
+        status_code=201,
+        response_model=Receipt,
+        responses=_errors(
+            {
+                400: "Body is not valid JSON",
+                409: _IN_PROGRESS,
+                413: "Request body too large",
+                422: _INVALID + ", or the key was used with another payload",
+                503: "Journal unavailable, or an injected fault",
+            }
+        ),
+    )
+    app.add_api_route(
+        "/v1/messages/{operation_id}",
+        receiver.lookup,
+        methods=["GET"],
+        response_model=Receipt,
+        responses=_errors(
+            {404: "Unknown operation", 409: _IN_PROGRESS, 422: _INVALID}
+        ),
     )
     return app

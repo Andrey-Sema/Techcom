@@ -1,0 +1,31 @@
+# Prometheus configuration (M10). Alert rules mirror docs/09 section 3
+# and link to the runbook (docs/18). There is no Alertmanager in the
+# local stack: alerts are visible in the Prometheus and Grafana UIs.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    environment: local
+
+rule_files:
+  - /etc/prometheus/rules/*.rules.yml
+
+scrape_configs:
+  # The service exposes /metrics on an internal port (M6b). Until it
+  # joins the "observability" network this target is reported as down.
+  - job_name: followup-app
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["app:9464"]
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  - job_name: loki
+    static_configs:
+      - targets: ["loki:3100"]
+
+  - job_name: alloy
+    static_configs:
+      - targets: ["alloy:12345"]

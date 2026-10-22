@@ -46,6 +46,12 @@ class Receipt(StrictModel):
     status: Literal["sent"] = "sent"
 
 
+class ErrorBody(StrictModel):
+    """Error envelope: a fixed message, never the request input."""
+
+    detail: str
+
+
 class DeliveryEntry(StrictModel):
     """One committed JSONL record, including its payload digest."""
 

@@ -7,6 +7,7 @@ import re
 from datetime import date, timedelta
 from typing import Any
 
+import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
@@ -183,6 +184,7 @@ _LINK = re.compile(
     st.text(max_size=120),
     st.sampled_from(["https://evil.example/x", "boss@evil.example", "{x}"]),
 )
+@pytest.mark.asvs("1.3.7", "1.3.11")
 def test_9_rendered_messages_are_safe(
     record: dict[str, Any], title: str, payload: str
 ) -> None:
