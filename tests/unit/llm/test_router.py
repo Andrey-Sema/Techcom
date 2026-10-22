@@ -387,3 +387,82 @@ async def test_provider_overrun_is_charged_and_prevents_more_calls(
     with pytest.raises(LLMBudgetExceededError):
         await router.generate_json(request_)
     assert backend.calls == [route.model]
+
+
+class InterleavedBackend:
+    def __init__(self) -> None:
+        self.started = [asyncio.Event(), asyncio.Event(), asyncio.Event()]
+        self.release = [asyncio.Event(), asyncio.Event(), asyncio.Event()]
+        self.calls = 0
+
+    async def complete(
+        self, request: LLMRequest, route: RouteConfig, timeout_s: float
+    ) -> BackendReply:
+        index = self.calls
+        self.calls += 1
+        self.started[index].set()
+        if index == 1:
+            raise transient()
+        await self.release[index].wait()
+        return reply(route.model)
+
+
+def one_route(config: RoutingConfig, **updates: object) -> RoutingConfig:
+    return config.model_copy(
+        update={
+            "routes": {
+                purpose: routes[:1]
+                for purpose, routes in config.routes.items()
+            },
+            "breaker_failure_threshold": 1,
+            **updates,
+        }
+    )
+
+
+async def test_cancelled_old_request_cannot_release_new_router_probe(
+    routing_config: RoutingConfig, request_: LLMRequest, clock: FakeClock
+) -> None:
+    config = one_route(routing_config)
+    backend = InterleavedBackend()
+    router = LLMRouter(
+        config=config,
+        backends={"openai": backend},
+        monotonic=clock.monotonic,
+        today=lambda: date(2026, 10, 21),
+    )
+    stale = asyncio.create_task(router.generate_json(request_))
+    await backend.started[0].wait()
+    with pytest.raises(LLMUnavailableError):
+        await router.generate_json(request_)
+    clock.advance(config.breaker_cooldown_s)
+    probe = asyncio.create_task(router.generate_json(request_))
+    await backend.started[2].wait()
+    stale.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await stale
+    with pytest.raises(LLMUnavailableError):
+        await router.generate_json(request_)
+    assert backend.calls == 3
+    backend.release[2].set()
+    assert (await probe).text
+
+
+async def test_total_router_deadline_includes_waiting_for_semaphore(
+    routing_config: RoutingConfig, request_: LLMRequest, clock: FakeClock
+) -> None:
+    backend = BlockingBackend()
+    router = LLMRouter(
+        config=one_route(routing_config, request_timeout_s=0.001),
+        backends={"openai": backend},
+        monotonic=clock.monotonic,
+        today=lambda: date(2026, 10, 21),
+    )
+    for _ in range(4):
+        await router._semaphore.acquire()
+    with pytest.raises(LLMUnavailableError) as caught:
+        await router.generate_json(request_)
+    assert backend.calls == 0
+    assert caught.value.attempts[0].outcome == "timeout"
+    assert router.budget.reserved_usd == 0
+    assert router.budget.spent_usd > 0
