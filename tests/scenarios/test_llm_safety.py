@@ -36,6 +36,7 @@ VALID = {
         (LLMError("private note in exception"), "transport"),
     ],
 )
+@pytest.mark.owasp_llm("LLM05")
 async def test_s7_malformed_llm_json_falls_back_safely(
     output: str | LLMError | TimeoutError, stage: str
 ) -> None:
@@ -75,6 +76,7 @@ INJECTIONS = (
 
 @pytest.mark.asvs("1.3.3")
 @pytest.mark.parametrize("note", INJECTIONS)
+@pytest.mark.owasp_llm("LLM01")
 async def test_s8_prompt_injection_note_is_untrusted_data(note: str) -> None:
     task = make_task(
         due_date=AS_OF - timedelta(days=1),

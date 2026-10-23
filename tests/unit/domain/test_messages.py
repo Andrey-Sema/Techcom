@@ -142,6 +142,7 @@ def test_short_name_tokens_are_ignored(validator: MessageValidator) -> None:
 
 
 @pytest.mark.asvs("1.3.7", "1.3.10")
+@pytest.mark.owasp_llm("LLM05")
 def test_render_is_one_pass_and_never_formats() -> None:
     facts = {"task_id": "{recipient_name}", "recipient_name": "Ann"}
     assert render("{recipient_name}: {task_id}", facts) == (

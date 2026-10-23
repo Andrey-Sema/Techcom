@@ -11,14 +11,14 @@
     ],
     "idempotency_key": "sha256:e12c8d7ba06d08b2d631d4338ebcabf29733b65baf4c9050a7ec8245b2ecb3e7",
     "message": {
-      "body": "Hi John Smith, I am checking in on TC-1001 'Fiber splicing' (SURF Illinois), due 2026-10-18. Our tracker shows: 3 day(s) overdue; no blocker explained. Could you share where it stands, anything blocking it and a realistic completion date? Thank you!",
+      "body": "Hello John Smith, I am checking in on TC-1001 'Fiber splicing' (SURF Illinois), due 2026-10-18. Our tracker shows: 3 day(s) overdue; no blocker explained. Could you share where it stands? What is a realistic completion date? Thank you.",
       "source": "llm",
-      "subject": "Quick check-in on TC-1001: Fiber splicing",
-      "template_id": "agent.v2"
+      "subject": "Status check: TC-1001 Fiber splicing",
+      "template_id": "agent.v3"
     },
     "operation_id": "c5d55398-d208-5869-9331-0a27f2591486",
     "outcome": "enqueued",
-    "rationale": "Selected follow_up_owner for owner within the policy envelope.",
+    "rationale": "Agent chose follow_up_owner for owner, asking for status, completion_date in a neutral tone.",
     "reason": "3 day(s) overdue; no blocker explained.",
     "reason_code": "overdue_no_explanation",
     "rule_id": "R7+agent",
@@ -40,14 +40,14 @@
     ],
     "idempotency_key": "sha256:21070d2c9edd2406f5f1683af69c64f3b8bdf9efc42007bdaf72fb1d62a1c126",
     "message": {
-      "body": "Hello Warehouse team, TC-1002 'Install handholes' (SURF Illinois) is waiting on materials and is due 2026-10-18. Could you confirm when the delivery will arrive, or tell us who can?",
+      "body": "Hello Warehouse team, TC-1002 'Install handholes' (SURF Illinois) is waiting on materials and is due 2026-10-18. Our tracker shows: Blocked by materials; 3 day(s) overdue; delivery date unknown. When will the materials arrive, or who can confirm the delivery date? Thank you.",
       "source": "llm",
-      "subject": "Delivery ETA needed for TC-1002: Install handholes",
-      "template_id": "agent.v2"
+      "subject": "Delivery ETA needed: TC-1002 Install handholes",
+      "template_id": "agent.v3"
     },
     "operation_id": "f1a2a370-ea2f-54ef-8fb5-7c74a97b9289",
     "outcome": "enqueued",
-    "rationale": "Selected request_eta for assigned_team within the policy envelope.",
+    "rationale": "Agent chose request_eta for assigned_team, asking for delivery_eta in a neutral tone.",
     "reason": "Blocked by materials; 3 day(s) overdue; delivery date unknown.",
     "reason_code": "materials_eta_unknown",
     "rule_id": "R5+agent",
@@ -84,14 +84,14 @@
     ],
     "idempotency_key": "sha256:69a9ce427dee3f69a8f9f3e58a0bf0137ed28c0d379a3bb26cb4b4064eabb946",
     "message": {
-      "body": "Hello Wisconsin Build coordinator, TC-1004 'Permit review' (Wisconsin Build) needs clarification. Our tracker shows: Missing: owner. Could you clarify the details or tell us who can?",
+      "body": "Hello Wisconsin Build coordinator, TC-1004 'Permit review' (Wisconsin Build) needs clarification. Our tracker shows: Missing: owner. Could you fill in the missing details: owner? Thank you.",
       "source": "llm",
-      "subject": "Details needed for TC-1004: Permit review",
-      "template_id": "agent.v2"
+      "subject": "Details needed: TC-1004 Permit review",
+      "template_id": "agent.v3"
     },
     "operation_id": "c163cdab-dd1e-530f-b8b6-91ba6d3bff9d",
     "outcome": "enqueued",
-    "rationale": "Selected clarify_missing_info for coordinator within the policy envelope.",
+    "rationale": "Agent chose clarify_missing_info for coordinator, asking for missing_details in a neutral tone.",
     "reason": "Missing: owner.",
     "reason_code": "missing_owner",
     "rule_id": "R3+agent",
@@ -113,14 +113,14 @@
     ],
     "idempotency_key": "sha256:3f7f4a91565b41425c041c9ee76df9ca78158ff7c068e6cf830d49c05ce5ae84",
     "message": {
-      "body": "Hello Alex Brown, TC-1005 'As-built drawings' (Indiana OSP) needs clarification. Our tracker shows: Missing: due date. Could you clarify the details or tell us who can?",
+      "body": "Hello Alex Brown, TC-1005 'As-built drawings' (Indiana OSP) needs clarification. Our tracker shows: Missing: due date. Could you fill in the missing details: due date? Thank you.",
       "source": "llm",
-      "subject": "Details needed for TC-1005: As-built drawings",
-      "template_id": "agent.v2"
+      "subject": "Details needed: TC-1005 As-built drawings",
+      "template_id": "agent.v3"
     },
     "operation_id": "6e4b7466-e408-5dcb-83e0-07c68bec33c7",
     "outcome": "enqueued",
-    "rationale": "Selected clarify_missing_info for owner within the policy envelope.",
+    "rationale": "Agent chose clarify_missing_info for owner, asking for missing_details in a neutral tone.",
     "reason": "Missing: due date.",
     "reason_code": "missing_due_date",
     "rule_id": "R3+agent",
@@ -143,14 +143,14 @@
     ],
     "idempotency_key": "sha256:857d18728a1feec73dba0a60a4fc447a0f1729e2f0e6482a6181c4718a7fc24a",
     "message": {
-      "body": "Hi Jamie Lee, I am checking in on TC-1006 'Splice verification' (Minnesota Fiber), due 2026-10-20. Our tracker shows: 1 day(s) overdue; no blocker explained. Could you share where it stands, anything blocking it and a realistic completion date? Thank you!",
+      "body": "Hello Jamie Lee, I am checking in on TC-1006 'Splice verification' (Minnesota Fiber), due 2026-10-20. Our tracker shows: 1 day(s) overdue; no blocker explained. Could you share where it stands? What is a realistic completion date? Thank you.",
       "source": "llm",
-      "subject": "Quick check-in on TC-1006: Splice verification",
-      "template_id": "agent.v2"
+      "subject": "Status check: TC-1006 Splice verification",
+      "template_id": "agent.v3"
     },
     "operation_id": "cd7a7371-6449-5c6d-96e8-5c6c8fbf917d",
     "outcome": "enqueued",
-    "rationale": "Selected follow_up_owner for owner within the policy envelope.",
+    "rationale": "Agent chose follow_up_owner for owner, asking for status, completion_date in a neutral tone.",
     "reason": "1 day(s) overdue; no blocker explained.",
     "reason_code": "overdue_no_explanation",
     "rule_id": "R7+agent",
@@ -187,14 +187,14 @@
     ],
     "idempotency_key": "sha256:d3ef627e390fb6d7d5781003826669a7be43e8c2bda97f12603228646dd9b919",
     "message": {
-      "body": "Hello SURF Illinois project manager, TC-1008 'Test fiber signal' (SURF Illinois) needs your attention. Blocked by upstream dependency; 6 day(s) overdue. Owner: Chris Patel. Due: 2026-10-15. Could you help unblock it or agree on a plan?",
+      "body": "Hello SURF Illinois project manager, TC-1008 'Test fiber signal' (SURF Illinois) needs your attention. Our tracker shows: Blocked by upstream dependency; 6 day(s) overdue. Owner: Chris Patel. Due: 2026-10-15. Could you help unblock it or agree on a new plan? What is a realistic completion date? Thank you.",
       "source": "llm",
       "subject": "Needs your attention: TC-1008 Test fiber signal",
-      "template_id": "agent.v2"
+      "template_id": "agent.v3"
     },
     "operation_id": "81e9e4d9-1469-5ea5-beca-b74799a8d36f",
     "outcome": "enqueued",
-    "rationale": "Selected escalate for manager within the policy envelope.",
+    "rationale": "Agent chose escalate for manager, asking for unblock_plan, completion_date in a neutral tone.",
     "reason": "Blocked by upstream dependency; 6 day(s) overdue.",
     "reason_code": "blocked_dependency",
     "rule_id": "R6+agent",
@@ -216,14 +216,14 @@
     ],
     "idempotency_key": "sha256:c193de851410147c0a1c984001215bbeb3259a15d498eb3a9818b573ab4b921b",
     "message": {
-      "body": "Hello Warehouse team, TC-1009 'Material reconciliation' (Michigan Expansion) is waiting on materials and is due 2026-10-21. Could you confirm when the delivery will arrive, or tell us who can?",
+      "body": "Hello Warehouse team, TC-1009 'Material reconciliation' (Michigan Expansion) is waiting on materials and is due 2026-10-21. Our tracker shows: Blocked by materials; due today; delivery date unknown. When will the materials arrive, or who can confirm the delivery date? Thank you.",
       "source": "llm",
-      "subject": "Delivery ETA needed for TC-1009: Material reconciliation",
-      "template_id": "agent.v2"
+      "subject": "Delivery ETA needed: TC-1009 Material reconciliation",
+      "template_id": "agent.v3"
     },
     "operation_id": "e06c021a-216f-5e62-9b92-d716b766833c",
     "outcome": "enqueued",
-    "rationale": "Selected request_eta for assigned_team within the policy envelope.",
+    "rationale": "Agent chose request_eta for assigned_team, asking for delivery_eta in a neutral tone.",
     "reason": "Blocked by materials; due today; delivery date unknown.",
     "reason_code": "materials_eta_unknown",
     "rule_id": "R5+agent",

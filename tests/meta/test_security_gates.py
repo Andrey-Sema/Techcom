@@ -88,6 +88,7 @@ def test_no_product_code_disables_certificate_checks() -> None:
 
 
 @pytest.mark.asvs("15.2.1")
+@pytest.mark.owasp_llm("LLM03")
 def test_dependency_and_image_scans_fail_the_build() -> None:
     assert "audit" in make_target("gates")
     assert "pip-audit --strict --require-hashes" in make_target("audit")

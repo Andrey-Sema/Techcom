@@ -20,8 +20,16 @@ from techcom_followup.application.ports import (
     LLMResult,
     TokenUsage,
 )
-from techcom_followup.domain.agent_messages import agent_phrasings
-from techcom_followup.domain.models import DecisionKind
+
+_PRIMARY = ("status", "delivery_eta", "missing_details", "unblock_plan")
+
+
+def _asks(options: dict[str, list[str]]) -> list[JsonValue]:
+    required = options["required_any"]
+    primary = next((ask for ask in _PRIMARY if ask in required), required[0])
+    if primary != "completion_date" and "completion_date" in options["asks"]:
+        return [primary, "completion_date"]
+    return [primary]
 
 
 def _plan(
@@ -36,14 +44,19 @@ def _plan(
         reason = "An earlier follow-up was sent and the task is still late."
     else:
         reason = "The baseline action fits the facts."
-    wording = agent_phrasings(DecisionKind(kind))[0]
-    subject, body = wording.subject, wording.body
+    options = cast(
+        "dict[str, dict[str, list[str]]]", envelope["message_options"]
+    )[kind]
+    tone = "firm" if chased and "firm" in options["tones"] else "neutral"
     return {
         "decision": kind,
         "recipient": recipient,
         "priority": "high" if kind == "escalate" else baseline["priority"],
-        "subject": subject,
-        "body": body,
+        "asks": _asks(options),
+        "tone": tone,
+        "earlier_contact": bool(envelope["earlier_contact"]),
+        "delivery": "send",
+        "hold_reason": None,
         "rationale": reason,
         "evidence": [],
     }

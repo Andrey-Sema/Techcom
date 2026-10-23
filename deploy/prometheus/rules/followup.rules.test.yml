@@ -50,6 +50,27 @@ tests:
                 The follow-up latency SLO (99 % under 15 minutes) is at risk.
               runbook_url: docs/18-runbook.md#followup-outbox-stuck
 
+  - name: held actions need four hours of waiting for ten minutes
+    interval: 1m
+    input_series:
+      - series: followup_outbox_oldest_age_seconds{status="held"}
+        values: "14000+60x30"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: FollowupHeldForReview
+        exp_alerts: []
+      - eval_time: 25m
+        alertname: FollowupHeldForReview
+        exp_alerts:
+          - exp_labels:
+              severity: ticket
+            exp_annotations:
+              summary: An action has waited for human review for over 4 hours.
+              description: >-
+                The planner held actions for a person; they are not sent until
+                someone approves or rejects them with followup review.
+              runbook_url: docs/18-runbook.md#followup-held-for-review
+
   - name: LLM fallback rate above 5 % for 15 minutes
     interval: 1m
     input_series:
@@ -176,5 +197,5 @@ tests:
             exp_annotations:
               summary: Prometheus cannot scrape the follow-up service.
               description: >-
-                Expected until the API (M6b) joins the observability network.
+                Start the API with compose.api.yaml on the observability network.
               runbook_url: docs/18-runbook.md#followup-target-down

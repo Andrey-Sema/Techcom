@@ -103,6 +103,7 @@ class Flag(StrEnum):
     FUTURE_LAST_UPDATE = "future_last_update"
     AGENT_PLANNED = "agent_planned"
     NONCANONICAL_PROJECT = "noncanonical_project"
+    HELD_FOR_REVIEW = "held_for_review"
 
 
 @dataclass(frozen=True, slots=True)

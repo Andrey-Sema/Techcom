@@ -185,6 +185,7 @@ async def test_valid_cache_hit_expiry_and_prompt_model_identity() -> None:
         },
     ],
 )
+@pytest.mark.owasp_llm("LLM04", "LLM09")
 async def test_cache_metadata_and_grounding_are_revalidated(
     changes: dict[str, Any],
 ) -> None:

@@ -47,6 +47,7 @@ _EVENTS = _SECURITY_EVENTS | frozenset(
         "llm.route_failover",
         "llm.unavailable",
         "llm.budget_exhausted",
+        "llm.spend_ledger_failed",
         "llm.validation_failed",
     }
 )
@@ -74,8 +75,10 @@ _CLOSED_FIELDS = {
     "outcome": frozenset(
         {
             "accepted",
+            "held",
             "model_failure",
             "step_budget",
+            "plan_timeout",
             "completed",
             "failed",
             "skipped_locked",

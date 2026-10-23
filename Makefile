@@ -1,6 +1,6 @@
 .PHONY: bootstrap quality gates semgrep semgrep-test complexity deadcode \
         deps audit spelling yaml workflows pyproject-check docs \
-        test test-fast test-integration eval eval-test mock demo db-up db-down \
+        test test-fast test-integration eval eval-test mock demo db-up db-down db-init \
         obs-secrets up-obs down-obs obs-check obs-smoke \
         images dockerfile-lint image-scan image-test mutation sbom \
         secrets-scan secrets-staged secrets-repo-check bench demo-check db-backup db-restore zap
@@ -128,6 +128,20 @@ db-up:
 
 db-down:
 	docker compose down
+
+# Local PostgreSQL for repeated runs: generated secrets, the schema
+# (as owner) and a least-privilege login role for the service.
+SECRET = uv run --locked python -c "import secrets; print(secrets.token_urlsafe(24), end='')"
+db-init:
+	mkdir -p secrets
+	test -s secrets/postgres_password || $(SECRET) > secrets/postgres_password
+	test -s secrets/service_password || $(SECRET) > secrets/service_password
+	docker compose up -d --wait db
+	FOLLOWUP_DATABASE_URL="postgresql+psycopg://followup:$$(cat secrets/postgres_password)@127.0.0.1:5432/followup" \
+	  uv run --locked alembic upgrade head
+	docker compose exec -T db psql -v ON_ERROR_STOP=1 -U followup -d followup \
+	  -c "DROP ROLE IF EXISTS followup_service" \
+	  -c "CREATE ROLE followup_service LOGIN PASSWORD '$$(cat secrets/service_password)' IN ROLE followup_app"
 
 # Backup and restore of the compose database (docs/18). Dumps contain
 # personal data: owner-only files under var/backups (git-ignored).

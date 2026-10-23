@@ -15,10 +15,13 @@ import httpx
 import structlog
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from techcom_followup.adapters.inbound.cli import create_cli
-from techcom_followup.adapters.outbound.admission import PgDeliveryQuota
+from techcom_followup.adapters.outbound.admission import (
+    PgDeliveryQuota,
+    PgSpendLedger,
+)
 from techcom_followup.adapters.outbound.clock import FixedClock, SystemClock
 from techcom_followup.adapters.outbound.delivery_http import (
     HttpDeliveryGateway,
@@ -67,6 +70,7 @@ from techcom_followup.application.reconcile import ReconcileUnknown
 from techcom_followup.application.repository import Repository
 from techcom_followup.application.retention import PruneData
 from techcom_followup.application.retry import RetryBudget
+from techcom_followup.application.review import ReviewHeld
 from techcom_followup.infrastructure.http_client import (
     HttpEndpoint,
     UpstreamError,
@@ -149,6 +153,7 @@ class _Storage:
     lock: RunLock
     persistent: bool
     quota: PgDeliveryQuota | None = None
+    engine: AsyncEngine | None = None
 
 
 def _storage(
@@ -177,6 +182,7 @@ def _storage(
         quota=PgDeliveryQuota(
             engine, daily_limit=settings.recipient_daily_limit
         ),
+        engine=engine,
     )
 
 
@@ -191,6 +197,7 @@ def _language(
     clock: Clock,
     telemetry: PrometheusTelemetry,
     *,
+    engine: AsyncEngine | None = None,
     disabled: bool = False,
 ) -> tuple[LLMClient | None, str]:
     if disabled:
@@ -201,7 +208,13 @@ def _language(
     client = build_openai_client(load_openai_settings())
     stack.push_async_callback(client.close)
     router = build_router(
-        config, client, today=clock.today, telemetry=telemetry
+        config,
+        client,
+        today=clock.today,
+        telemetry=telemetry,
+        ledger=None
+        if engine is None
+        else PgSpendLedger(engine, limit_usd=config.daily_budget_usd),
     )
     # Route, pricing and policy changes invalidate cache identity.
 
@@ -261,19 +274,21 @@ class _RuntimeScope:
                 settings,
                 self._clock,
                 self._telemetry,
+                engine=self._storage.engine,
                 disabled=options.dry_run,
             )
+            offline = settings.llm_provider == "stub"
+            # The offline model only speaks the orchestrator protocol;
+            # notes it cannot classify take the fallback without a call.
             interpreter = NoteInterpreter(
-                language,
+                None if offline else language,
                 self._storage.repository,
                 model=model,
                 now=self._clock.now,
                 monotonic=time.monotonic,
                 due_soon_days=policy.due_soon_days,
             )
-            drafter = MessageDrafter(
-                None if settings.llm_provider == "stub" else language
-            )
+            drafter = MessageDrafter(None if offline else language)
             interpreter.calls.telemetry = self._telemetry
             drafter.calls.telemetry = self._telemetry
             self._processor = ProcessTasks(
@@ -333,6 +348,12 @@ class _RuntimeScope:
     def reconciler(self) -> ReconcileUnknown:
         """Recover using delivery settings without LLM credentials."""
         return ReconcileUnknown(self._delivery())
+
+    def reviewer(self) -> ReviewHeld:
+        """Review held actions; needs only storage and the clock."""
+        return ReviewHeld(
+            self._storage.repository, self._clock, self._telemetry
+        )
 
     def pruner(self) -> PruneData:
         """Apply retention; needs neither HTTP nor LLM clients."""
@@ -428,6 +449,7 @@ class RuntimeBuilder:
                     storage.persistent,
                     partial(_advance, clock),
                     scope.pruner,
+                    scope.reviewer,
                 )
             finally:
                 if settings.metrics_file is not None:

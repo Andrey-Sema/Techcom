@@ -9,11 +9,13 @@ deterministic fallback any safer. Credential errors stop the walk
 immediately because every route of a provider shares the credentials.
 """
 
-from asyncio import Semaphore, timeout
+from asyncio import Semaphore, shield, timeout
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 from typing import Protocol
+from uuid import UUID
 
 import structlog
 
@@ -46,10 +48,20 @@ from techcom_followup.application.telemetry import (
 from techcom_followup.infrastructure.resilience import (
     CircuitBreaker,
     DailySpendBudget,
+    SpendLedger,
     SpendReservation,
 )
 
 _log = structlog.get_logger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class _Admission:
+    """Both budget admissions of one provider attempt."""
+
+    bound: Decimal
+    reservation: SpendReservation
+    ticket: UUID | None
 
 
 class LLMBackend(Protocol):
@@ -76,8 +88,12 @@ class LLMRouter:
         monotonic: Callable[[], float],
         today: Callable[[], date],
         telemetry: Telemetry = NULL_TELEMETRY,
+        ledger: SpendLedger | None = None,
     ) -> None:
         """Wire routes, breakers (one per model) and the daily budget.
+
+        With a shared ``ledger`` every attempt is admitted by both the
+        process budget and the budget shared by all workers.
 
         Raises:
             LLMConfigurationError: A route needs a backend that is not
@@ -94,6 +110,7 @@ class LLMRouter:
             raise LLMConfigurationError(msg)
         self._config = config
         self._telemetry = telemetry
+        self._ledger = ledger
         self._backends = dict(backends)
         self._semaphore = Semaphore(4)
         self._monotonic = monotonic
@@ -157,14 +174,7 @@ class LLMRouter:
         if permit is None:
             attempts.append(_attempt(route, "skipped_circuit_open"))
             return None
-        bound = self._price(route).maximum_cost(
-            maximum_usage(request, max_output_tokens=route.max_output_tokens)
-        )
-        reservation = self._budget.reserve(bound)
-        if reservation is None:
-            breaker.abandon(permit)
-            message = "insufficient daily LLM budget for bounded attempt"
-            raise LLMBudgetExceededError(message)
+        admission = await self._admit(request, route, breaker, permit)
         cost: Decimal | None = None
         try:
             async with timeout(self._config.request_timeout_s):
@@ -185,7 +195,71 @@ class LLMRouter:
             return result
         finally:
             breaker.abandon(permit)
-            self._settle(reservation, cost, request)
+            await self._release(admission, cost, request)
+
+    async def _admit(
+        self,
+        request: LLMRequest,
+        route: RouteConfig,
+        breaker: CircuitBreaker,
+        permit: BreakerPermit,
+    ) -> _Admission:
+        """Reserve the worst-case cost locally, then in the shared one.
+
+        Raises:
+            LLMBudgetExceededError: Either budget refused the attempt.
+        """
+        bound = self._price(route).maximum_cost(
+            maximum_usage(request, max_output_tokens=route.max_output_tokens)
+        )
+        reservation = self._budget.reserve(bound)
+        if reservation is None:
+            breaker.abandon(permit)
+            message = "insufficient daily LLM budget for bounded attempt"
+            raise LLMBudgetExceededError(message)
+        try:
+            ticket = await self._reserve_shared(bound, request)
+        except BaseException:
+            # No provider call happened: release both admissions.
+            breaker.abandon(permit)
+            self._budget.settle(reservation, Decimal(0))
+            raise
+        return _Admission(bound, reservation, ticket)
+
+    async def _release(
+        self,
+        admission: _Admission,
+        cost: Decimal | None,
+        request: LLMRequest,
+    ) -> None:
+        """Settle both budgets; an unknown bill costs the full bound."""
+        self._settle(admission.reservation, cost, request)
+        if self._ledger is not None and admission.ticket is not None:
+            # Shielded: a cancelled call may still have been billed.
+            await shield(
+                self._ledger.settle(
+                    admission.ticket,
+                    admission.bound if cost is None else cost,
+                )
+            )
+
+    async def _reserve_shared(
+        self, bound: Decimal, request: LLMRequest
+    ) -> UUID | None:
+        """Admit the attempt against the budget shared by all workers.
+
+        Raises:
+            LLMBudgetExceededError: The shared day is spent or the
+                ledger cannot be reached (fail closed).
+        """
+        if self._ledger is None:
+            return None
+        ticket = await self._ledger.reserve(bound)
+        if ticket is None:
+            _log.warning("llm.budget_exhausted", purpose=request.purpose)
+            message = "shared daily LLM budget exhausted"
+            raise LLMBudgetExceededError(message)
+        return ticket
 
     def _settle(
         self,

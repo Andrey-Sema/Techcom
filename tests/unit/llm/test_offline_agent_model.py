@@ -23,6 +23,14 @@ CONTEXT: dict[str, JsonValue] = {
             "priority": "normal",
         },
         "allowed": {"follow_up_owner": ["owner"]},
+        "message_options": {
+            "follow_up_owner": {
+                "asks": ["blocker", "completion_date", "status"],
+                "required_any": ["completion_date", "status"],
+                "tones": ["neutral", "friendly"],
+            }
+        },
+        "earlier_contact": False,
     }
 }
 
@@ -56,4 +64,7 @@ def test_final_step_submits_without_history() -> None:
     plan = step["plan"]
     assert isinstance(plan, dict)
     assert plan["decision"] == "follow_up_owner"
+    assert plan["asks"] == ["status", "completion_date"]
+    assert plan["tone"] == "neutral"
+    assert plan["delivery"] == "send"
     assert plan["evidence"] == []

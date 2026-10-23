@@ -21,6 +21,7 @@ from techcom_followup.domain.messages import MessageDraft
 from techcom_followup.domain.models import (
     Decision,
     DecisionKind,
+    Flag,
     NoteInterpretation,
 )
 
@@ -30,17 +31,24 @@ MAX_EVIDENCE_LENGTH = 200
 MAX_ACTION_READ_LIMIT = 100
 MAX_READ_PROJECTS = 128
 MAX_PROJECT_LENGTH = 200
+REVIEW_REJECTED = "rejected_in_review"
 _UNSTORABLE_TEXT = re.compile(r"[\x00\ud800-\udfff]")
 
 
 class ActionStatus(StrEnum):
-    """Durable delivery states; sent and dead are terminal."""
+    """Durable delivery states; sent and dead are terminal.
+
+    ``held`` waits for a person: only an operator review moves it to
+    ``pending`` (approve) or ``dead`` (reject). Dispatchers never claim
+    it, so a held action cannot be sent by any automated path.
+    """
 
     PENDING = "pending"
     IN_FLIGHT = "in_flight"
     UNKNOWN = "unknown"
     SENT = "sent"
     DEAD = "dead"
+    HELD = "held"
 
 
 class DecisionOutcome(StrEnum):
@@ -71,6 +79,13 @@ class DecisionWrite:
         if self.plan_audit is not None:
             payload["plan"] = dict(self.plan_audit)
         return payload
+
+    @property
+    def initial_status(self) -> ActionStatus:
+        """Held for a person when the planner asked for a review."""
+        if Flag.HELD_FOR_REVIEW in self.decision.flags:
+            return ActionStatus.HELD
+        return ActionStatus.PENDING
 
     def notification_slot(self) -> tuple[str, str, str, str]:
         """Return the durable slot one source state may notify once.
@@ -390,6 +405,21 @@ class PruneCounts:
         )
 
 
+def review_event(
+    action: ActionRecord, *, approve: bool, now: datetime
+) -> AuditEvent:
+    """Describe an operator review without any message content."""
+    return AuditEvent(
+        "action.review_approved" if approve else "action.review_rejected",
+        now,
+        {
+            "action_id": str(action.id),
+            "operation_id": str(action.identity.operation_id),
+        },
+        task_id=action.decision.task_id,
+    )
+
+
 def require_aware(value: datetime) -> None:
     """Reject ambiguous local datetimes at persistence boundaries."""
     if value.tzinfo is None or value.utcoffset() is None:
@@ -453,6 +483,16 @@ class Repository(Protocol):
         self, query: ActionReadQuery
     ) -> tuple[ActionRecord, ...]:
         """Filter authority before a stable UUID-ordered row limit."""
+        ...
+
+    async def review_held(
+        self, operation_id: UUID, *, approve: bool, now: datetime
+    ) -> ActionRecord | None:
+        """Approve a held action to pending, or reject it as dead.
+
+        Only a ``held`` row changes, together with an audit event in
+        the same transaction; anything else returns ``None``.
+        """
         ...
 
     async def claim_actions(

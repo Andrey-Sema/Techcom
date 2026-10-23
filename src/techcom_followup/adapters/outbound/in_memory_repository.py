@@ -13,6 +13,7 @@ from pydantic import JsonValue
 
 from techcom_followup.application.repository import (
     MAX_BATCH_SIZE,
+    REVIEW_REJECTED,
     ActionReadQuery,
     ActionRecord,
     ActionStatus,
@@ -28,6 +29,7 @@ from techcom_followup.application.repository import (
     RunRecord,
     StoredDecision,
     require_aware,
+    review_event,
 )
 from techcom_followup.domain.messages import MessageDraft
 
@@ -113,7 +115,7 @@ class InMemoryRepository:
                     identity,
                     write.decision,
                     draft,
-                    ActionStatus.PENDING,
+                    write.initial_status,
                     0,
                     now,
                     source_project=write.source_project,
@@ -207,6 +209,36 @@ class InMemoryRepository:
             if _visible(action, query)
         )
         return tuple(nsmallest(query.limit, visible, key=lambda row: row.id))
+
+    async def review_held(
+        self, operation_id: UUID, *, approve: bool, now: datetime
+    ) -> ActionRecord | None:
+        """Move one held action out of review with its audit event."""
+        require_aware(now)
+        async with self._lock:
+            action = next(
+                (
+                    item
+                    for item in self._actions.values()
+                    if item.identity.operation_id == operation_id
+                    and item.status is ActionStatus.HELD
+                ),
+                None,
+            )
+            if action is None:
+                return None
+            reviewed = replace(
+                action,
+                status=ActionStatus.PENDING if approve else ActionStatus.DEAD,
+                next_attempt_at=now,
+                last_error=None if approve else REVIEW_REJECTED,
+                terminal_at=None if approve else now,
+            )
+            self._actions[action.id] = reviewed
+            self._audit.append(
+                review_event(reviewed, approve=approve, now=now)
+            )
+            return deepcopy(reviewed)
 
     async def outbox_summary(self) -> tuple[OutboxStatus, ...]:
         """Group actions by status with their earliest due time."""

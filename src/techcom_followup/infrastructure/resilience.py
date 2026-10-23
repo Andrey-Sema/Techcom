@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 from enum import StrEnum
+from typing import Protocol
+from uuid import UUID
 
 from techcom_followup.application.resilience_ports import BreakerPermit
 
@@ -111,6 +113,24 @@ class CircuitBreaker:
             self._opened_at = self._monotonic()
             self._generation += 1
             self._probe = None
+
+
+class SpendLedger(Protocol):
+    """A daily budget shared by every process (OWASP LLM10).
+
+    ``reserve`` admits a worst-case attempt cost before the provider is
+    called and returns a ticket, or ``None`` when the day is spent.
+    ``settle`` charges the actual cost; an unknown bill is charged at
+    the reserved bound.
+    """
+
+    async def reserve(self, amount_usd: Decimal) -> UUID | None:
+        """Atomically reserve against today's shared limit."""
+        ...
+
+    async def settle(self, ticket: UUID, cost_usd: Decimal) -> None:
+        """Replace a reservation with its actual cost."""
+        ...
 
 
 @dataclass(frozen=True, slots=True)

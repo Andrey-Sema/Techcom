@@ -48,6 +48,7 @@ NOTE = UntrustedText.of
         ),
     ],
 )
+@pytest.mark.owasp_llm("LLM01")
 def test_injection_patterns_are_flagged(note: str, pattern: str) -> None:
     result = screen(NOTE(note))
     assert result.suspicious

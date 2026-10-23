@@ -1,6 +1,7 @@
 # ADR-0017: Reviewed wording and source-state notification slots
 
-* Status: Accepted (narrows ADR-0016)
+* Status: Accepted (narrows ADR-0016); the reviewed-wording part is
+  superseded by ADR-0018 (message intents composed by code)
 * Date: 2026-10-23
 
 ## Problem

@@ -33,9 +33,7 @@ from techcom_followup.application.processing_ports import (
     DeliveryResult,
 )
 from techcom_followup.application.repository import ActionRecord
-from techcom_followup.domain.agent_messages import agent_phrasings
-from techcom_followup.domain.envelope import build_envelope
-from techcom_followup.domain.guard import PlanProposal, review
+from techcom_followup.domain.agent_messages import AGENT_TEMPLATE_ID
 from techcom_followup.domain.interpretation import prefilter
 from techcom_followup.domain.messages import compose, redact_contacts
 from techcom_followup.domain.models import (
@@ -44,10 +42,22 @@ from techcom_followup.domain.models import (
     DecisionKind,
     InterpretationSource,
     NoteInterpretation,
-    Priority,
     TaskStatus,
     UntrustedText,
 )
+
+PLAN = {
+    "decision": "follow_up_owner",
+    "recipient": "owner",
+    "priority": "normal",
+    "asks": ["status"],
+    "tone": "neutral",
+    "earlier_contact": False,
+    "delivery": "send",
+    "hold_reason": None,
+    "rationale": "Use the baseline.",
+    "evidence": [],
+}
 
 
 class _Lock:
@@ -127,25 +137,21 @@ async def test_interpreter_recovery_cannot_send_a_second_notification() -> (
         "Visit updates.photography for more details about {task_id}.",
     ],
 )
-def test_model_prose_cannot_reach_the_message(body: str) -> None:
+@pytest.mark.owasp_llm("LLM05")
+async def test_model_prose_cannot_reach_the_message(body: str) -> None:
     task = make_task(due_date=date(2026, 10, 18))
     policy = repo_policy()
-    baseline = policy.decide(task, as_of=AS_OF)
-    envelope = build_envelope(
-        baseline, task, policy.routing, as_of=AS_OF, prior_follow_ups=0
+    plan = PLAN | {"subject": "Update: {task_id}", "body": body}
+    model = ScriptedLLM(
+        [json.dumps({"tool": "submit_plan", "plan": plan})] * 4
     )
-    assert envelope is not None
-    proposal = PlanProposal(
-        DecisionKind.FOLLOW_UP_OWNER,
-        "owner",
-        Priority.NORMAL,
-        "Update: {task_id}",
-        body,
-        "Fits the facts.",
-    )
-    verdict = review(proposal, envelope, task, as_of=AS_OF, note_visible=False)
-    assert not verdict.accepted
-    assert "unapproved_phrasing" in verdict.violations
+    result = await FollowUpOrchestrator(
+        model, InMemoryRepository(), policy
+    ).plan(policy.decide(task, as_of=AS_OF), task, as_of=AS_OF)
+    # The plan schema has no text fields at all: extra keys fail closed.
+    assert result.audit["outcome"] == "model_failure"
+    assert body not in result.message.body
+    assert result.message.source.value == "template"
 
 
 @pytest.mark.parametrize(
@@ -191,15 +197,11 @@ async def test_approved_agent_still_plans_and_renders_code_owned_facts() -> (
     assert planned.audit["outcome"] == "accepted"
     assert "John Smith" in planned.message.body
     assert "2026-10-18" in planned.message.body
-    assert (
-        planned.message.template_id
-        == agent_phrasings(
-            DecisionKind.FOLLOW_UP_OWNER,
-        )[0].template_id
-    )
+    assert planned.message.template_id == AGENT_TEMPLATE_ID
 
 
 @pytest.mark.parametrize("field", ["title", "project"])
+@pytest.mark.owasp_llm("LLM01")
 async def test_tracker_instruction_surfaces_are_withheld(field: str) -> None:
     task = make_task(
         due_date=date(2026, 10, 18),
@@ -226,6 +228,7 @@ async def test_tracker_instruction_surfaces_are_withheld(field: str) -> None:
     assert "Ignore previous" not in result.message.subject
 
 
+@pytest.mark.owasp_llm("LLM02")
 async def test_model_context_omits_display_fields_and_redacts_contacts() -> (
     None
 ):
@@ -233,25 +236,7 @@ async def test_model_context_omits_display_fields_and_redacts_contacts() -> (
         due_date=date(2026, 10, 18),
         notes="Call +1 555 010 9999 or owner@example.test; see updates.click.",
     )
-    wording = agent_phrasings(DecisionKind.FOLLOW_UP_OWNER)[0]
-    model = ScriptedLLM(
-        [
-            json.dumps(
-                {
-                    "tool": "submit_plan",
-                    "plan": {
-                        "decision": "follow_up_owner",
-                        "recipient": "owner",
-                        "priority": "normal",
-                        "subject": wording.subject,
-                        "body": wording.body,
-                        "rationale": "Use the baseline.",
-                        "evidence": [],
-                    },
-                }
-            )
-        ]
-    )
+    model = ScriptedLLM([json.dumps({"tool": "submit_plan", "plan": PLAN})])
     policy = repo_policy()
     result = await FollowUpOrchestrator(
         model, InMemoryRepository(), policy

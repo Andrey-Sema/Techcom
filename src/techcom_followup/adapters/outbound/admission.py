@@ -1,15 +1,19 @@
 """PostgreSQL admission shared by all processes using the database."""
 
 from datetime import datetime
+from decimal import Decimal
 from hashlib import sha256
 from math import ceil
+from uuid import UUID
 
 import sqlalchemy as sa
+import structlog
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from techcom_followup.application.repository import ActionRecord, require_aware
 
 MAX_RECIPIENT_DAILY_LIMIT = 10_000
+_log = structlog.get_logger(__name__)
 
 
 class PgRequestLimiter:
@@ -84,3 +88,51 @@ class PgDeliveryQuota:
                 },
             )
             return bool(result.scalar_one())
+
+
+class PgSpendLedger:
+    """Share one daily LLM budget across workers and restarts.
+
+    The database owns the day and the arithmetic; this process only
+    passes its configured limit and the bounds it already computed.
+    """
+
+    def __init__(self, engine: AsyncEngine, *, limit_usd: Decimal) -> None:
+        """Bind the configured limit to the shared ledger."""
+        self._engine, self._limit = engine, limit_usd
+
+    async def reserve(self, amount_usd: Decimal) -> UUID | None:
+        """Reserve a worst-case attempt; ``None`` when the day is spent.
+
+        A ledger that cannot be reached admits nothing (fail closed).
+        """
+        try:
+            async with self._engine.begin() as connection:
+                result = await connection.execute(
+                    sa.text("SELECT public.reserve_llm_spend(:amount, :cap)"),
+                    {"amount": amount_usd, "cap": self._limit},
+                )
+                ticket: UUID | None = result.scalar_one()
+        except (sa.exc.SQLAlchemyError, OSError) as error:
+            _log.error(
+                "llm.spend_ledger_failed", error_type=type(error).__name__
+            )
+            return None
+        return ticket
+
+    async def settle(self, ticket: UUID, cost_usd: Decimal) -> None:
+        """Replace the reservation with the cost actually billed.
+
+        A failed settlement leaves the full bound charged: conservative,
+        and never a reason to fail the call that already happened.
+        """
+        try:
+            async with self._engine.begin() as connection:
+                await connection.execute(
+                    sa.text("SELECT public.settle_llm_spend(:ticket, :cost)"),
+                    {"ticket": ticket, "cost": cost_usd},
+                )
+        except (sa.exc.SQLAlchemyError, OSError) as error:
+            _log.error(
+                "llm.spend_ledger_failed", error_type=type(error).__name__
+            )

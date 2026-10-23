@@ -92,6 +92,7 @@ def test_uuid_is_typed_and_safe_fields_keep_operational_evidence() -> None:
     assert "run_id" not in redact_event(None, "info", {"run_id": "private"})
 
 
+@pytest.mark.owasp_llm("LLM02")
 def test_logging_emits_one_json_line_without_note_or_exception(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -169,7 +170,7 @@ def test_operational_identifiers_survive_redaction() -> None:
             "purpose": "orchestrate",
             "model": "gpt-6.1-sol",
             "cost_usd": "0.0123",
-            "prompt_version": "orchestrate.v2",
+            "prompt_version": "orchestrate.v3",
             "tokens_in": 812,
         },
     ) == {
@@ -178,7 +179,7 @@ def test_operational_identifiers_survive_redaction() -> None:
         "purpose": "orchestrate",
         "model": "gpt-6.1-sol",
         "cost_usd": "0.0123",
-        "prompt_version": "orchestrate.v2",
+        "prompt_version": "orchestrate.v3",
         "tokens_in": 812,
     }
 
@@ -190,11 +191,11 @@ def test_orchestrator_validation_stages_are_kept() -> None:
         {
             "event": "llm.validation_failed",
             "stage": "final_step",
-            "prompt_version": "orchestrate.v2",
+            "prompt_version": "orchestrate.v3",
         },
     )
     assert safe["stage"] == "final_step"
-    assert safe["prompt_version"] == "orchestrate.v2"
+    assert safe["prompt_version"] == "orchestrate.v3"
 
 
 def test_run_and_plan_summaries_keep_closed_fields_only() -> None:

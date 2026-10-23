@@ -54,6 +54,7 @@ nav:
       - "ASVS 5.0 traceability (generated)": asvs-traceability.md
       - "Docker Security checklist": security/docker-security.md
       - "LLM Prompt Injection checklist": security/llm-prompt-injection.md
+      - "OWASP LLM Top 10 matrix": security/owasp-llm-top10.md
       - "FastAPI checklist": security/fastapi-security.md
       - "Logging checklist": security/logging-security.md
   - Evaluation evidence:
@@ -79,3 +80,5 @@ nav:
       - "ADR-0014: Owned language calls and budget bounds": adr/0014-owned-language-and-budget-bounds.md
       - "ADR-0015: Bounded writes and durable admission": adr/0015-bounded-writes-and-durable-admission.md
       - "ADR-0016: Bounded LLM orchestrator": adr/0016-bounded-llm-orchestrator.md
+      - "ADR-0017: LLM output and notification boundaries": adr/0017-llm-output-and-notification-boundaries.md
+      - "ADR-0018: Message intents, review and shared budget": adr/0018-message-intents-review-and-shared-budget.md

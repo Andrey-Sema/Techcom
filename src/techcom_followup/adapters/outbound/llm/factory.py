@@ -14,7 +14,10 @@ from techcom_followup.adapters.outbound.llm.openai_responses import (
 )
 from techcom_followup.adapters.outbound.llm.router import LLMRouter
 from techcom_followup.application.telemetry import NULL_TELEMETRY
-from techcom_followup.infrastructure.resilience import CircuitBreaker
+from techcom_followup.infrastructure.resilience import (
+    CircuitBreaker,
+    SpendLedger,
+)
 from techcom_followup.infrastructure.settings import (
     OpenAIAuthMode,
     OpenAISettings,
@@ -72,6 +75,7 @@ def build_router(
     monotonic: Callable[[], float] = time.monotonic,
     today: Callable[[], date] = _utc_today,
     telemetry: PrometheusTelemetry | None = None,
+    ledger: SpendLedger | None = None,
 ) -> LLMRouter:
     """Compose the router with the OpenAI Responses backend."""
     backend = OpenAIResponsesBackend(client.responses.create)
@@ -81,6 +85,7 @@ def build_router(
         monotonic=monotonic,
         today=today,
         telemetry=NULL_TELEMETRY if telemetry is None else telemetry,
+        ledger=ledger,
     )
     if telemetry is not None:
         for model, breaker in router.breakers.items():
