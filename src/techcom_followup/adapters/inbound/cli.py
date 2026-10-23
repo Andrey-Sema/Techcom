@@ -24,11 +24,22 @@ from techcom_followup.application.command_ports import (
     CommandServices,
     RuntimeFactory,
 )
-from techcom_followup.application.reporting import proposal_view, run_view
+from techcom_followup.application.reporting import (
+    action_view,
+    proposal_view,
+    run_view,
+)
 
 _LOG = structlog.get_logger(__name__)
 _ERRORS = {
     "persistent_storage_required": "This command requires PostgreSQL storage.",
+    "persistent_run_required": (
+        "A saved run requires PostgreSQL storage (FOLLOWUP_DATABASE_URL), "
+        "so that a later run can recognise work already sent. Without a "
+        "database use --dry-run, or 'followup demo' for a full walkthrough."
+    ),
+    "review_choice": "Use at most one of --approve and --reject.",
+    "not_held": "No held action has this operation id.",
     "run_missing": "The requested run was not found.",
     "demo_run_missing": "The demo did not create a run.",
 }
@@ -128,6 +139,11 @@ class Commands:
         options = CommandOptions(_date(as_of), fixture, dry_run=dry_run)
 
         async def command(services: CommandServices) -> dict[str, JsonValue]:
+            if not dry_run and not services.persistent:
+                # Memory storage forgets every run with the process: a
+                # second invocation would enqueue the same work again.
+                message = "persistent_run_required"
+                raise CommandError(message)
             report = await services.processor().execute(
                 as_of=options.as_of, dry_run=dry_run
             )
@@ -190,6 +206,34 @@ class Commands:
                 message = "run_missing"
                 raise CommandError(message)
             return await run_view(services.repository, stored)
+
+        self._execute(CommandOptions(_date(None)), command, None)
+
+    def review(
+        self,
+        approve: Annotated[UUID | None, typer.Option()] = None,
+        reject: Annotated[UUID | None, typer.Option()] = None,
+        limit: Annotated[int, typer.Option(min=1, max=100)] = 50,
+    ) -> None:
+        """List actions held for review, or approve or reject one."""
+
+        async def command(services: CommandServices) -> dict[str, JsonValue]:
+            _require_persistent(services)
+            reviewer = services.reviewer()
+            if approve is not None and reject is not None:
+                message = "review_choice"
+                raise CommandError(message)
+            chosen = approve if approve is not None else reject
+            if chosen is None:
+                held = await reviewer.held(limit=limit)
+                return {"held": [action_view(action) for action in held]}
+            reviewed = await reviewer.decide(
+                chosen, approve=approve is not None
+            )
+            if reviewed is None:
+                message = "not_held"
+                raise CommandError(message)
+            return {"reviewed": action_view(reviewed)}
 
         self._execute(CommandOptions(_date(None)), command, None)
 
@@ -256,7 +300,7 @@ def create_cli(factory: RuntimeFactory) -> typer.Typer:
     """Build a command group without importing its composition root."""
     commands = Commands(factory)
     app = typer.Typer(no_args_is_help=True, pretty_exceptions_enable=False)
-    for name in ("run", "dispatch", "reconcile", "report", "demo"):
+    for name in ("run", "dispatch", "reconcile", "report", "review", "demo"):
         app.command(name=name)(getattr(commands, name))
     maintenance = typer.Typer(
         no_args_is_help=True,

@@ -1,6 +1,7 @@
 import asyncio
 from datetime import date
 from decimal import Decimal
+from uuid import UUID, uuid4
 
 import pytest
 from structlog.testing import capture_logs
@@ -256,6 +257,7 @@ class BlockingBackend:
         return reply(route.model)
 
 
+@pytest.mark.owasp_llm("LLM10")
 async def test_concurrent_calls_reserve_budget_before_network(
     routing_config: RoutingConfig, request_: LLMRequest, clock: FakeClock
 ) -> None:
@@ -467,3 +469,109 @@ async def test_total_router_deadline_includes_waiting_for_semaphore(
     assert caught.value.attempts[0].outcome == "timeout"
     assert router.budget.reserved_usd == 0
     assert router.budget.spent_usd > 0
+
+
+class SharedLedger:
+    """An in-memory stand-in for the PostgreSQL spend ledger."""
+
+    def __init__(self, limit: Decimal, *, failing: bool = False) -> None:
+        self.limit = limit
+        self.failing = failing
+        self.spent = Decimal(0)
+        self.reserved: dict[UUID, Decimal] = {}
+        self.settled: list[Decimal] = []
+
+    async def reserve(self, amount_usd: Decimal) -> UUID | None:
+        if self.failing:
+            message = "ledger down"
+            raise RuntimeError(message)
+        if self.spent + sum(self.reserved.values()) + amount_usd > self.limit:
+            return None
+        ticket = uuid4()
+        self.reserved[ticket] = amount_usd
+        return ticket
+
+    async def settle(self, ticket: UUID, cost_usd: Decimal) -> None:
+        self.reserved.pop(ticket)
+        self.spent += cost_usd
+        self.settled.append(cost_usd)
+
+
+def bounded(
+    routing_config: RoutingConfig, request_: LLMRequest
+) -> tuple[RoutingConfig, Decimal]:
+    route = routing_config.routes[request_.purpose][0]
+    bound = routing_config.prices[route.model].maximum_cost(
+        maximum_usage(request_, max_output_tokens=route.max_output_tokens)
+    )
+    return routing_config, bound
+
+
+@pytest.mark.owasp_llm("LLM10")
+async def test_workers_share_one_daily_budget(
+    routing_config: RoutingConfig, request_: LLMRequest, clock: FakeClock
+) -> None:
+    config, bound = bounded(routing_config, request_)
+    ledger = SharedLedger(bound)
+    first_backend, second_backend = BlockingBackend(), ScriptedBackend({})
+    first, second = (
+        LLMRouter(
+            config=config,
+            backends={"openai": backend},
+            monotonic=clock.monotonic,
+            today=lambda: date(2026, 10, 21),
+            ledger=ledger,
+        )
+        for backend in (first_backend, second_backend)
+    )
+    running = asyncio.create_task(first.generate_json(request_))
+    await first_backend.started.wait()
+    # Another process has its own budget but the same ledger.
+    with pytest.raises(LLMBudgetExceededError, match="shared"):
+        await second.generate_json(request_)
+    assert second_backend.calls == []
+    assert second.budget.reserved_usd == 0
+    first_backend.release.set()
+    await running
+    assert ledger.settled == [Decimal("0.004000")]
+    assert ledger.reserved == {}
+
+
+async def test_unknown_bill_is_charged_at_the_bound_in_the_ledger(
+    routing_config: RoutingConfig, request_: LLMRequest, clock: FakeClock
+) -> None:
+    config, bound = bounded(routing_config, request_)
+    ledger = SharedLedger(bound * 2)
+    router = LLMRouter(
+        config=config,
+        backends={
+            "openai": ScriptedBackend(
+                {"gpt-6.1-sol": LLMIncompleteError("cut", usage=None)}
+            )
+        },
+        monotonic=clock.monotonic,
+        today=lambda: date(2026, 10, 21),
+        ledger=ledger,
+    )
+    with pytest.raises(LLMIncompleteError):
+        await router.generate_json(request_)
+    assert ledger.settled == [bound]
+
+
+async def test_unreachable_ledger_fails_closed_and_releases_admission(
+    routing_config: RoutingConfig, request_: LLMRequest, clock: FakeClock
+) -> None:
+    backend = ScriptedBackend({"gpt-6.1-sol": reply("gpt-6.1-sol")})
+    router = LLMRouter(
+        config=routing_config,
+        backends={"openai": backend},
+        monotonic=clock.monotonic,
+        today=lambda: date(2026, 10, 21),
+        ledger=SharedLedger(Decimal(5), failing=True),
+    )
+    with pytest.raises(RuntimeError, match="ledger down"):
+        await router.generate_json(request_)
+    assert backend.calls == []
+    assert router.budget.reserved_usd == 0
+    breaker = router.breakers["gpt-6.1-sol"]
+    assert breaker.admit() is not None

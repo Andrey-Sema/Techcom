@@ -177,6 +177,7 @@ markers = [
     "live_llm: calls the real LLM provider (opt-in, needs a key)",
     "integration: requires PostgreSQL 18 in Docker",
     "asvs: evidence for an implemented ASVS security control",
+    "owasp_llm: evidence for an OWASP Top 10 for LLM Applications (2025) control",
     "image: runs the built container images (make image-test)",
     "bench: 10,000-task benchmark against PostgreSQL 18 (make bench)",
 ]

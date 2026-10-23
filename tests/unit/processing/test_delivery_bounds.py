@@ -1,5 +1,7 @@
 """The receiver accepts long source data in every message path."""
 
+from itertools import combinations
+
 import pytest
 
 from support import AS_OF, repo_policy
@@ -8,7 +10,7 @@ from techcom_followup.application.drafter import (
     MessageDrafter,
     approved_phrasings,
 )
-from techcom_followup.domain.agent_messages import agent_phrasings
+from techcom_followup.domain.agent_messages import Ask, Tone
 from techcom_followup.domain.envelope import build_envelope
 from techcom_followup.domain.guard import PlanProposal, review
 from techcom_followup.domain.interpretation import prefilter
@@ -110,7 +112,7 @@ def test_agent_preserves_ids_and_obeys_receiver_limits(
     task = _source_task(task_id, scenario)
     decision = _decision(task)
     envelope = build_envelope(
-        decision, task, repo_policy().routing, as_of=AS_OF, prior_follow_ups=0
+        decision, task, repo_policy().routing, as_of=AS_OF, prior_follow_ups=1
     )
     assert envelope is not None
     ref = next(
@@ -118,24 +120,31 @@ def test_agent_preserves_ids_and_obeys_receiver_limits(
         for ref, target in envelope.recipients.items()
         if target == decision.target
     )
-    for choice in agent_phrasings(decision.kind):
-        verdict = review(
-            PlanProposal(
-                decision.kind,
-                ref,
-                decision.priority,
-                choice.subject,
-                choice.body,
-                "Use the baseline.",
-            ),
-            envelope,
-            task,
-            as_of=AS_OF,
-            note_visible=False,
-        )
-        assert verdict.accepted
-        assert verdict.message is not None
-        _receiver_accepts(verdict.message, task)
+    allowed = sorted(envelope.messages[decision.kind].asks)
+    for asks in [(ask,) for ask in allowed] + list(combinations(allowed, 2)):
+        for tone in envelope.tones(decision.kind):
+            verdict = review(
+                PlanProposal(
+                    decision.kind,
+                    ref,
+                    decision.priority,
+                    asks,
+                    tone,
+                    earlier_contact=True,
+                    rationale="Use the baseline.",
+                ),
+                envelope,
+                task,
+                as_of=AS_OF,
+                note_visible=False,
+            )
+            primary = envelope.messages[decision.kind].required_any
+            if not set(asks) & primary:
+                assert verdict.violations == ("missing_primary_ask",)
+                continue
+            assert verdict.accepted, verdict.violations
+            assert verdict.message is not None
+            _receiver_accepts(verdict.message, task)
 
 
 @pytest.mark.parametrize(
@@ -215,16 +224,16 @@ def test_agent_plan_is_rejected_when_rendering_fails(
         decision, task, repo_policy().routing, as_of=AS_OF, prior_follow_ups=0
     )
     assert envelope is not None
-    choice = agent_phrasings(decision.kind)[0]
     monkeypatch.setattr("techcom_followup.domain.guard.render_draft", _refuse)
     verdict = review(
         PlanProposal(
             decision.kind,
             "owner",
             decision.priority,
-            choice.subject,
-            choice.body,
-            "Use the baseline.",
+            (Ask.STATUS,),
+            Tone.NEUTRAL,
+            earlier_contact=False,
+            rationale="Use the baseline.",
         ),
         envelope,
         task,

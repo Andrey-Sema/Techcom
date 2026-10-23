@@ -14,7 +14,10 @@ from techcom_followup.adapters.outbound.llm_agent_stub import (
     OfflineLanguageModel,
 )
 from techcom_followup.adapters.outbound.llm_stub import ScriptedLLM
-from techcom_followup.application.orchestrator import FollowUpOrchestrator
+from techcom_followup.application.orchestrator import (
+    FollowUpOrchestrator,
+    PlanLimits,
+)
 from techcom_followup.application.ports import LLMRequest, LLMResult
 from techcom_followup.application.repository import (
     ActionReadQuery,
@@ -58,7 +61,10 @@ async def test_history_lookup_obeys_the_plan_deadline() -> None:
     model = OfflineLanguageModel()
     result = await asyncio.wait_for(
         FollowUpOrchestrator(
-            model, _SlowHistory(), policy, timeout_s=0.01
+            model,
+            _SlowHistory(),
+            policy,
+            limits=PlanLimits(plan_timeout_s=0.01),
         ).plan(policy.decide(task, as_of=AS_OF), task, as_of=AS_OF),
         timeout=1,
     )
@@ -68,6 +74,7 @@ async def test_history_lookup_obeys_the_plan_deadline() -> None:
     assert model.calls == 0
 
 
+@pytest.mark.owasp_llm("LLM10")
 async def test_steps_share_one_total_deadline() -> None:
     policy = repo_policy()
     task = make_task(due_date=date(2026, 10, 18))
@@ -76,7 +83,7 @@ async def test_steps_share_one_total_deadline() -> None:
         model,
         InMemoryRepository(),
         policy,
-        timeout_s=0.05,
+        limits=PlanLimits(call_timeout_s=1, plan_timeout_s=0.05),
     ).plan(policy.decide(task, as_of=AS_OF), task, as_of=AS_OF)
     assert result.audit["outcome"] == "plan_timeout"
     assert Flag.LLM_FALLBACK in result.decision.flags
@@ -92,7 +99,7 @@ async def test_external_cancellation_is_not_a_successful_fallback() -> None:
             model,
             InMemoryRepository(),
             policy,
-            timeout_s=1,
+            limits=PlanLimits(call_timeout_s=1),
         ).plan(policy.decide(task, as_of=AS_OF), task, as_of=AS_OF)
     )
     await asyncio.wait_for(model.started.wait(), timeout=1)
@@ -110,7 +117,7 @@ async def test_quiet_task_is_rejected_before_loading_history() -> None:
                 OfflineLanguageModel(),
                 _SlowHistory(),
                 policy,
-                timeout_s=0.01,
+                limits=PlanLimits(plan_timeout_s=0.01),
             ).plan(policy.decide(task, as_of=AS_OF), task, as_of=AS_OF),
             timeout=1,
         )

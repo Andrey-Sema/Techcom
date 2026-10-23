@@ -8,6 +8,7 @@ the audit trail append-only.
 import secrets
 from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import timedelta
+from decimal import Decimal
 
 import psycopg
 import pytest
@@ -18,6 +19,7 @@ from sqlalchemy.pool import NullPool
 
 from persistence_support import NOW, action_write
 from support import AS_OF, make_task, repo_policy
+from techcom_followup.adapters.outbound.admission import PgSpendLedger
 from techcom_followup.adapters.outbound.pg_repository import PgRepository
 from techcom_followup.application.repository import (
     ActionStatus,
@@ -106,6 +108,9 @@ async def test_service_role_runs_the_whole_repository(
         "DELETE FROM decisions",
         "TRUNCATE runs CASCADE",
         "UPDATE alembic_version SET version_num = '0000'",
+        "UPDATE llm_spend_days SET spent_usd = 0",
+        "DELETE FROM llm_spend_reservations",
+        "SELECT * FROM notification_slots",
         "DROP TABLE runs",
         "ALTER TABLE actions DROP COLUMN last_error",
         "CREATE TABLE intruder (id integer)",
@@ -170,3 +175,15 @@ async def test_maintenance_role_prunes_but_cannot_write(
             assert isinstance(caught.value.orig, psycopg.Error)
             assert caught.value.orig.sqlstate == INSUFFICIENT_PRIVILEGE
             await connection.rollback()
+
+
+async def test_service_role_spends_only_through_the_ledger_functions(
+    login_as: LoginFactory,
+) -> None:
+    ledger = PgSpendLedger(
+        await login_as(" IN ROLE followup_app"), limit_usd=Decimal(1)
+    )
+    ticket = await ledger.reserve(Decimal("0.5"))
+    assert ticket is not None
+    await ledger.settle(ticket, Decimal("0.25"))
+    assert await ledger.reserve(Decimal(1)) is None

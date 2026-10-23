@@ -12,7 +12,11 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from persistence_support import NOW, action_write, migration_config
 from support import AS_OF
 from techcom_followup.adapters.outbound.pg_repository import PgRepository
-from techcom_followup.application.repository import DecisionOutcome
+from techcom_followup.application.repository import (
+    ActionStatus,
+    DecisionOutcome,
+)
+from techcom_followup.domain.models import Flag
 
 pytestmark = pytest.mark.integration
 
@@ -82,3 +86,25 @@ async def test_downgrade_refuses_to_erase_an_identity_without_payload(
         assert (
             await connection.execute(text("SELECT count(*) FROM action_keys"))
         ).scalar_one() == 1
+
+
+async def test_downgrade_refuses_while_an_action_awaits_review(
+    pg_engine: AsyncEngine,
+) -> None:
+    repository = PgRepository(pg_engine)
+    write = await action_write(repository)
+    held = replace(
+        write,
+        decision=replace(
+            write.decision,
+            flags=write.decision.flags | {Flag.HELD_FOR_REVIEW},
+        ),
+    )
+    await repository.record_decision(held, NOW)
+    with pytest.raises(DBAPIError, match="held actions prevent downgrade"):
+        async with pg_engine.begin() as connection:
+            await connection.run_sync(
+                lambda sync: revision(sync, "0006", upgrade=False)
+            )
+    (action,) = await repository.list_actions()
+    assert action.status is ActionStatus.HELD

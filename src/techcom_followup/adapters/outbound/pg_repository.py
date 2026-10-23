@@ -20,6 +20,7 @@ from techcom_followup.adapters.outbound.orm import (
 )
 from techcom_followup.application.repository import (
     MAX_BATCH_SIZE,
+    REVIEW_REJECTED,
     ActionReadQuery,
     ActionRecord,
     ActionStatus,
@@ -35,6 +36,7 @@ from techcom_followup.application.repository import (
     RunRecord,
     StoredDecision,
     require_aware,
+    review_event,
 )
 from techcom_followup.domain.messages import MessageDraft
 
@@ -192,6 +194,7 @@ class PgRepository:
                     idempotency_key=identity.idempotency_key,
                     operation_id=identity.operation_id,
                     decision_id=decision_id,
+                    status=write.initial_status.value,
                     next_attempt_at=now,
                 )
                 .on_conflict_do_nothing()
@@ -312,6 +315,45 @@ class PgRepository:
                 statement.order_by(order).limit(query.limit)
             )
             return tuple(_action(row) for row in result.mappings())
+
+    async def review_held(
+        self, operation_id: UUID, *, approve: bool, now: datetime
+    ) -> ActionRecord | None:
+        """Leave review in one transaction with its audit event."""
+        require_aware(now)
+        status = ActionStatus.PENDING if approve else ActionStatus.DEAD
+        async with self._engine.begin() as connection:
+            updated = await connection.execute(
+                actions.update()
+                .where(
+                    actions.c.operation_id == operation_id,
+                    actions.c.status == ActionStatus.HELD.value,
+                )
+                .values(
+                    status=status.value,
+                    next_attempt_at=now,
+                    last_error=None if approve else REVIEW_REJECTED,
+                    terminal_at=None if approve else now,
+                )
+                .returning(actions.c.id)
+            )
+            action_id = updated.scalar_one_or_none()
+            if action_id is None:
+                return None
+            row = await connection.execute(
+                _ACTION_QUERY.where(actions.c.id == action_id)
+            )
+            reviewed = _action(row.mappings().one())
+            event = review_event(reviewed, approve=approve, now=now)
+            await connection.execute(
+                audit_events.insert().values(
+                    kind=event.kind,
+                    at=event.at,
+                    payload=dict(event.payload),
+                    task_id=event.task_id,
+                )
+            )
+            return reviewed
 
     async def outbox_summary(self) -> tuple[OutboxStatus, ...]:
         """Group actions by status with their earliest due time."""

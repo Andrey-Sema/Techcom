@@ -26,6 +26,18 @@ groups:
             The follow-up latency SLO (99 % under 15 minutes) is at risk.
           runbook_url: docs/18-runbook.md#followup-outbox-stuck
 
+      - alert: FollowupHeldForReview
+        expr: max(followup_outbox_oldest_age_seconds{status="held"}) > 14400
+        for: 10m
+        labels:
+          severity: ticket
+        annotations:
+          summary: An action has waited for human review for over 4 hours.
+          description: >-
+            The planner held actions for a person; they are not sent until
+            someone approves or rejects them with followup review.
+          runbook_url: docs/18-runbook.md#followup-held-for-review
+
       - alert: FollowupLLMFallbackRateHigh
         expr: |
           sum(rate(followup_llm_requests_total{result!="ok"}[15m]))

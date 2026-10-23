@@ -56,7 +56,13 @@ sa.Index(
     decisions.c.id,
 )
 action_status = sa.Enum(
-    "pending", "in_flight", "unknown", "sent", "dead", name="action_status"
+    "pending",
+    "in_flight",
+    "unknown",
+    "sent",
+    "dead",
+    "held",
+    name="action_status",
 )
 actions = sa.Table(
     "actions",
@@ -179,4 +185,34 @@ sa.Index(
     "recipient_admissions_expiry_idx",
     recipient_admissions.c.day,
     recipient_admissions.c.operation_id,
+)
+# Written only by the ledger functions of migration 0008.
+llm_spend_days = sa.Table(
+    "llm_spend_days",
+    metadata,
+    sa.Column("day", sa.Date, primary_key=True),
+    sa.Column(
+        "spent_usd",
+        sa.Numeric(14, 6),
+        nullable=False,
+        server_default="0",
+    ),
+    sa.Column(
+        "reserved_usd",
+        sa.Numeric(14, 6),
+        nullable=False,
+        server_default="0",
+    ),
+    sa.CheckConstraint("spent_usd >= 0"),
+    sa.CheckConstraint("reserved_usd >= 0"),
+)
+llm_spend_reservations = sa.Table(
+    "llm_spend_reservations",
+    metadata,
+    _id(),
+    sa.Column(
+        "day", sa.Date, sa.ForeignKey("llm_spend_days.day"), nullable=False
+    ),
+    sa.Column("amount_usd", sa.Numeric(14, 6), nullable=False),
+    sa.CheckConstraint("amount_usd >= 0"),
 )

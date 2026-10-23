@@ -1,3 +1,4 @@
+import asyncio
 import json
 from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import asynccontextmanager
@@ -15,6 +16,7 @@ import typer
 from pydantic import SecretStr
 from typer.testing import CliRunner, Result
 
+from persistence_support import NOW, action_write
 from support import AS_OF, ROOT
 from techcom_followup import bootstrap
 from techcom_followup.adapters.inbound import cli
@@ -28,6 +30,7 @@ from techcom_followup.application.command_ports import (
     CommandServices,
 )
 from techcom_followup.application.process_tasks import RunReport
+from techcom_followup.domain.models import Flag
 from techcom_followup.infrastructure.log_config import configure_logging
 from techcom_mocks.app import create_app
 from techcom_mocks.faults import FaultInjectingTransport, FaultPlan
@@ -81,6 +84,20 @@ def http_receiver(
     return (install, store, clients, requests)
 
 
+@pytest.fixture
+def saved_storage(monkeypatch: pytest.MonkeyPatch) -> InMemoryRepository:
+    """Stand in for PostgreSQL: one repository shared by invocations."""
+    repository = InMemoryRepository()
+    monkeypatch.setattr(
+        bootstrap,
+        "_storage",
+        lambda _stack, _settings, _options: bootstrap._Storage(
+            repository, InMemoryRunLock(), True
+        ),
+    )
+    return repository
+
+
 def app(settings: bootstrap.RuntimeSettings | None = None) -> typer.Typer:
     return cli.create_cli(
         bootstrap.RuntimeBuilder(
@@ -94,6 +111,7 @@ def report(result: Result) -> dict[str, Any]:
     return cast("dict[str, Any]", json.loads(result.stdout))
 
 
+@pytest.mark.usefixtures("saved_storage")
 def test_run_exports_explainable_decisions_and_dispatches_once(
     tmp_path: Path, http_receiver: Receiver
 ) -> None:
@@ -114,7 +132,7 @@ def test_run_exports_explainable_decisions_and_dispatches_once(
     assert len(saved["decisions"]) == 10
     assert len(saved["actions"]) == 7
     assert {action["status"] for action in saved["actions"]} == {"sent"}
-    assert saved["storage"] == "memory"
+    assert saved["storage"] == "postgresql"
     assert len(store._entries) == 7
     assert sum(request.method == "POST" for request in requests) == 7
     assert all(client.is_closed for client in clients)
@@ -210,6 +228,7 @@ def test_demo_ignores_configured_remote_provider_and_database(
     assert all(client.is_closed for client in clients)
 
 
+@pytest.mark.usefixtures("saved_storage")
 def test_kill_switch_is_checked_without_delivery_io(
     monkeypatch: pytest.MonkeyPatch, http_receiver: Receiver
 ) -> None:
@@ -231,6 +250,7 @@ def test_kill_switch_is_checked_without_delivery_io(
         ["dispatch"],
         ["reconcile"],
         ["report", "--run-id", str(UUID(int=1))],
+        ["review"],
         ["maintenance", "prune"],
     ],
 )
@@ -256,6 +276,7 @@ def test_invalid_operator_arguments_are_rejected(command: list[str]) -> None:
     assert CliRunner().invoke(app(), command).exit_code == 2
 
 
+@pytest.mark.usefixtures("saved_storage")
 def test_as_of_can_be_set_by_environment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -275,6 +296,7 @@ def test_default_as_of_is_a_valid_utc_date() -> None:
     assert before <= actual <= after
 
 
+@pytest.mark.usefixtures("saved_storage")
 def test_dependency_errors_do_not_print_secret_values(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -367,7 +389,7 @@ def test_run_disappearing_before_report_is_safe_operator_error(
             monkeypatch.setattr(
                 services.repository, "get_run", AsyncMock(return_value=None)
             )
-            yield services
+            yield replace(services, persistent=True)
 
     result = CliRunner().invoke(cli.create_cli(factory), [command])
     assert result.exit_code == 1
@@ -407,18 +429,8 @@ def test_grace_expiry_is_intentional_clean_stop(
     assert report(CliRunner().invoke(app(), ["run"])) == {"status": "stopped"}
 
 
-def test_separate_run_dispatch_and_report_share_saved_storage(
-    monkeypatch: pytest.MonkeyPatch,
-    http_receiver: Receiver,
-) -> None:
-    repository = InMemoryRepository()
-    monkeypatch.setattr(
-        bootstrap,
-        "_storage",
-        lambda _stack, _settings, _options: bootstrap._Storage(
-            repository, InMemoryRunLock(), True
-        ),
-    )
+@pytest.mark.usefixtures("saved_storage", "http_receiver")
+def test_separate_run_dispatch_and_report_share_saved_storage() -> None:
     application = app()
     saved = report(
         CliRunner().invoke(
@@ -477,3 +489,62 @@ async def test_shutdown_before_lazy_dispatcher_creation_prevents_later_sends(
         assert len(await services.repository.list_actions()) == 7
     assert not requests
     assert not store._entries
+
+
+@pytest.mark.parametrize("dispatch", [[], ["--dispatch"]])
+def test_saved_run_without_a_database_is_refused(
+    dispatch: list[str], http_receiver: Receiver
+) -> None:
+    _, store, _, requests = http_receiver
+    result = CliRunner().invoke(
+        app(), ["run", "--as-of", "2026-10-21", *dispatch]
+    )
+    assert result.exit_code == 1
+    assert "requires PostgreSQL" in result.stderr
+    assert "--dry-run" in result.stderr
+    assert not requests
+    assert not store._entries
+
+
+def _held(repository: InMemoryRepository) -> UUID:
+    return next(
+        action.identity.operation_id
+        for action in repository._actions.values()
+        if action.status.value == "held"
+    )
+
+
+async def _hold_one(repository: InMemoryRepository) -> None:
+    write = await action_write(repository)
+    decision = replace(
+        write.decision, flags=write.decision.flags | {Flag.HELD_FOR_REVIEW}
+    )
+    await repository.record_decision(replace(write, decision=decision), NOW)
+
+
+@pytest.mark.parametrize(
+    ("flag", "status"), [("--approve", "pending"), ("--reject", "dead")]
+)
+def test_review_lists_and_decides_held_actions(
+    flag: str, status: str, saved_storage: InMemoryRepository
+) -> None:
+    asyncio.run(_hold_one(saved_storage))
+    listed = report(CliRunner().invoke(app(), ["review"]))
+    assert [item["status"] for item in listed["held"]] == ["held"]
+    operation = str(_held(saved_storage))
+    decided = report(CliRunner().invoke(app(), ["review", flag, operation]))
+    assert decided["reviewed"]["status"] == status
+    again = CliRunner().invoke(app(), ["review", flag, operation])
+    assert again.exit_code == 1
+    assert "No held action" in again.stderr
+    assert report(CliRunner().invoke(app(), ["review"])) == {"held": []}
+
+
+@pytest.mark.usefixtures("saved_storage")
+def test_review_takes_one_decision_at_a_time() -> None:
+    operation = str(UUID(int=7))
+    result = CliRunner().invoke(
+        app(), ["review", "--approve", operation, "--reject", operation]
+    )
+    assert result.exit_code == 1
+    assert "at most one" in result.stderr

@@ -71,7 +71,7 @@ def _write_view(write: DecisionWrite, outcome: str) -> dict[str, JsonValue]:
     }
 
 
-def _action_view(action: ActionRecord) -> dict[str, JsonValue]:
+def action_view(action: ActionRecord) -> dict[str, JsonValue]:
     """Dump an action with its flag set in a stable order."""
     view: dict[str, JsonValue] = _ACTION.dump_python(
         action, mode="json", exclude={"terminal_at", "source_project"}
@@ -90,5 +90,5 @@ async def run_view(
     return {
         "run": _RUN.dump_python(run, mode="json"),
         "decisions": [decision_view(item) for item in decisions],
-        "actions": [_action_view(item) for item in actions],
+        "actions": [action_view(item) for item in actions],
     }

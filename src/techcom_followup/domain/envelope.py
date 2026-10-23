@@ -5,7 +5,9 @@ baseline action. The envelope then lists every alternative the code
 considers safe for the same facts: which decision kinds, which
 recipients (by opaque reference, never by free text) and the lowest
 acceptable priority. A planner can choose inside it; it cannot widen
-it, silence an actionable task or invent a recipient.
+it, silence an actionable task or invent a recipient. The envelope
+also carries the message intents code accepts (asks, a firm tone, a
+mention of an earlier message), each derived from verified facts.
 """
 
 from collections.abc import Mapping
@@ -15,6 +17,14 @@ from types import MappingProxyType
 
 from pydantic import JsonValue
 
+from techcom_followup.domain.agent_messages import (
+    Delivery,
+    HoldReason,
+    MessageOptions,
+    Tone,
+    firm_tone_allowed,
+    message_options,
+)
 from techcom_followup.domain.models import (
     Decision,
     DecisionKind,
@@ -45,6 +55,9 @@ class ActionEnvelope:
     recipients: Mapping[str, Target]
     options: Mapping[DecisionKind, frozenset[str]]
     min_priority: Priority
+    messages: Mapping[DecisionKind, MessageOptions]
+    earlier_contact: bool = False
+    chased: bool = False
 
     def permits_kind(self, kind: DecisionKind) -> bool:
         """Return whether ``kind`` is an allowed decision."""
@@ -53,6 +66,12 @@ class ActionEnvelope:
     def permits(self, kind: DecisionKind, recipient: str) -> bool:
         """Return whether ``recipient`` may receive ``kind``."""
         return recipient in self.options.get(kind, frozenset())
+
+    def tones(self, kind: DecisionKind) -> tuple[Tone, ...]:
+        """Return the tones for ``kind``; firm only when earned."""
+        if firm_tone_allowed(kind, chased=self.chased):
+            return tuple(Tone)
+        return (Tone.NEUTRAL, Tone.FRIENDLY)
 
     def target(self, recipient: str) -> Target:
         """Resolve an opaque recipient reference to a code-owned target.
@@ -79,6 +98,17 @@ class ActionEnvelope:
                 for kind, refs in sorted(self.options.items())
             },
             "min_priority": self.min_priority.value,
+            "message_options": {
+                kind.value: {
+                    "asks": list[JsonValue](sorted(item.asks)),
+                    "required_any": list[JsonValue](sorted(item.required_any)),
+                    "tones": list[JsonValue](self.tones(kind)),
+                }
+                for kind, item in sorted(self.messages.items())
+            },
+            "earlier_contact": self.earlier_contact,
+            "delivery": list[JsonValue](Delivery),
+            "hold_reasons": list[JsonValue](HoldReason),
         }
 
     def _baseline_ref(self) -> str:
@@ -109,7 +139,9 @@ def build_envelope(
       a first contact always follows the policy's routing;
     * an escalation may go to the manager or the coordinator, but it
       can never be downgraded;
-    * no option ever leads to ``no_action``.
+    * no option ever leads to ``no_action``;
+    * a firm tone needs an unanswered, overdue earlier message or an
+      escalation, and only a sent earlier message can be mentioned.
     """
     if not decision.actionable or decision.target is None:
         return None
@@ -121,16 +153,22 @@ def build_envelope(
         decision.kind: frozenset({baseline_ref})
         | _alternatives(decision.kind, recipients)
     }
-    if decision.kind in {
+    chased = _already_chased(task, as_of=as_of, chased=prior_follow_ups)
+    if chased and decision.kind in {
         DecisionKind.FOLLOW_UP_OWNER,
         DecisionKind.REQUEST_ETA,
-    } and _already_chased(task, as_of=as_of, chased=prior_follow_ups):
+    }:
         options[DecisionKind.ESCALATE] = frozenset({"manager"})
     return ActionEnvelope(
         baseline=decision,
         recipients=MappingProxyType(recipients),
         options=MappingProxyType(options),
         min_priority=decision.priority,
+        messages=MappingProxyType(
+            {kind: message_options(kind, task) for kind in options}
+        ),
+        earlier_contact=prior_follow_ups > 0,
+        chased=chased,
     )
 
 

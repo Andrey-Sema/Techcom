@@ -342,6 +342,7 @@ async def test_postfix_preserves_labels_and_corrects_routing() -> None:
     assert indexed["unclear-empty"].predicted == BlockerCategory.NONE
 
 
+@pytest.mark.owasp_llm("LLM04")
 def test_archived_artifacts_and_source_labels_are_preserved() -> None:
     cases, _rows, _manifest = bundle()
     archive = DATA

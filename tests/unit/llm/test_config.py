@@ -71,6 +71,7 @@ def test_empty_route_list_is_rejected() -> None:
         RoutingConfig.model_validate(data)
 
 
+@pytest.mark.owasp_llm("LLM03")
 def test_unknown_model_is_rejected() -> None:
     route = [{"model": "gpt-6.1-sool"}]
     data = config_dict(

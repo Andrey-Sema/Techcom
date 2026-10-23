@@ -42,6 +42,7 @@ def route(routing_config: RoutingConfig) -> RouteConfig:
     return routing_config.routes[LLMPurpose.INTERPRET_NOTE][0]
 
 
+@pytest.mark.owasp_llm("LLM02", "LLM05")
 async def test_request_is_strict_private_and_single_shot(
     request_: LLMRequest,
     route: RouteConfig,

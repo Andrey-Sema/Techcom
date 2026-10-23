@@ -2,10 +2,7 @@
 
 import pytest
 
-from techcom_followup.domain.agent_messages import agent_phrasings
 from techcom_followup.domain.free_text import free_text_violations
-from techcom_followup.domain.messages import MessageTemplate
-from techcom_followup.domain.models import DecisionKind
 
 OWNER = ["John Smith"]
 
@@ -59,17 +56,6 @@ def test_fact_shaped_prose_is_rejected(body: str, code: str) -> None:
 def test_plain_requests_pass(body: str) -> None:
     assert (
         free_text_violations("Update on {task_id}", body, known_names=OWNER)
-        == ()
-    )
-
-
-@pytest.mark.parametrize(
-    "wording",
-    [choice for kind in DecisionKind for choice in agent_phrasings(kind)],
-)
-def test_approved_agent_phrasings_pass(wording: MessageTemplate) -> None:
-    assert (
-        free_text_violations(wording.subject, wording.body, known_names=OWNER)
         == ()
     )
 
