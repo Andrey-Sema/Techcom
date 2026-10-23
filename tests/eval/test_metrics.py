@@ -26,7 +26,7 @@ def row(
     )
 
 
-# The Fraction oracle checks correctness; scheduler latency is not a gate.
+# The Fraction oracle checks correctness; latency is not a gate.
 @settings(deadline=None)
 @given(
     st.lists(
