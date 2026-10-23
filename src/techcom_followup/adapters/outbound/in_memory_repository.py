@@ -357,7 +357,7 @@ class InMemoryRepository:
             self._actions.update((action.id, action) for action in claimed)
             return claimed
 
-    async def apply_outcome(self, update: ActionUpdate) -> bool:
+    async def apply_outcome(self, update: ActionUpdate) -> ActionStatus | None:
         """Fence late workers, terminal rows and expired claims."""
         update.validate()
         async with self._lock:
@@ -365,7 +365,7 @@ class InMemoryRepository:
                 update.action_id, update.lease_token, update.now
             )
             if action is None:
-                return False
+                return None
             update = self._fence_retry(action.id, update)
             self._actions[action.id] = replace(
                 action,
@@ -380,7 +380,7 @@ class InMemoryRepository:
                 else None,
                 terminal_at=update.now if update.status in _TERMINAL else None,
             )
-            return True
+            return update.status
 
     def _owned(
         self, action_id: UUID, lease_token: UUID, now: datetime
@@ -427,10 +427,13 @@ class InMemoryRepository:
         self, action_id: UUID, lease_token: UUID, now: datetime
     ) -> bool:
         """Cancellation is ambiguous: release into reconciliation."""
-        return await self.apply_outcome(
-            ActionUpdate(
-                action_id, lease_token, now, ActionStatus.UNKNOWN, now
+        return (
+            await self.apply_outcome(
+                ActionUpdate(
+                    action_id, lease_token, now, ActionStatus.UNKNOWN, now
+                )
             )
+            is not None
         )
 
     async def put_cached_llm(self, entry: CacheEntry) -> None:

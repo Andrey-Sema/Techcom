@@ -443,7 +443,7 @@ class PgRepository:
             )
             return tuple(_action(row) for row in result.mappings())
 
-    async def apply_outcome(self, update: ActionUpdate) -> bool:
+    async def apply_outcome(self, update: ActionUpdate) -> ActionStatus | None:
         """Fence stale workers from modifying newer claims."""
         update.validate()
         async with self._engine.begin() as connection:
@@ -468,9 +468,10 @@ class PgRepository:
                     if update.status.value in _TERMINAL
                     else None,
                 )
-                .returning(actions.c.id)
+                .returning(actions.c.status)
             )
-            return result.scalar_one_or_none() is not None
+            status = result.scalar_one_or_none()
+            return None if status is None else ActionStatus(status)
 
     async def defer_claim(self, update: ActionUpdate) -> bool:
         """Fence an unsent claim and restore its unspent attempt."""
@@ -501,10 +502,13 @@ class PgRepository:
         self, action_id: UUID, lease_token: UUID, now: datetime
     ) -> bool:
         """Release ambiguous work for lookup before replay."""
-        return await self.apply_outcome(
-            ActionUpdate(
-                action_id, lease_token, now, ActionStatus.UNKNOWN, now
+        return (
+            await self.apply_outcome(
+                ActionUpdate(
+                    action_id, lease_token, now, ActionStatus.UNKNOWN, now
+                )
             )
+            is not None
         )
 
     async def put_cached_llm(self, entry: CacheEntry) -> None:

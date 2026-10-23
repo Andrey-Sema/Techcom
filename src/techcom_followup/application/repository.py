@@ -507,8 +507,8 @@ class Repository(Protocol):
         """Fence unknown rows for lookup without counting attempts."""
         ...
 
-    async def apply_outcome(self, update: ActionUpdate) -> bool:
-        """Apply an unexpired claim; false means lost ownership."""
+    async def apply_outcome(self, update: ActionUpdate) -> ActionStatus | None:
+        """Return the durable status, or None after lost ownership."""
         ...
 
     async def defer_claim(self, update: ActionUpdate) -> bool:

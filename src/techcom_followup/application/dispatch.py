@@ -264,7 +264,8 @@ class DispatchActions:
                 provider_ref=result.provider_ref,
             )
         )
-        if applied:
+        if applied is not None:
+            status = applied
             if status is not ActionStatus.PENDING:
                 self._deps.telemetry.count(
                     CounterName.ACTIONS, outcome=status.value

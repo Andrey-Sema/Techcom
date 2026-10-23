@@ -33,10 +33,10 @@ async def test_upgrade_retires_an_already_stale_queue(
         newer, identity=ActionIdentity.of(newer.decision, newer.fingerprint)
     )
     await repository.record_decision(newer, NOW)
-    assert all(
-        item.status is ActionStatus.PENDING
-        for item in await repository.list_actions()
-    )
+    # Read the old schema without the new ORM column before upgrading.
+    async with pg_engine.connect() as connection:
+        statuses = await connection.execute(text("SELECT status FROM actions"))
+        assert tuple(statuses.scalars()) == ("pending", "pending")
     async with pg_engine.begin() as connection:
         await connection.run_sync(
             lambda sync: revision(sync, "head", upgrade=True)

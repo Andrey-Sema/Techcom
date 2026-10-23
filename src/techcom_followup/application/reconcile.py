@@ -85,7 +85,8 @@ class ReconcileUnknown:
                     provider_ref=result.provider_ref,
                 )
             )
-            if applied:
+            if applied is not None:
+                status = applied
                 self._count(status)
                 await audit_delivery(
                     self._deps.repository,
