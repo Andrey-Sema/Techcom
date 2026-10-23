@@ -11,7 +11,7 @@ the policy) — coverage is the floor, not the proof.
 | Unit | domain (normalize, policy, identity, screen, validator, templates), resilience primitives, settings | pytest, hypothesis, fake clock | < 2 s | ~150 |
 | Property | invariants over generated tasks | hypothesis | < 5 s | ~10 |
 | Contract | `Repository` and `LLMClient` port contracts run against every implementation | pytest parametrized fixtures | — | ~25 × impls |
-| Adapter | HTTP adapters vs mock API (ASGI in-process), Gemini adapter vs fake `genai` client, respx for edge HTTP | httpx `ASGITransport`, respx | < 3 s | ~40 |
+| Adapter | HTTP adapters vs mock API (ASGI in-process), OpenAI adapter vs fake `responses.create`, respx for edge HTTP | httpx `ASGITransport`, respx | < 3 s | ~40 |
 | Integration | PostgreSQL 18 repository, migrations up/down, `ON CONFLICT`, `SKIP LOCKED` concurrency | testcontainers `postgres:18` | ~15 s | ~25 |
 | Scenario (E2E-in-process) | The 8 brief scenarios end-to-end through CLI use cases, mock API + PG | all of the above | ~10 s | 8 + variants |
 | Golden | Fixture decisions & messages snapshot | syrupy | < 1 s | 1 per fixture |
@@ -147,10 +147,10 @@ exclude_also = [
 
 * **No ad-hoc `# pragma: no cover`** — a CI grep fails the build if one
   appears outside the allow-list above.
-* The Gemini adapter is covered with an injected fake SDK client (adapter
-  takes the client as a constructor argument); an opt-in
+* The OpenAI adapter is covered with an injected fake SDK call (the
+  backend takes `responses.create` as a constructor argument); an opt-in
   `@pytest.mark.live_llm` test hits the real API only when
-  `FOLLOWUP_GEMINI_API_KEY` is set (excluded from the default run, not from
+  `FOLLOWUP_OPENAI_API_KEY` is set (excluded from the default run, not from
   coverage accounting — the code it exercises is already covered by the
   fake).
 * `__main__` entry points are thin and covered via `typer.testing.CliRunner`.

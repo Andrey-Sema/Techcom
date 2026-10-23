@@ -73,6 +73,7 @@ class ReasonCode(StrEnum):
     DUE_SOON_NOT_STARTED = "due_soon_not_started"
     DUE_SOON_STALE = "due_soon_stale"
     ON_TRACK = "on_track"
+    AGENT_JUDGEMENT = "agent_judgement"
 
 
 class Priority(StrEnum):
@@ -99,6 +100,7 @@ class Flag(StrEnum):
     INVALID_DUE_DATE = "invalid_due_date"
     INVALID_LAST_UPDATE = "invalid_last_update"
     FUTURE_LAST_UPDATE = "future_last_update"
+    AGENT_PLANNED = "agent_planned"
 
 
 @dataclass(frozen=True, slots=True)
@@ -200,7 +202,12 @@ class Target:
 
 @dataclass(frozen=True, slots=True)
 class Decision:
-    """Exactly one per task and run; produced only by the policy."""
+    """Exactly one per task and run.
+
+    The policy produces every decision. An agent plan may replace the
+    kind, recipient and priority only within the policy's envelope;
+    ``rationale`` then carries its bounded, untrusted explanation.
+    """
 
     task_id: TaskId
     kind: DecisionKind
@@ -211,6 +218,7 @@ class Decision:
     priority: Priority = Priority.NORMAL
     flags: frozenset[Flag] = field(default_factory=frozenset)
     interpretation: NoteInterpretation | None = None
+    rationale: str | None = None
 
     @property
     def actionable(self) -> bool:

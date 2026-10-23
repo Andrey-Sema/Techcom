@@ -1,5 +1,7 @@
 """Explicit report projections; never expose raw repository objects."""
 
+from typing import cast
+
 from pydantic import JsonValue, TypeAdapter
 
 from techcom_followup.application.repository import (
@@ -43,6 +45,13 @@ def _write_view(write: DecisionWrite, outcome: str) -> dict[str, JsonValue]:
         "rule_id": decision.rule_id,
         "reason_code": decision.reason_code.value,
         "reason": decision.reason,
+        "rationale": decision.rationale,
+        "baseline": None
+        if write.baseline is None
+        else {
+            "decision": write.baseline.kind.value,
+            "rule_id": write.baseline.rule_id,
+        },
         "flags": flags,
         "message": None
         if message is None
@@ -62,6 +71,16 @@ def _write_view(write: DecisionWrite, outcome: str) -> dict[str, JsonValue]:
     }
 
 
+def _action_view(action: ActionRecord) -> dict[str, JsonValue]:
+    """Dump an action with its flag set in a stable order."""
+    view: dict[str, JsonValue] = _ACTION.dump_python(
+        action, mode="json", exclude={"terminal_at", "source_project"}
+    )
+    decision = cast("dict[str, JsonValue]", view["decision"])
+    decision["flags"] = [flag.value for flag in sorted(action.decision.flags)]
+    return view
+
+
 async def run_view(
     repository: Repository, run: RunRecord
 ) -> dict[str, JsonValue]:
@@ -71,10 +90,5 @@ async def run_view(
     return {
         "run": _RUN.dump_python(run, mode="json"),
         "decisions": [decision_view(item) for item in decisions],
-        "actions": [
-            _ACTION.dump_python(
-                item, mode="json", exclude={"terminal_at", "source_project"}
-            )
-            for item in actions
-        ],
+        "actions": [_action_view(item) for item in actions],
     }

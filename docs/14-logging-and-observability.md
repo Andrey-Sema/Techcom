@@ -8,7 +8,7 @@ metrics listener on port 9464. Only the closed projection in
 hashed actors and bounded counters survive, while text/credentials do not.
 Export/drop metrics describe the collector boundary. The CLI retains its
 sanitized stderr sink and does not start an OTLP worker. See
-[final configuration/evidence](23-final-integration-review.md).
+[API and deployment](19-api-and-deployment.md).
 
 The sections below describe the **target operating model**. They do not
 establish that every event, metric, trace field, retention/access policy or

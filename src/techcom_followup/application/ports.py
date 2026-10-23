@@ -20,6 +20,7 @@ class LLMPurpose(StrEnum):
 
     INTERPRET_NOTE = "interpret_note"
     DRAFT_MESSAGE = "draft_message"
+    ORCHESTRATE = "orchestrate"
 
 
 @dataclass(frozen=True, slots=True)

@@ -41,7 +41,18 @@ services:
     user: ${DAST_UID:?prepare scan.env}:${DAST_GID:?prepare scan.env}
     environment:
       JAVA_TOOL_OPTIONS: -Duser.home=/tmp
-    command: [zap-api-scan.py, -t, /zap/wrk/openapi.json, -f, openapi, -J, report.json, -r, report.html, -z, "-configfile /zap/wrk/auth.properties"]
+    command:
+      - zap-api-scan.py
+      - -t
+      - /zap/wrk/openapi.json
+      - -f
+      - openapi
+      - -J
+      - report.json
+      - -r
+      - report.html
+      - -z
+      - "-configfile /zap/wrk/auth.properties"
     volumes:
       - ./var/dast:/zap/wrk:rw
     read_only: true

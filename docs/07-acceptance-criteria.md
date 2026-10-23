@@ -1,14 +1,13 @@
-# 07 — Acceptance Criteria (Senior+ bar)
+# 07 — Acceptance Criteria
 
 Each criterion is **binary and verifiable**; the "Verified by" column names
 the artefact a reviewer can check. The submission is accepted only when every
-**MUST** passes. **SHOULD** items distinguish Senior+ from Senior.
+**MUST** passes. **SHOULD** items are production extensions.
 
 
-**Acceptance per tier** (`08` §0): *Tier A* is accepted when every MUST
-passes except the evidence-heavy items AC-S1–S7, AC-O3–O4, AC-T3–T5,
-AC-E1 (minimal eval only: ≥ 20 notes, unsafe outcomes = 0), AC-P1,
-AC-API1, AC-OPS2. *Tier B* requires all MUST and SHOULD items.
+The core (`08` §1) is accepted when every functional, AI, business and
+reliability MUST passes; the production extensions add the security,
+observability, tooling and evidence items.
 
 ## 1. Functional
 
@@ -27,8 +26,8 @@ AC-API1, AC-OPS2. *Tier B* requires all MUST and SHOULD items.
 
 | ID | Level | Criterion | Verified by |
 |----|-------|-----------|-------------|
-| AC-A1 | MUST | One real LLM provider adapter (Gemini) with native structured output; provider isolated behind `LLMClient`; deterministic stub is the default for tests and offline demo. | adapters, README |
-| AC-A2 | MUST | LLM output schemas contain no owner/date/status/decision/target fields. | schema source + test asserting field set |
+| AC-A1 | MUST | One real LLM provider adapter (OpenAI Responses API) with native structured output; provider isolated behind `LLMClient`; deterministic stub is the default for tests and offline demo. | adapters, README |
+| AC-A2 | MUST | LLM output schemas contain no owner, date or status fields; the orchestrator may choose a decision and a recipient reference only from the policy envelope, enforced by the guard. | schema source + test asserting field set |
 | AC-A3 | MUST | Every LLM response is re-validated locally (strict Pydantic) — invalid JSON, wrong enums, extra fields, out-of-range values and ungrounded evidence all trigger a safe fallback. | S7 parametrized test |
 | AC-A4 | MUST | Prompt-injection notes are treated as data: flagged, not sent to the LLM, decision unaffected, message does not echo them. | S8 test, audit sample |
 | AC-A5 | MUST | LLM is skipped when deterministic rules suffice; run report shows LLM call count, fallbacks, tokens, estimated cost. | run report sample |
@@ -76,7 +75,7 @@ AC-API1, AC-OPS2. *Tier B* requires all MUST and SHOULD items.
 | AC-O3 | MUST | `make up-obs` brings up Prometheus, Grafana (provisioned datasources + dashboard), Loki and Alloy; the dashboard shows the demo run. | smoke check |
 | AC-O4 | SHOULD | Alert rules in `deploy/prometheus/rules/` validated with `promtool check rules` in CI. | CI |
 
-## 4b. Tooling, evidence and operability (added after `16`)
+## 4b. Tooling, evidence and operability
 
 | ID | Level | Criterion | Verified by |
 |----|-------|-----------|-------------|
@@ -105,14 +104,13 @@ AC-API1, AC-OPS2. *Tier B* requires all MUST and SHOULD items.
 | AC-Q8 | SHOULD | Mutation score ≥ 90 % on policy/identity/messages. | mutmut report |
 | AC-Q9 | SHOULD | ADRs for every significant decision. | `docs/adr/` |
 
-## 6. Live review readiness
+## 6. Operability of the demo
 
 | ID | Level | Criterion |
 |----|-------|-----------|
 | AC-L1 | MUST | Demo (run → rerun → fault profile) completes in < 3 minutes with readable terminal output. |
 | AC-L2 | MUST | Any brief scenario can be triggered from the CLI by a flag/env (`--fault-profile`). |
 | AC-L3 | MUST | A threshold/routing/synonym change is a config edit + test update, demonstrable in < 5 minutes. |
-| AC-L4 | SHOULD | Candidate can explain each ADR and the 10k/day plan (`09`) without notes. |
 
 ## 7. Gherkin for the hard-gate scenarios
 

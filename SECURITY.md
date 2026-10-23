@@ -21,6 +21,5 @@ or customer data in the report.
 ## Scope and baseline
 
 The design target is OWASP ASVS 5.0 level 2 (`docs/15-security-asvs-l2.md`).
-Known gaps and accepted deviations are listed there and in
-`docs/19-foundation-review.md`. Dependency vulnerabilities are checked
+Known gaps and accepted deviations are listed there. Dependency vulnerabilities are checked
 with `make audit` (pip-audit on the locked runtime set).

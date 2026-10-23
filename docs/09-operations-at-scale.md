@@ -1,4 +1,4 @@
-# 09 — Operating at 10,000 Tasks/Day (review part 3)
+# 09 — Operating at 10,000 Tasks/Day
 
 ## 1. Back-of-the-envelope
 
@@ -10,7 +10,7 @@
 | After content-hash cache | ~1,000 | notes rarely change between runs |
 | Tokens per interpretation | ~500 in / ~80 out | short system prompt + few-shot (cacheable prefix) + note |
 | Daily LLM tokens | ~0.5 M in / ~0.08 M out | |
-| Daily cost (Flash-Lite tier) | **≈ $0.30 – $0.50** | `in × price_in + out × price_out`; prices from config, verify against the provider's pricing page |
+| Daily cost (small model tier) | **≈ $0.30 – $0.50** | `in × price_in + out × price_out`; prices from config, verify against the provider's pricing page |
 | Messages / day | a few hundred | dedupe keeps it proportional to *state changes*, not runs |
 
 Conclusion: throughput is not the problem; **correctness, rate limits, cost
@@ -82,4 +82,4 @@ time (`04` §2a), not in the decision policy.
   in logs (redaction processor + test).
 * **Human-in-the-loop**: escalations and any future "write back to CRM"
   capability go through an approval queue; the AI never gets direct write
-  authority over project status (answer to interview Q9 follow-up).
+  authority over project status.

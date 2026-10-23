@@ -3,9 +3,7 @@
 > Implementation status: this document specifies the design target.
 > Planned controls require implementation evidence before promotion.
 > *Built* rows and the tests behind them are listed in the generated
-> [traceability report](asvs-traceability.md) (M9); the verified
-> M0/M2/M3 subset is also recorded in
-> [the foundation review](19-foundation-review.md).
+> [traceability report](asvs-traceability.md).
 
 ## 1. Target and rules of the game
 

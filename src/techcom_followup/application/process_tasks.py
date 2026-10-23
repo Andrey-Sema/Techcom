@@ -1,7 +1,7 @@
 """Process source records through policy and an atomic outbox write."""
 
 import asyncio
-from collections.abc import Mapping
+from collections.abc import Coroutine, Iterable, Mapping
 from dataclasses import dataclass, field, replace
 from datetime import date
 from uuid import UUID
@@ -9,6 +9,7 @@ from uuid import UUID
 from pydantic import JsonValue
 
 from techcom_followup.application.processing_ports import (
+    ActionPlanner,
     Clock,
     MessageDrafter,
     NoteInterpreter,
@@ -93,12 +94,17 @@ class ProcessTasks:
         *,
         interpreter: NoteInterpreter | None = None,
         drafter: MessageDrafter | None = None,
+        planner: ActionPlanner | None = None,
         write_concurrency: int = DEFAULT_WRITE_CONCURRENCY,
     ) -> None:
-        """Inject policy, I/O ports and optional LLM workflows."""
+        """Inject policy, I/O ports and optional LLM workflows.
+
+        A planner, when given, replaces the drafter for new actions.
+        """
         self._deps = dependencies
         self._interpreter = interpreter
         self._drafter = drafter
+        self._planner = planner
         if (
             type(write_concurrency) is not int
             or not 1 <= write_concurrency <= MAX_WRITE_CONCURRENCY
@@ -175,12 +181,17 @@ class ProcessTasks:
                 if dry_run
                 else await self._deps.repository.get_action_messages(keys)
             )
-            batch: list[DecisionWrite] = []
-            for position, proposal in enumerate(proposals, start):
-                write = await self._prepare(
+            # Planning is independent per task and dominated by model
+            # latency, so a batch plans concurrently, in source order.
+            prepared = await _join_all(
+                self._prepare(
                     proposal, as_of, existing=existing, dry_run=dry_run
                 )
-                write = replace(write, source_position=position)
+                for proposal in proposals
+            )
+            batch: list[DecisionWrite] = []
+            for position, draft in enumerate(prepared, start):
+                write = replace(draft, source_position=position)
                 progress.decisions.append(write.decision)
                 progress.plans.append(write)
                 batch.append(write)
@@ -226,7 +237,8 @@ class ProcessTasks:
             proposal.task,
             proposal.decision,
         )
-        draft = None
+        draft, final = None, decision
+        audit: Mapping[str, JsonValue] | None = None
         if identity is not None:
             if identity.idempotency_key in existing:
                 # Retained identities need no new model call, even after
@@ -234,45 +246,45 @@ class ProcessTasks:
                 draft = existing[identity.idempotency_key] or compose(
                     decision, task, as_of
                 )
+            elif self._planner is not None and not dry_run:
+                planned = await self._planner.plan(decision, task, as_of=as_of)
+                final, draft, audit = (
+                    planned.decision,
+                    planned.message,
+                    planned.audit,
+                )
             else:
                 draft = await self._draft(
                     decision, task, as_of, dry_run=dry_run
                 )
         return DecisionWrite(
             UUID(int=0),
-            decision,
+            final,
             proposal.fingerprint,
             identity,
             draft,
             source_project=(
                 None if task.project == UNKNOWN_LABEL else task.project
             ),
+            baseline=None if final == decision else decision,
+            plan_audit=audit,
         )
 
     async def _persist_batch(
-        self, run_id: UUID, writes: list[DecisionWrite], progress: _Progress
+        self,
+        run_id: UUID,
+        writes: list[DecisionWrite],
+        progress: _Progress,
     ) -> None:
         """Join or cancel every writer before finalizing the run.
 
-        Preparation stays ordered and sequential: language admission and
-        caches retain their existing semantics. Only atomic persistence
-        overlaps, with at most sixteen transactions and no task per
-        input.
+        Note interpretation stays ordered and sequential so that its
+        cache keeps its semantics; planning and atomic persistence
+        overlap within a batch of at most sixteen tasks.
         """
-        try:
-            async with asyncio.TaskGroup() as group:
-                pending = [
-                    group.create_task(self._persist(run_id, write, progress))
-                    for write in writes
-                ]
-            # TaskGroup treats a cancelled child as normal completion;
-            # a run must instead fail if any receipt was never obtained.
-            for task in pending:
-                task.result()
-        except ExceptionGroup as errors:
-            if len(errors.exceptions) == 1:
-                raise errors.exceptions[0] from None
-            raise
+        await _join_all(
+            self._persist(run_id, write, progress) for write in writes
+        )
 
     async def _draft(
         self, decision: Decision, task: Task, as_of: date, *, dry_run: bool
@@ -282,7 +294,10 @@ class ProcessTasks:
         return await self._drafter.draft(decision, task, as_of=as_of)
 
     async def _persist(
-        self, run_id: UUID, write: DecisionWrite, progress: _Progress
+        self,
+        run_id: UUID,
+        write: DecisionWrite,
+        progress: _Progress,
     ) -> None:
         stored = await self._deps.repository.record_decision(
             replace(write, run_id=run_id),
@@ -306,3 +321,19 @@ class ProcessTasks:
                     record.task_id,
                 )
             )
+
+
+async def _join_all[T](
+    coroutines: Iterable[Coroutine[object, object, T]],
+) -> list[T]:
+    """Run concurrently, cancel siblings on failure, keep the order."""
+    try:
+        async with asyncio.TaskGroup() as group:
+            pending = [group.create_task(item) for item in coroutines]
+        # TaskGroup treats a cancelled child as normal completion; a run
+        # must instead fail if any result was never obtained.
+        return [task.result() for task in pending]
+    except ExceptionGroup as errors:
+        if len(errors.exceptions) == 1:
+            raise errors.exceptions[0] from None
+        raise

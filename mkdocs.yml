@@ -34,28 +34,21 @@ nav:
   - Overview: index.md
   - Design:
       - "00 — Requirements Analysis": 00-requirements-analysis.md
-      - "01 — Interview → Assessment → Product Traceability": 01-interview-traceability.md
       - "02 — Architecture": 02-architecture.md
       - "03 — OOAD Map": 03-ooad.md
       - "04 — Decision Policy & LLM Contract": 04-decision-policy-and-llm.md
       - "05 — Reliability Design": 05-reliability.md
       - "06 — Test Strategy": 06-test-strategy.md
-      - "07 — Acceptance Criteria (Senior+ bar)": 07-acceptance-criteria.md
-      - "08 — Implementation Plan": 08-implementation-plan.md
-      - "09 — Operating at 10,000 Tasks/Day (review part 3)": 09-operations-at-scale.md
-      - "10 — Live Technical Review Playbook (30 minutes)": 10-live-review-playbook.md
+      - "07 — Acceptance Criteria": 07-acceptance-criteria.md
+      - "08 — Scope, Status and Next Steps": 08-implementation-plan.md
+      - "09 — Operating at 10,000 Tasks/Day": 09-operations-at-scale.md
       - "11 — Research Sources": 11-research-sources.md
-      - "12 — Plan Self-Review (red-team pass)": 12-plan-review.md
       - "13 — Repository Blueprint (files and their exact shape)": 13-repository-blueprint.md
       - "14 — Logging & Observability (ASVS V16, OWASP Logging Cheat Sheet)": 14-logging-and-observability.md
       - "15 — Security Baseline: OWASP ASVS 5.0 Level 2 + OWASP Cheat Sheets": 15-security-asvs-l2.md
-      - "16 — Strict Senior-Level Audit (30 points)": 16-senior-audit.md
       - "17 — Tooling & Repository Hygiene (single source of truth)": 17-tooling-and-repo-hygiene.md
       - "18 — Operations Runbook": 18-runbook.md
-      - "M0 / M2 / M3 implementation review": 19-foundation-review.md
-      - "M4 / M5 / M6a implementation review": 21-workflow-review.md
-      - "API and evaluation review": 22-api-evaluation-review.md
-      - "Final integration review": 23-final-integration-review.md
+      - "19 — API and Deployment": 19-api-and-deployment.md
   - "Benchmarks": benchmarks.md
   - Security evidence:
       - "ASVS 5.0 traceability (generated)": asvs-traceability.md
@@ -68,7 +61,7 @@ nav:
       - "Previous synthetic replay": eval/interp.v1-draft.v2-postfix.v1.md
       - "Expanded baseline": eval/interp.v1-draft.v2-expanded.v1.md
       - "Minimal baseline": eval/interp.v1-draft.v2-minimal.v1.md
-      - "Prefilter independent review": eval/prefilter-review.md
+      - "Prefilter review": eval/prefilter-review.md
   - Decisions (ADR):
       - "ADR-0001: Hexagonal architecture with a functional core": adr/0001-hexagonal-functional-core.md
       - "ADR-0002: PostgreSQL 18 for state and outbox; no Redis/Celery": adr/0002-postgresql-18-no-broker.md
@@ -85,3 +78,4 @@ nav:
       - "ADR-0013: OpenAI model router (Responses API, Sol generation)": adr/0013-openai-model-router.md
       - "ADR-0014: Owned language calls and budget bounds": adr/0014-owned-language-and-budget-bounds.md
       - "ADR-0015: Bounded writes and durable admission": adr/0015-bounded-writes-and-durable-admission.md
+      - "ADR-0016: Bounded LLM orchestrator": adr/0016-bounded-llm-orchestrator.md

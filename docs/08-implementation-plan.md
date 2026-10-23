@@ -1,174 +1,57 @@
-# 08 — Implementation Plan
+# 08 — Scope, Status and Next Steps
 
-## 0. Scope vs. timebox (read first)
+## 1. Scope
 
-The brief suggests **4 hours** and says *"keep the solution limited to the
-timebox; document any unfinished work."* The reviewers grade outcomes and
-reasoning, not volume. Therefore:
+The brief asks for a small, reliable service. The work is split into the
+part every reviewer needs and optional production extensions that can be
+read independently.
 
-Two declared tiers (decision from the senior audit, `16` #30):
+| Layer | Contents | Needed for the demo |
+|-------|----------|---------------------|
+| **Core** | Ingestion and normalization, deterministic policy, LLM note interpretation, bounded LLM orchestrator, outbox with idempotent delivery and reconciliation, CLI, mock API, tests | Yes |
+| **Production extensions** | Authenticated REST API, PostgreSQL-shared rate limits and recipient quota, retention, observability stack, container images, security gates, LLM evaluation harness, 10k benchmark | No |
 
-* **Tier A — Submission core (≈ 19 h):** everything the rubric scores,
-  with the full reliability story, Ruff + Bandit + mypy + 100 % coverage,
-  minimal eval harness, kill switch/dry-run. The live demo depends only on
-  Tier A.
-* **Tier B — Production hardening (≈ 14 h):** full gate set (Semgrep custom
-  rules, vulture, xenon, deptry, zizmor, …), REST API with service JWTs,
-  ASVS evidence, observability stack, benchmark, Schemathesis/ZAP, full
-  eval set, mutation testing, runbook.
-* Original code budget: **≤ 2,500 lines in `src/`**. M0/M2/M3 review
-  records a deviation: approximately 3,600 lines in M0/M2/M3, growing to 6,539 lines in
-  M4/M5/M6a (including CLI composition, typed ports and HTTP adapters). Removing
-  contracts or compressing code to meet a line count would reduce
-  reviewability. Ruff complexity limits remain enforced; full complexity
-  tooling is M0b. Reassess size at each batch.
-* The README states the real time spent per tier and what was cut (§4).
+The core runs with `make demo` alone: no Docker, database or API key.
 
-## 0a. Progress tracker (updated with every milestone commit)
+## 2. Status
 
-| M | State | What exists | What is still missing |
-|---|-------|-------------|------------------------|
-| M0 | **done** | Locked uv workspace, Ruff `ALL`, Bandit, mypy strict, pytest branch gate, import-linter, pre-commit, Makefile, pinned CI matrix 3.13/3.14, PostgreSQL 18 Compose, hygiene and non-secret configuration | Full gate set is tracked separately as M0b |
-| M1 | **done** | `domain/` (normalize, injection, interpretation, policy R1–R9, identity, messages), `config/policy.toml`, `config/routing.toml`; unit, property (1–6, 8–10) and golden tests | — |
-| M5 | **done** | Owned router probes, concurrent cost reservations, bounded strict interpretation/cache/grounding, approved wording, offline stub, S7/S8 and adversarial/Hypothesis tests | Live provider quality and a durable multi-process budget ledger remain unverified/out of scope here |
-| M2 | **done** | Separate mock distribution, task/message/lookup endpoints, canonical payload dedupe, 409/422 semantics, fsynced recovery journal, fault transport, bounded/redacted requests, concurrent/cancellation/Hypothesis tests | Single local worker per journal; production receiver is out of scope |
-| M3 | **done** | Frozen PG18 migration, SQLAlchemy Core, memory/PG repository contract, atomic decision/action/audit, UUIDv7, `SKIP LOCKED`, fencing tokens, unknown-state recovery, cache expiry, real PostgreSQL concurrency/rollback tests | Least-privilege DB roles landed with M9 (migration `0002`) |
-| M4 | **done** | Processing, fenced dispatch/reconciliation, HTTP bounds, retry allocation, advisory lock, dry-run, kill switch, graceful drain, S1–S6 including a non-idempotent receiver | Outcome audit append follows the fenced status update in a separate transaction |
-| M6a | **done** | Lazy CLI composition, run/dispatch/reconcile/report/demo, owner-only atomic report exports, closed JSON logs, real loopback demo and samples | Standalone durable commands require PostgreSQL |
-| M0b | **done** | `make gates` (CI job `gates`): Semgrep project invariants with `semgrep --test` cases, xenon, vulture, deptry (app and mocks), pip-audit on the locked runtime set, codespell, yamllint, zizmor, workflow/Dependabot schemas, validate-pyproject, MkDocs `--strict` (`mkdocs.yml`), commitizen `commit-msg` hook; Dependabot with cooldown, CODEOWNERS, PR/issue templates, `SECURITY.md`, `CONTRIBUTING.md`, `CHANGELOG.md` | Semgrep registry packs (`p/python`, `p/owasp-top-ten`) need a networked first run to triage; hadolint and Trivy landed with M8, gitleaks and SBOM with M9 |
-| M10 | **done** | `compose.observability.yaml` (Prometheus 3.15, Loki 3.7, Alloy 1.20, Grafana 13.2; pinned by digest, read-only, `cap_drop: ALL`, localhost ports, no Docker socket); 8 alert rules with runbook links and promtool unit tests; Grafana datasources and a 27-panel dashboard provisioned as code; Loki with 30-day retention; Alloy OTLP pipeline with redaction of forbidden attributes; `make obs-check` (promtool, Loki, Alloy validators) and `make obs-smoke` (live end-to-end); static config tests in `tests/meta/` | API metrics/OTLP wiring is now prepared; execute end-to-end deployment checks. Some target metric families and Alertmanager remain follow-up work |
-| M8 | **done** (ZAP with M6b) | Multi-stage `Dockerfile` (`runtime` default, `mock`), base and uv images pinned by digest, root-owned code, pip removed from both images; `make images`, `make dockerfile-lint` (hadolint, part of `make gates`), `make image-scan` (Trivy config + image, pinned by digest, HIGH/CRITICAL with a fix fail), `make image-test` (`tests/image/`: non-root, read-only, no capabilities, product-only content, migrations against PostgreSQL 18, mock journal survives a restart); CI job `image`; Schemathesis against the mock OpenAPI (`tests/contract/api/`); `make mutation` (mutmut on policy/identity/messages, gate ≥ 90 %, nightly workflow; 602/608 killed, 6 documented equivalents); runtime `ENTRYPOINT ["followup"]` with an end-to-end image test (PostgreSQL 18 + mock, migrate, run, dispatch, dedupe); CI job `smoke` (`make demo-check`: fresh demo vs `samples/`); `make bench` (10,000 tasks, PostgreSQL 18, `docs/benchmarks.md`: 83 s / 71 s after removing three round trips per decision; original 60 s / 30 s targets not met, measured lever documented) | ZAP API scan and the API `HEALTHCHECK` need the M6b REST API; bounded writers and stricter 60/30 s gates are implemented in the final PR; new timing remains unmeasured |
-| M9 | implemented controls; external evidence pending | JWT/capabilities/project checks, shared request limits, durable daily recipient quota, least-privilege definer functions, FastAPI/Logging checklists, isolated ZAP target and manual attested GHCR workflow | Run DAST and current security gates; publish/verify an actual digest attestation; confirm production ASVS controls |
-| M6b | implemented; execution pending | Public API and private metrics listeners, bounded OTLP/HTTP export, persisted source-project authority and PostgreSQL admission shared across replicas | Deploy TLS/gateway/secret configuration and execute final integration/DAST gates |
-| M11a | **done** | 20 benign labelled notes + 4 injections, immutable recordings/report, strict replay provenance and metrics | Live-provider quality unverified |
-| M11b | **done** | 63 benign + 32 injection cases, current source-bound replay, per-class and benign-only metrics, positive safety controls and evaluator coverage gate | All committed responses are synthetic; provider quality unverified |
-| M12 | implemented; execution pending | Permanent identity tombstones, actual terminal timestamps, finished-run retention, bounded pseudonymous quota-history cleanup, backup/restore ledger assertion | Execute migration, retention/race and restore gates on the final revision; provision maintenance credentials separately |
-| M7 | material prepared; rehearsal pending | Final README, ADR 0015, deployment/review material, labeled API sample and live-review steps | Regenerate executed samples and rehearse only when execution is authorized |
+| Area | State | Notes |
+|------|-------|-------|
+| Domain core (normalize, policy R1–R9, identity, messages, injection screen) | done | Unit, property, golden and mutation tests |
+| Mock task/delivery API with fault injection and durable journal | done | One receiver process per journal |
+| Persistence (PostgreSQL 18, outbox, fencing, SKIP LOCKED, migrations) | done | Memory and PostgreSQL share one contract suite |
+| Processing, dispatch, reconciliation, retries, kill switch, drain | done | Scenarios S1–S8 |
+| LLM: note interpretation with grounding and cache | done | Provider quality not measured on real traffic |
+| LLM: bounded orchestrator (tools, envelope, guard, audit) | done | ADR-0016 |
+| CLI and offline demo with committed samples | done | `make demo-check` compares a fresh run with `samples/` |
+| REST API, JWT, project authorization, shared limits | done | Optional; see `19` |
+| Observability (Prometheus, Grafana, Loki, Alloy, OTLP) | done | Provisioned as code |
+| Retention, backup/restore, DB roles | done | Runbook `18` |
+| Images, SBOM, scanners, CI workflows | done | CI cannot start until the repository has Actions minutes |
+| DAST (ZAP) and registry attestation | prepared | Run in a deployment environment |
 
-Current PR combines **remaining M6b, M9, M12 and M7**, building on the
-merged M11a/b work. M7 documentation, ADR, API example and rehearsal
-instructions are prepared; no fresh samples or live rehearsal were run.
-All final changes received single-agent manual code/security review only.
-Historical evidence remains separate; current performance/coverage, DAST
-and registry attestation results require execution outside this turn.
-Earlier independent findings remain in `21-workflow-review.md` and
-`22-api-evaluation-review.md`; current manual review and limits are in
-`23-final-integration-review.md`. ASVS L2 remains a design target, not
-a certification claim.
+## 3. Not implemented, and why
 
-## 1. Work breakdown (MoSCoW, estimates)
+| Item | Why it was left out |
+|------|---------------------|
+| Real monday.com (or other tracker) adapter | The brief supplies a fixture and asks for a mock API. The `TaskSource` port is the seam. |
+| Real e-mail/SMS delivery | The brief forbids real e-mails. The delivery port takes a stable operation id, so a provider with idempotency keys plugs in. |
+| Re-reminders on an unchanged task | Needs a product decision (cadence, quiet hours). Today one follow-up is sent per task state; once a follow-up was sent, a changed but still overdue task lets the orchestrator escalate. |
+| Human approval queue for agent escalations | The envelope already restricts escalations to unanswered, overdue tasks. An approval step is a UI/workflow feature outside the brief. |
+| Measured quality on a real LLM provider | No production traffic or labelled real notes. The evaluation harness replays synthetic recordings; the live test is opt-in with a key. |
+| Cross-process LLM spend ledger | The daily budget is per process. A shared ledger belongs to the same database work as the recipient quota and is the next step for multi-worker LLM use. |
+| Real identity provider (OIDC) | Tokens are verified with configured Ed25519 keys and the same claims an IdP would issue. |
+| Internal TLS and dynamic database credentials | Local Compose keeps them out; production requirements are listed in `15`. |
+| Distributed tracing | Logs and metrics cover the workflow; OTLP logs are wired. |
 
-| M | Milestone | Deliverables | Must/Should/Could | Est. |
-|---|-----------|--------------|-------------------|------|
-| M0 | Bootstrap (A) | `uv init` (workspace with `mocks/`), `pyproject.toml` (Ruff `ALL` 79 cols, **Bandit**, mypy strict, pytest, coverage 100 %), `.gitignore`, `.gitattributes`, `.editorconfig`, `.dockerignore`, core pre-commit hooks, Makefile core targets, CI `quality` + `test` jobs, `compose.yaml` with `postgres:18`, `.env.example`, import-linter contract — all per `17` | Must | 1.5 h |
-| M0b | Full gate set (B) | Semgrep + custom rules with tests, vulture, xenon, deptry, codespell, yamllint, hadolint, zizmor, commitizen, validate-pyproject, MkDocs strict, Dependabot, CODEOWNERS, SECURITY/CONTRIBUTING/CHANGELOG, PR template | Should | 1.5 h |
-| M1 | Domain core | `models.py`, `normalize.py`, `identity.py`, `injection.py`, `policy.py` (R1–R9), `messages.py` (templates + validator); unit + property tests; golden snapshot for fixture decisions — **done** (see `04` §2b) | Must | 3 h |
-| M2 | Mock API | `techcom_mocks`: `GET /v1/tasks`, `POST /v1/messages` (idempotent receiver, payload hash), `GET /v1/messages/{op}`, fault plan, JSONL delivery log; `FaultInjectingTransport` for tests | Must | 1.5 h |
-| M3 | Persistence | SQLAlchemy Core tables, Alembic migration (PG18 `uuidv7()`), `PgRepository` + `InMemoryRepository`, repository contract tests, testcontainers fixtures | Must | 2.5 h |
-| M4 | Use cases (A) | `ProcessTasks`, `DispatchActions`, `ReconcileUnknown`, HTTP adapters with stamina retries, retry budget, circuit breaker, advisory-lock single run, reconcile-before-resend, kill switch, dry-run, graceful shutdown; scenario tests S1–S6 incl. `non_idempotent` receiver | Must | 3.5 h |
-| M5 | LLM | `LLMClient` port, stub (scripted responses incl. malformed), **OpenAI router — done** (`ADR-0013`), optional Gemini backend, interpreter (cache, grounding, breaker, fallback), drafter (placeholders + validator); S7, S8 tests | Must | 2.5 h |
-| M6a | CLI & reporting (A) | Typer + Rich CLI (`run/dispatch/reconcile/report/demo`), structlog + redaction, run report, samples export | Must | 1.5 h |
-| M6b | REST API (B) | FastAPI (`/v1/runs`, `/v1/actions`, health), service JWT + scopes, security headers, metrics on internal port, OTLP log export | Should | 2 h |
-| M11a | Eval harness, minimal (A) | 20 labelled notes + injection variants, recorded responses, metrics script | Must | 1 h |
-| M11b | Eval harness, full (B) | ≥ 60 notes + ≥ 30 injection variants, report per prompt version | Should | 1 h |
-| M12 | Ops levers (B) | retention prune, request-id propagation, runbook `18`, backup/restore targets | Should | 1.5 h |
-| M7 | Docs | README (setup, run, assumptions, trade-offs, incomplete, production), ADRs final, `samples/` regenerated, live-review playbook rehearsal | Must | 1.5 h |
-| M8 | Hardening (B) | Dockerfile targets (runtime/mock), image tests, Trivy by digest, CI smoke (`make demo` diff vs samples), Schemathesis + ZAP, 10k benchmark, mutation testing job | Should | 2.5 h |
-| M9 | Security evidence (B) | JWT validation + scopes (V8/V9), security headers, rate/size limits, per-recipient cap, outbound allow-list, DB roles + `REVOKE`, secrets via `/run/secrets`, `asvs` pytest marker + traceability report, security CI gates, cheat-sheet checklists | Should | 3 h |
-| M10 | Observability stack (B) | `compose.observability.yaml`, Prometheus config + alert rules (`promtool` in CI), Grafana provisioning + dashboard JSON, Loki, Alloy OTLP pipeline | Should | 2 h |
-| — | **Total** | | | **≈ 33 h** — Tier A (M0, M1–M5, M6a, M7, M11a) ≈ 19 h; Tier B ≈ 14 h |
+## 4. What changes for production
 
-Critical path (Tier A): M0 → M1 → (M2 ∥ M3) → M4 → M5 → M11a → M6a →
-M7. Tier B items are independent of each other and can be cut at any
-point without breaking the demo. Security is not bolted on at the end: the
-M9 controls that shape code (placeholder renderer, outbound allow-list, DB
-roles, strict models) are built inside M1–M4; M9 adds the remaining
-controls, gates and evidence.
-
-## 2. Step-by-step detail per milestone
-
-### M0 — Bootstrap
-
-1. `uv init --package techcom-followup --python 3.13`; add `src/` layout.
-2. Dev deps: `ruff mypy pytest pytest-asyncio pytest-cov pytest-xdist
-   pytest-randomly hypothesis respx syrupy testcontainers[postgres]
-   import-linter pre-commit mutmut pip-audit`.
-3. Runtime deps: `pydantic pydantic-settings fastapi uvicorn typer httpx
-   stamina sqlalchemy[asyncio] psycopg[binary,pool] alembic structlog
-   prometheus-client openai pyjwt[crypto] opentelemetry-sdk
-   opentelemetry-exporter-otlp-proto-http`.
-   Infrastructure files exactly as in `13-repository-blueprint.md`
-   (`.gitignore`, `.dockerignore`, Dockerfile, compose, deploy/).
-4. Ruff config: `line-length = 79`, `target-version = "py313"`, select
-   `E W F I N UP B S A C4 DTZ T20 RET SIM PTH ERA PL RUF ASYNC TRY D`
-   (Google docstrings); per-file ignores for tests (`S101`).
-5. CI workflow: jobs `lint`, `type`, `test` (matrix 3.13/3.14, Docker
-   available), `smoke`; cache uv.
-6. Commit: "chore: bootstrap project tooling".
-
-### M1 — Domain core (TDD order)
-
-1. `normalize` tests from `04` §1 table → implementation.
-2. `identity` tests: canonical JSON, fingerprint, key, uuid5 stability.
-3. `injection` tests: pattern corpus (positive + benign negatives such as
-   "ignore the old permit number").
-4. `policy` tests: one test per rule + boundaries (Δ = 0, −1, −5, −6;
-   due-soon edges) → implementation as an ordered tuple of `Rule` objects.
-5. Property tests 1–6, 8.
-6. Golden test for the fixture (`00` §6).
-
-### M2 — Mock API
-
-1. In-memory store + JSONL appender (fsync per line).
-2. Idempotency: `key → (payload_sha256, status, body)`; mismatch → 422.
-3. Fault plan parser `kind:fault@n` + per-endpoint counters.
-4. Tests through `ASGITransport`.
-
-### M3 — Persistence
-
-1. Alembic `0001_initial` (DDL from `02` §7), downgrade drops cleanly.
-2. Repository contract tests parametrized over in-memory and PG.
-3. Concurrency tests: two sessions inserting the same key; two dispatchers
-   claiming.
-
-### M4 — Use cases & resilience
-
-1. `RetryPolicy` (pure: given attempt + `Retry-After` → delay) unit tests.
-2. `CircuitBreaker` with injected clock.
-3. `HttpTaskSource` with stamina; `HttpDeliveryGateway` single-attempt
-   classifier.
-4. `ProcessTasks` → S1–S4; `DispatchActions` + `ReconcileUnknown` → S5–S6,
-   F10–F14.
-
-### M5 — LLM
-
-1. Port + stub (scripted per cache key; modes: valid, malformed, timeout).
-2. Interpreter: needs-LLM predicate, cache, validation pipeline, breaker,
-   fallback; S7 parametrized.
-3. Gemini adapter: constructor-injected client, `response_mime_type =
-   "application/json"`, `response_schema = NoteInterpretation`, temperature
-   0, timeout; usage → tokens/cost metrics. Tests with fake client.
-4. Drafter + validator; S8.
-
-### M6–M8 — see table; each ends with a green CI and a regenerated sample.
-
-## 3. Branching & commits
-
-* Trunk-based on `main` with short feature branches per milestone; PRs with
-  CI green; Conventional Commits (`feat:`, `fix:`, `test:`, `docs:`).
-* Tag `v1.0.0` for the submission; the ZIP is produced from the tag
-  (`git archive`) so it contains exactly what CI tested.
-
-## 4. Explicitly out of scope (documented as "production next steps")
-
-* Real monday.com adapter (GraphQL + webhooks) — seam exists.
-* Real e-mail/SMS providers — mock only by requirement.
-* Re-reminder cadence / escalation ladder over days (needs product input).
-* Real IdP integration (OIDC client credentials) — local token issuer with
-  identical claims for the exercise.
-* Internal TLS between containers and dynamic DB credentials — documented
-  ASVS deviations for local compose, required in production (`15`).
-* OpenTelemetry tracing export — logs + metrics are enough here.
-* Second LLM *provider* for failover — the router already fails over
-  across three OpenAI model generations (`ADR-0013`), and the template
-  fallback covers a full outage; a Gemini backend is optional.
+1. Replace the mock adapters with the real tracker and messaging provider.
+2. Run behind a TLS gateway; issue service tokens from the company IdP.
+3. Calibrate the orchestrator on real, labelled notes; record provider
+   responses into the evaluation harness and gate prompt changes on it.
+4. Move the LLM spend budget into PostgreSQL next to the recipient quota.
+5. Add re-reminder cadence and an approval queue once the product owner
+   defines them.
+6. Run DAST, image attestation and the benchmark in the deployment
+   pipeline.

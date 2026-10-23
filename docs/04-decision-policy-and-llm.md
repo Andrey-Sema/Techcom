@@ -55,7 +55,7 @@ Notes on the table:
 * All thresholds live in `config/policy.toml`; a live-review change such as
   "escalate after 3 days" is a one-line config edit plus a golden update.
 
-## 2a. Delivery-time rules (added after the senior audit, `16` #26)
+## 2a. Delivery-time rules
 
 These run **after** the decision, when the action is enqueued or claimed;
 they never change *what* we decide, only *whether/when/to whom* it can be
@@ -194,7 +194,7 @@ never to a state change.
 * **Few-shot**: 4 short synthetic examples (materials, upstream, none,
   injection → `unclear`/`none` with confidence ≤ 0.3).
 * **Determinism**: temperature 0, fixed seed when the provider supports it,
-  response schema enforced by the provider (Gemini `response_schema`) **and**
+  response schema enforced by the provider (strict `json_schema`) **and**
   re-validated locally (provider-side schema is a convenience, not a
   guarantee).
 * **Data minimisation**: the interpreter receives only the note and task
@@ -213,6 +213,27 @@ never to a state change.
 | Detection | `InjectionScreen` regex/heuristics (`ignore (all\|previous) instructions`, `system prompt`, `you are now`, `mark .* (complete\|done)`, `disregard`, role-tag lookalikes) → flag + audit + no LLM call for that note. Detection is a *signal*, not the defence — the layers above hold even if detection misses. |
 | Business | Decision is computed from dates/status (TC-1006 still gets a correct overdue follow-up). |
 | Human | Escalations are messages to humans, not automatic changes. |
+
+## 7a. Bounded orchestrator (ADR-0016)
+
+For each new actionable task state the orchestrator lets the model plan
+the action inside an envelope computed by code:
+
+| Baseline (policy) | Alternatives the model may choose |
+|-------------------|-----------------------------------|
+| `follow_up_owner` → owner | escalate → manager, only if an earlier action for the task was sent and it is still overdue |
+| `request_eta` → assigned team | ask the owner instead; escalate → manager under the same condition |
+| `clarify_missing_info` → owner or coordinator | the project coordinator |
+| `escalate` → manager | the coordinator; never a downgrade |
+| `no_action` | not planned: the model is never called |
+
+Loop: `get_history` → `check_plan` → `submit_plan`, at most four steps;
+violation codes from the guard are fed back for repair. Messages use the
+placeholders `{recipient_name}`, `{task_id}`, `{task_title}`, `{project}`,
+`{due_date}`, `{days_overdue}`, `{missing_fields}`, `{owner_name}` and
+`{reason_text}`; code renders them. Any failure returns the baseline and
+its template with `llm_fallback`. The dedupe key always comes from the
+baseline, so reruns never call the model or send twice.
 
 ## 8. Message templates (fallback and default for flagged notes)
 

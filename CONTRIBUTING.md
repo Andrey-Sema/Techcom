@@ -47,5 +47,5 @@ dependency versions. Never edit it by hand: run `uv lock`.
 ## Definition of done
 
 See `docs/07-acceptance-criteria.md` section 8. In short: a failing-first
-test, all gates green, docs and the progress tracker in
+test, all gates green, docs and the status table in
 `docs/08-implementation-plan.md` updated.

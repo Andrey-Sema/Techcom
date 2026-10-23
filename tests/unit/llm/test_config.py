@@ -25,6 +25,7 @@ def config_dict(**overrides: Any) -> dict[str, Any]:
         "routes": {
             "interpret_note": [route],
             "draft_message": [route],
+            "orchestrate": [route],
         },
         "prices": {"gpt-6.1-sol": PRICE},
         "daily_budget_usd": "5",
@@ -59,7 +60,13 @@ def test_missing_purpose_is_rejected() -> None:
 
 
 def test_empty_route_list_is_rejected() -> None:
-    data = config_dict(routes={"interpret_note": [], "draft_message": []})
+    data = config_dict(
+        routes={
+            "interpret_note": [],
+            "draft_message": [],
+            "orchestrate": [],
+        }
+    )
     with pytest.raises(ValidationError, match="is empty"):
         RoutingConfig.model_validate(data)
 
@@ -67,7 +74,11 @@ def test_empty_route_list_is_rejected() -> None:
 def test_unknown_model_is_rejected() -> None:
     route = [{"model": "gpt-6.1-sool"}]
     data = config_dict(
-        routes={"interpret_note": route, "draft_message": route}
+        routes={
+            "interpret_note": route,
+            "draft_message": route,
+            "orchestrate": route,
+        }
     )
     with pytest.raises(ValidationError, match="unknown model"):
         RoutingConfig.model_validate(data)
@@ -82,7 +93,11 @@ def test_missing_price_is_rejected() -> None:
 def test_effort_outside_literal_is_rejected() -> None:
     route = [{"model": "gpt-6.1-sol", "effort": "minimal"}]
     data = config_dict(
-        routes={"interpret_note": route, "draft_message": route}
+        routes={
+            "interpret_note": route,
+            "draft_message": route,
+            "orchestrate": route,
+        }
     )
     with pytest.raises(ValidationError):
         RoutingConfig.model_validate(data)
@@ -136,6 +151,7 @@ def test_load_routing_config_reads_toml(tmp_path: Path) -> None:
         'daily_budget_usd = "1"\n'
         '[[routes.interpret_note]]\nmodel = "gpt-6-sol"\n'
         '[[routes.draft_message]]\nmodel = "gpt-6-sol"\n'
+        '[[routes.orchestrate]]\nmodel = "gpt-6-sol"\n'
         '[prices."gpt-6-sol"]\n'
         'input_per_mtok = "2"\noutput_per_mtok = "10"\n'
         'source = "t"\nverified_on = "2026-10-22"\n',

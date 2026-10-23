@@ -1,7 +1,7 @@
 # Executed CLI samples
 
 Generated with `make demo`, `as_of=2026-10-21`, the committed task fixture,
-default stub and a fresh local receiver journal. These are actual output
+the offline orchestrator model and a fresh local receiver journal. These are actual output
 artifacts, not hand-written expected responses. Run/row/receipt identifiers
 and the receiver's wall-clock timestamps vary between executions.
 
@@ -15,8 +15,7 @@ execution together. The model is an offline stub: these samples do not
 measure real-provider accuracy. Report files contain deliberate fixture
 business facts, distinct from the redacted operational log stream.
 
-The final concurrency/admission revision preserves these historical
-execution artifacts. It has not been run, so the files are not presented
-as outputs of that revision. `api_actions.example.json` is a separately
+Each actionable decision shows the policy `baseline`, the orchestrator's
+`rationale` and the `agent_planned` flag. `api_actions.example.json` is a separately
 labeled, hand-authored API shape example using synthetic facts; it is
 not an execution artifact and is excluded from demo comparison.

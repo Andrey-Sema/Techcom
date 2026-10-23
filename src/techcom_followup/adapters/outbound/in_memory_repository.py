@@ -120,7 +120,7 @@ class InMemoryRepository:
             AuditEvent(
                 f"decision.{outcome.value}",
                 now,
-                {"decision_id": str(decision_id)},
+                write.audit_payload(decision_id),
                 write.run_id,
                 write.decision.task_id,
             )
@@ -424,20 +424,15 @@ def _visible(action: ActionRecord, query: ActionReadQuery) -> bool:
     target = action.decision.target
     return (
         target is not None
-        and (
-            query.all_projects
-            or (
-                action.source_project in query.projects
-                and target.project in query.projects
-            )
-        )
+        and _authorized({action.source_project, target.project}, query)
         and (
             query.project is None
-            or (
-                action.source_project == query.project
-                and target.project == query.project
-            )
+            or {action.source_project, target.project} == {query.project}
         )
         and (query.task_id is None or action.decision.task_id == query.task_id)
         and (query.status is None or action.status == query.status)
     )
+
+
+def _authorized(projects: set[str | None], query: ActionReadQuery) -> bool:
+    return query.all_projects or projects <= set(query.projects)
