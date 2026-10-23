@@ -146,6 +146,7 @@ class _Facts:
     task: Task
     owner: Target
     blocker: BlockerCategory
+    needs_eta: bool
     delta: int
     days_since_update: int | None
 
@@ -240,6 +241,7 @@ class DecisionPolicy:
             task=task,
             owner=owner,
             blocker=self._blocker(interpretation),
+            needs_eta=bool(interpretation and interpretation.needs_eta),
             delta=(task.due_date - as_of).days,
             days_since_update=(
                 None
@@ -290,7 +292,10 @@ class DecisionPolicy:
         )
 
     def _r5_materials(self, facts: _Facts) -> _Verdict | None:
-        if facts.blocker is not BlockerCategory.MATERIALS:
+        if (
+            facts.blocker is not BlockerCategory.MATERIALS
+            or not facts.needs_eta
+        ):
             return None
         return _Verdict(
             "R5",
@@ -329,9 +334,21 @@ class DecisionPolicy:
 
     @staticmethod
     def _r7_follow_up(facts: _Facts) -> _Verdict | None:
-        # A blocked task that reaches R7 has no usable blocker: R5 and
-        # R6 already took materials and dependency blockers.
-        if facts.task.status is TaskStatus.BLOCKED:
+        # R5 took materials without an ETA and R6 dependency blockers;
+        # a materials blocker here has a known ETA, so only check
+        # progress once the task is late or blocked.
+        if facts.blocker is BlockerCategory.MATERIALS:
+            if (
+                facts.delta >= 0
+                and facts.task.status is not TaskStatus.BLOCKED
+            ):
+                return None
+            code = ReasonCode.MATERIALS_ETA_KNOWN
+            reason = (
+                "Materials dependency has an ETA; "
+                f"{_timing(facts.delta)}; please confirm progress."
+            )
+        elif facts.task.status is TaskStatus.BLOCKED:
             code = ReasonCode.BLOCKED_REASON_UNCLEAR
             reason = (
                 f"Status is blocked but the reason is unclear; "

@@ -1,8 +1,11 @@
-# Executed CLI samples
+# Executed workflow samples
 
-Generated with `make demo`, `as_of=2026-10-21`, the committed task fixture,
-the offline orchestrator model and a fresh local receiver journal. These are actual output
-artifacts, not hand-written expected responses. Run/row/receipt identifiers
+Refreshed for ADR-0017 with the real processor, offline orchestrator,
+dispatcher and DeliveryStore journal at `as_of=2026-10-21`. The same
+fixture and workflow as the CLI demo were used, with an in-process source
+and direct mock-store gateway because HTTP runtime dependencies were
+unavailable. These are executed workflow artifacts; the HTTP CLI demo
+comparison still needs its complete environment. Run/row/receipt identifiers
 and the receiver's wall-clock timestamps vary between executions.
 
 * `decisions.json`: all ten explainable decisions; seven have messages.

@@ -41,6 +41,10 @@ async def test_upgrade_recovers_identity_from_surviving_decision_receipt(
     pg_engine: AsyncEngine,
 ) -> None:
     repository = PgRepository(pg_engine)
+    async with pg_engine.begin() as connection:
+        await connection.run_sync(
+            lambda sync: revision(sync, "0005", upgrade=False)
+        )
     write = await action_write(repository)
     await repository.record_decision(write, NOW)
     async with pg_engine.begin() as connection:

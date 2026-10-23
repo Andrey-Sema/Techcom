@@ -20,43 +20,8 @@ from techcom_followup.application.ports import (
     LLMResult,
     TokenUsage,
 )
-
-_WORDING: dict[str, tuple[str, str]] = {
-    "follow_up_owner": (
-        "Quick check-in on {task_id}: {task_title}",
-        (
-            "Hi {recipient_name}, I am checking in on {task_id} "
-            "'{task_title}' ({project}), due {due_date}. Our tracker shows: "
-            "{reason_text} Could you share where it stands, anything "
-            "blocking it and a realistic completion date? Thank you!"
-        ),
-    ),
-    "request_eta": (
-        "Delivery ETA needed for {task_id}: {task_title}",
-        (
-            "Hello {recipient_name}, {task_id} '{task_title}' ({project}) is "
-            "waiting on materials and is due {due_date}. Could you confirm "
-            "when the delivery will arrive, or tell us who can?"
-        ),
-    ),
-    "clarify_missing_info": (
-        "Details needed for {task_id}: {task_title}",
-        (
-            "Hello {recipient_name}, {task_id} '{task_title}' ({project}) "
-            "cannot be tracked reliably because it is missing: "
-            "{missing_fields}. Could you fill this in or tell us who owns it?"
-        ),
-    ),
-    "escalate": (
-        "Needs your attention: {task_id} {task_title}",
-        (
-            "Hello {recipient_name}, {task_id} '{task_title}' ({project}) "
-            "needs a decision from you. {reason_text} The owner is "
-            "{owner_name}; the due date was {due_date}. Could you help "
-            "unblock it or agree on a new plan?"
-        ),
-    ),
-}
+from techcom_followup.domain.agent_messages import agent_phrasings
+from techcom_followup.domain.models import DecisionKind
 
 
 def _plan(
@@ -71,7 +36,8 @@ def _plan(
         reason = "An earlier follow-up was sent and the task is still late."
     else:
         reason = "The baseline action fits the facts."
-    subject, body = _WORDING[kind]
+    wording = agent_phrasings(DecisionKind(kind))[0]
+    subject, body = wording.subject, wording.body
     return {
         "decision": kind,
         "recipient": recipient,

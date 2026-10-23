@@ -20,12 +20,13 @@ from techcom_followup.application.ports import (
     LLMRequest,
 )
 from techcom_followup.application.repository import CacheEntry, Repository
-from techcom_followup.domain.injection import screen as screen_note
+from techcom_followup.domain.injection import screen_task
 from techcom_followup.domain.interpretation import (
     fallback,
     needs_llm,
     prefilter,
 )
+from techcom_followup.domain.messages import redact_contacts
 from techcom_followup.domain.models import (
     BlockerCategory,
     InterpretationSource,
@@ -101,7 +102,7 @@ class NoteInterpreter:
         self, task: Task, *, as_of: date, screen: ScreenResult
     ) -> NoteInterpretation | None:
         """Classify with keywords or one screened, validated call."""
-        if screen.suspicious or screen_note(task.notes).suspicious:
+        if screen.suspicious or screen_task(task).suspicious:
             return fallback()
         hit = prefilter(task.notes)
         if not needs_llm(
@@ -139,6 +140,7 @@ class NoteInterpreter:
             return None
         valid = (
             candidate.grounded(note)
+            and candidate.evidence in redact_contacts(note)
             and candidate.confidence >= MIN_CONFIDENCE
             and value.source is InterpretationSource.LLM
         )
@@ -149,7 +151,8 @@ class NoteInterpreter:
             purpose=LLMPurpose.INTERPRET_NOTE,
             instructions=_INSTRUCTIONS,
             input_text=(
-                f'<task_note id="{key}">{html.escape(note)}</task_note>'
+                f'<task_note id="{key}">'
+                f"{html.escape(redact_contacts(note))}</task_note>"
             ),
             schema_name="note_interpretation",
             json_schema=InterpretationOutput.model_json_schema(),
@@ -181,5 +184,6 @@ class NoteInterpreter:
 def _validate_interpretation(text: str, note: str) -> InterpretationOutput:
     output = parse_output(text, InterpretationOutput)
     require_output(output.grounded(note), "ungrounded")
+    require_output(output.evidence in redact_contacts(note), "unseen_evidence")
     require_output(output.confidence >= MIN_CONFIDENCE, "confidence")
     return output

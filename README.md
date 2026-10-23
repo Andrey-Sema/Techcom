@@ -8,12 +8,12 @@
 
 A Python service that reads project tasks, decides which ones need
 attention, lets an **LLM orchestrate the follow-up inside limits set by
-code**, and delivers the resulting messages **exactly once**, even when
+code**, and delivers the resulting messages **idempotently**, even when
 APIs throttle, fail, or time out after a successful write.
 
 ```text
 rules decide WHETHER to act  →  the LLM plans HOW, inside an envelope
-→  a deterministic guard approves  →  the outbox delivers exactly once
+→  a deterministic guard approves  →  the outbox delivers idempotently
 ```
 
 ---
@@ -109,10 +109,23 @@ flowchart LR
 
 ## The LLM orchestrator and how it is kept in check
 
+Security boundary: the model selects exact reviewed subject/body pairs
+for its chosen action; arbitrary prose is rejected. Names, dates and
+other facts are rendered by code. Titles and project labels are omitted
+from model context, contact data is redacted from notes, and every
+tracker text surface is screened. This is contact minimisation, not
+guaranteed anonymisation. The code records a bounded, code-owned rationale.
+
+Notification slots additionally enforce one action per source task state,
+independent of interpreter failures or changing model answers. Existing
+operation IDs stay unchanged. PostgreSQL migration 0006 backfills from
+decision receipts and refuses upgrades with unrecoverable old tombstones.
+See [ADR-0017](docs/adr/0017-llm-output-and-notification-boundaries.md).
+
 The assignment asks for an LLM that interprets notes and drafts messages
 without inventing facts. This service goes further: the model
 **orchestrates the follow-up** (it chooses the action, the recipient, the
-priority and the wording, and can escalate an unanswered task), while
+priority and the wording, and can escalate an previously notified overdue task), while
 every step is constrained, validated and audited by code.
 
 ### What the model decides, and what code decides
@@ -122,8 +135,8 @@ every step is constrained, validated and audited by code.
 | Whether a task needs attention at all | Which allowed action fits: follow up, request an ETA, clarify, escalate |
 | The envelope of allowed actions and recipients | Which allowed recipient: owner, coordinator, manager, assigned team |
 | Every fact: names, dates, IDs, days overdue | Priority (it may raise it, never lower it) |
-| Deduplication, delivery, retries | The message wording, around placeholders |
-| Final approval of the plan | A rationale and evidence quoted from the note |
+| Deduplication, delivery, retries | One of the reviewed message phrasings |
+| Final approval of the plan | A proposed choice and evidence quoted from the note |
 
 ### The loop
 
@@ -161,7 +174,7 @@ network. The outbox is the only executor.
 | no action | the model is not called |
 
 First contacts therefore always follow the brief's routing; the model's
-extra authority is to chase an unanswered task up the chain.
+extra authority is to chase an previously notified overdue task up the chain.
 
 ### The guard
 
@@ -187,13 +200,21 @@ costs only wording, because the baseline template is sent instead.
 
 ### Failure handling and budgets
 
+The default planning deadline is 20 seconds for history lookup and the
+entire model conversation together. External cancellation propagates.
+Template, drafter and agent messages share the receiver's final limits:
+120-character subject and 800-character body. Long subjects use a compact
+code-owned form that preserves the full task ID; task details stay in the
+body. Contact minimisation preserves canonical IDs and calendar context.
+
 - At most **four steps** per plan; on the last one the model must submit.
 - Invalid JSON, an unknown tool, a timeout, an open circuit breaker, an
   exhausted daily budget or a plan that never passes the guard all fall
   back to the **baseline action and its template** (`llm_fallback` flag).
-- If the note, title or project name trips the injection screen, all
-  three are **withheld** from the model.
-- The model never sees personal names; recipients are opaque references.
+- If the note, title or project name trips the injection screen, the
+  note is **withheld** from the model.
+- Recipients are opaque references; title and project are never sent and
+  contacts in notes are redacted. A note can still mention a person.
 - Each plan stores the baseline next to the chosen decision, a bounded
   rationale, and an audit trace with the tools used, step count,
   violation codes and outcome, in the same transaction as the decision.
@@ -257,7 +278,7 @@ A record from [`samples/decisions.json`](samples/decisions.json):
   "rule_id": "R5+agent",
   "baseline": {"decision": "request_eta", "rule_id": "R5"},
   "reason": "Blocked by materials; 3 day(s) overdue; delivery date unknown.",
-  "rationale": "The baseline action fits the facts.",
+  "rationale": "Selected request_eta for assigned_team within the policy envelope.",
   "flags": ["agent_planned"],
   "message": {
     "subject": "Delivery ETA needed for TC-1002: Install handholes",

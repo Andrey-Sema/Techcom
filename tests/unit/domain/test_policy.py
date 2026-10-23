@@ -40,7 +40,13 @@ def reading(
     confidence: float = 0.9,
     source: InterpretationSource = InterpretationSource.LLM,
 ) -> NoteInterpretation:
-    return NoteInterpretation(blocker, False, confidence, "quote", source)
+    return NoteInterpretation(
+        blocker,
+        blocker is BlockerCategory.MATERIALS,
+        confidence,
+        "quote",
+        source,
+    )
 
 
 def decide(
@@ -437,3 +443,37 @@ class TestConfigValidation:
             }
         )
         assert table.manager("indiana   osp").name == "M"
+
+
+class TestR7MaterialsEtaKnown:
+    """A materials blocker with a known ETA asks for progress only."""
+
+    KNOWN = NoteInterpretation(
+        BlockerCategory.MATERIALS,
+        False,
+        0.9,
+        "quote",
+        InterpretationSource.LLM,
+    )
+
+    @pytest.mark.parametrize(
+        ("status", "due"),
+        [(TaskStatus.WORKING_ON_IT, -2), (TaskStatus.BLOCKED, 5)],
+    )
+    def test_late_or_blocked_work_gets_a_progress_check(
+        self, policy: DecisionPolicy, status: TaskStatus, due: int
+    ) -> None:
+        task = make_task(status=status, due_date=due_in(due))
+        assert decide(policy, task, self.KNOWN) == (
+            DecisionKind.FOLLOW_UP_OWNER,
+            "R7",
+            ReasonCode.MATERIALS_ETA_KNOWN,
+            OWNER,
+        )
+
+    def test_on_track_work_is_left_to_the_later_rules(
+        self, policy: DecisionPolicy
+    ) -> None:
+        task = make_task(status=TaskStatus.WORKING_ON_IT, due_date=due_in(10))
+        kind, rule, _code, _target = decide(policy, task, self.KNOWN)
+        assert (kind, rule) == (DecisionKind.NO_ACTION, "R9")

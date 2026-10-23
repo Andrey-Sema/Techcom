@@ -13,6 +13,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import date
 
+from techcom_followup.domain.agent_messages import agent_phrasings
 from techcom_followup.domain.envelope import ActionEnvelope, priority_rank
 from techcom_followup.domain.free_text import free_text_violations
 from techcom_followup.domain.injection import screen
@@ -20,10 +21,12 @@ from techcom_followup.domain.messages import (
     LLM_PLACEHOLDERS,
     DraftSource,
     MessageDraft,
+    MessageTemplate,
     MessageValidator,
     facts_for,
     has_contact_or_link,
-    render,
+    redact_contacts,
+    render_draft,
 )
 from techcom_followup.domain.models import (
     Decision,
@@ -36,11 +39,9 @@ from techcom_followup.domain.models import (
 )
 from techcom_followup.domain.text import clean_line, fold
 
-AGENT_TEMPLATE_ID = "agent.v1"
+AGENT_TEMPLATE_ID = "agent.v2"
 AGENT_PLACEHOLDERS = LLM_PLACEHOLDERS | {"owner_name", "reason_text"}
 MAX_RATIONALE_CHARS = 300
-MAX_RENDERED_SUBJECT = 160
-MAX_RENDERED_BODY = 1_200
 MIN_EVIDENCE_CHARS = 8
 NOTE_ECHO_WORDS = 6
 _WORD = re.compile(r"\w+")
@@ -109,16 +110,15 @@ def review(
         return Review(violations)
     decision = _decision(proposal, envelope)
     facts = facts_for(decision, task, as_of)
-    message = MessageDraft(
-        subject=render(proposal.subject, facts),
-        body=render(proposal.body, facts),
-        template_id=AGENT_TEMPLATE_ID,
-        source=DraftSource.LLM,
-    )
-    if (
-        len(message.subject) > MAX_RENDERED_SUBJECT
-        or len(message.body) > MAX_RENDERED_BODY
-    ):
+    try:
+        message = render_draft(
+            MessageTemplate(
+                AGENT_TEMPLATE_ID, proposal.subject, proposal.body
+            ),
+            facts,
+            source=DraftSource.LLM,
+        )
+    except ValueError:
         return Review(("rendered_length",))
     return Review((), decision, message)
 
@@ -135,6 +135,11 @@ def _action_violations(
 
 
 def _message_violations(proposal: PlanProposal, task: Task) -> Iterator[str]:
+    if not any(
+        proposal.subject == choice.subject and proposal.body == choice.body
+        for choice in agent_phrasings(proposal.kind)
+    ):
+        yield "unapproved_phrasing"
     names = [task.owner] if task.owner else []
     validator = MessageValidator(names)
     yield from validator.violations(
@@ -168,6 +173,7 @@ def _rationale_violations(
         not note_visible
         or len(quote.strip()) < MIN_EVIDENCE_CHARS
         or quote not in note
+        or quote not in redact_contacts(note)
         for quote in proposal.evidence
     ):
         yield "ungrounded_evidence"
@@ -203,5 +209,9 @@ def _decision(proposal: PlanProposal, envelope: ActionEnvelope) -> Decision:
         priority=priority,
         flags=baseline.flags | {Flag.AGENT_PLANNED},
         interpretation=baseline.interpretation,
-        rationale=clean_line(proposal.rationale, MAX_RATIONALE_CHARS),
+        rationale=clean_line(
+            f"Selected {proposal.kind.value} for {proposal.recipient} "
+            "within the policy envelope.",
+            MAX_RATIONALE_CHARS,
+        ),
     )

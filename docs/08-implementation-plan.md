@@ -15,6 +15,17 @@ The core runs with `make demo` alone: no Docker, database or API key.
 
 ## 2. Status
 
+Security follow-up (ADR-0017): reviewed agent wording, tracker-surface
+screening/contact minimisation, conservative ETA/negation handling and
+source-state notification slots are implemented. Focused local checks
+are recorded in the pull request; PostgreSQL migration, complete CI and
+live-provider validation require the corresponding environment.
+
+Additional boundary fixes in the same PR add a total planning deadline,
+shared receiver message bounds and preservation of canonical IDs and
+date/time context during contact minimisation. Regression tests exercise
+the actual mock receiver schema, not only local validator constants.
+
 | Area | State | Notes |
 |------|-------|-------|
 | Domain core (normalize, policy R1–R9, identity, messages, injection screen) | done | Unit, property, golden and mutation tests |

@@ -44,9 +44,9 @@ DATA = Path(__file__).parent
 
 def bundle() -> tuple[tuple[EvalCase, ...], tuple[Recording, ...], Manifest]:
     return load_bundle(
-        DATA / "bundles/postfix.v2/notes.jsonl",
-        DATA / "bundles/postfix.v2/recordings/responses.jsonl",
-        DATA / "bundles/postfix.v2/manifest.json",
+        DATA / "bundles/hardening.v2/notes.jsonl",
+        DATA / "bundles/hardening.v2/recordings/responses.jsonl",
+        DATA / "bundles/hardening.v2/manifest.json",
     )
 
 
@@ -87,7 +87,7 @@ async def test_current_pipeline_replay_is_deterministic_and_honest() -> None:
     assert (
         report
         == (
-            DATA.parents[1] / "docs/eval/interp.v1-draft.v2-postfix.v2.md"
+            DATA.parents[1] / "docs/eval/interp.v1-draft.v2-hardening.v2.md"
         ).read_text()
     )
 
