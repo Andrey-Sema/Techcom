@@ -7,6 +7,7 @@ from dataclasses import dataclass, field, replace
 from datetime import date
 from uuid import UUID
 
+import structlog
 from pydantic import JsonValue
 
 from techcom_followup.application.processing_ports import (
@@ -43,6 +44,7 @@ from techcom_followup.domain.normalize import UNKNOWN_LABEL, normalize
 from techcom_followup.domain.policy import DecisionPolicy
 
 DEFAULT_WRITE_CONCURRENCY = 8
+_log = structlog.get_logger(__name__)
 MAX_WRITE_CONCURRENCY = 16
 
 
@@ -140,6 +142,15 @@ class ProcessTasks:
                     else RunReport(None, "skipped_locked")
                 )
             result = report.status
+            _log.info(
+                "run.completed",
+                run_id=report.run_id,
+                outcome=report.status,
+                decisions=len(report.decisions),
+                rejected=len(report.rejected),
+                enqueued=report.enqueued,
+                duplicates=report.duplicates,
+            )
             return report
         finally:
             telemetry.count(CounterName.RUNS, result=result)

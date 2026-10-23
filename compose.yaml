@@ -1,7 +1,8 @@
 name: techcom
 services:
   db:
-    image: postgres:18
+    # Pinned by digest like every other image; Dependabot proposes updates.
+    image: postgres:18@sha256:edb0c08dc33befd0262ab3b5cf1c4f3f8cfd8b09e88c05b45adee29d6761ddb6
     environment:
       POSTGRES_DB: followup
       POSTGRES_USER: followup

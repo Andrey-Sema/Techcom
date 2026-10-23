@@ -38,9 +38,9 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev --no-editable --package techcom-mocks
 
 FROM ${PYTHON_IMAGE} AS mock
-RUN python -m pip uninstall --yes --no-cache-dir pip \
+RUN python -m pip uninstall --yes --no-cache-dir --root-user-action=ignore pip \
  && groupadd --system --gid 10002 mock \
- && useradd --system --uid 10002 --gid mock \
+ && useradd --uid 10002 --gid mock \
         --no-create-home --shell /usr/sbin/nologin mock \
  && install --directory --owner mock --group mock --mode 0700 /var/lib/mock
 COPY --from=mock-builder /opt/venv /opt/venv
@@ -67,9 +67,9 @@ ENTRYPOINT ["uvicorn", "techcom_mocks.app:create_app", "--factory", \
 FROM ${PYTHON_IMAGE} AS runtime
 # The base image's pip is unused at runtime and vendors its own
 # (often vulnerable) copies of urllib3 and msgpack: remove it.
-RUN python -m pip uninstall --yes --no-cache-dir pip \
+RUN python -m pip uninstall --yes --no-cache-dir --root-user-action=ignore pip \
  && groupadd --system --gid 10001 app \
- && useradd --system --uid 10001 --gid app \
+ && useradd --uid 10001 --gid app \
         --no-create-home --shell /usr/sbin/nologin app
 # Root owns every file, so the service user cannot modify its own code.
 COPY --from=builder /opt/venv /opt/venv

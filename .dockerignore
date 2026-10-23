@@ -8,6 +8,14 @@
 secrets
 *.pem
 *.key
+*.crt
+*.csr
+*.p12
+*.pfx
+*.jks
+*.kdbx
+id_rsa*
+id_ed25519*
 .pytest_cache
 .mypy_cache
 .ruff_cache
@@ -26,3 +34,9 @@ scripts
 tests
 mutants
 site
+# Editors and OS files never belong in a build context.
+.idea
+.vscode
+*.swp
+*.swo
+.DS_Store

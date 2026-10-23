@@ -24,6 +24,7 @@ from datetime import date
 from functools import partial
 from typing import Annotated, Literal
 
+import structlog
 from pydantic import Field, JsonValue
 
 from techcom_followup.application.llm_workflow import (
@@ -72,6 +73,7 @@ from techcom_followup.domain.models import (
 from techcom_followup.domain.policy import DecisionPolicy
 
 PROMPT_VERSION = "orchestrate.v1"
+_log = structlog.get_logger(__name__)
 MAX_STEPS = 4
 MAX_HISTORY = 10
 MAX_EVIDENCE_QUOTES = 3
@@ -291,8 +293,16 @@ class FollowUpOrchestrator:
             history=history,
         )
         planned = await self._converse(session)
+        audit = planned.audit
         self._telemetry.count(
-            CounterName.AGENT_PLANS, outcome=str(planned.audit["outcome"])
+            CounterName.AGENT_PLANS, outcome=str(audit["outcome"])
+        )
+        _log.info(
+            "agent.plan",
+            outcome=audit["outcome"],
+            steps=audit["steps"],
+            decision_changed=audit["decision_changed"],
+            recipient_changed=audit["recipient_changed"],
         )
         return planned
 

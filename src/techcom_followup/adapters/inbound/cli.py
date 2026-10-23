@@ -103,7 +103,7 @@ class Commands:
             if output is not None:
                 _write_output(output, result)
         except (Exception, KeyboardInterrupt, asyncio.CancelledError) as error:
-            _LOG.error("command.failed")
+            _LOG.error("command.failed", error_type=type(error).__name__)
             self._console.print(
                 _ERRORS.get(str(error), "Command failed.")
                 if isinstance(error, CommandError)

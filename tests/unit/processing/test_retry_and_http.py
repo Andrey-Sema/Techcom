@@ -258,10 +258,11 @@ async def test_source_total_deadline_cancels_inflight_attempt() -> None:
         (302, DeliveryKind.PERMANENT),
         (409, DeliveryKind.RETRYABLE),
         (429, DeliveryKind.RETRYABLE),
-        (500, DeliveryKind.RETRYABLE),
-        (502, DeliveryKind.RETRYABLE),
+        # The write may have committed behind a failed gateway.
+        (500, DeliveryKind.UNKNOWN),
+        (502, DeliveryKind.UNKNOWN),
         (503, DeliveryKind.RETRYABLE),
-        (504, DeliveryKind.RETRYABLE),
+        (504, DeliveryKind.UNKNOWN),
     ],
 )
 async def test_delivery_status_classifier_is_single_attempt(
