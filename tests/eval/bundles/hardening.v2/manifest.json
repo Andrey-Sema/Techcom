@@ -5,6 +5,6 @@
   "provenance": "Synthetic, manually authored scripted replay fixtures. No provider API was called; provider quality remains UNVERIFIED.",
   "interpretation_prompt": "interp.v1",
   "drafting_prompt": "draft.v2",
-  "pipeline_commit": "19471cc7d39b8ca3ec701f20d3f0e14f4710d91b",
-  "pipeline_sha256": "8040336b5da0c6ec9bfc1fa4dd354a6f6bbaa24dae8c44f6763c52d978349b41"
+  "pipeline_commit": "29749d87e0f5ce3ac203954d2fe0c5257f05bd7b",
+  "pipeline_sha256": "e67f2690306c8f6e707bf6051324d23f45e831d3a4314cc3d705c90067afa9ad"
 }
