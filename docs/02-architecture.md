@@ -279,11 +279,14 @@ Why these constraints matter:
 **CLI (Typer)** — primary demo surface:
 
 ```text
-followup run       --as-of 2026-10-21 [--dispatch] [--output samples/]
-followup dispatch  [--max-batch 50]
-followup reconcile
+followup run       --as-of 2026-10-21 [--dispatch] [--output DIR]  # PostgreSQL
+followup run       --fixture FILE --dry-run      # no database needed
+followup dispatch  [--limit 50]
+followup reconcile [--limit 50]
 followup report    --run-id <uuid>
-followup demo      # migrate → run → dispatch → rerun → print summary
+followup review    [--approve <operation-id> | --reject <operation-id>]
+followup demo      # in memory: run → dispatch → reconcile → rerun
+followup maintenance prune
 ```
 
 **REST (FastAPI, short-lived service JWT with scopes — see `15` §2 D1,
