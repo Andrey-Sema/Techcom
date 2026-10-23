@@ -335,7 +335,7 @@ Thresholds, routing and status synonyms live in [`config/`](config/).
 | Static checks | Ruff `ALL` (79 columns), mypy `--strict`, Bandit, import-linter (hexagonal layers) |
 | Mutation testing | mutmut on policy, identity and messages |
 | LLM evaluation | Replay harness, 95 cases, macro-F1 0.99, unsafe outcomes 0 |
-| 10,000 tasks | 85.2 s first run, 51.5 s rerun, 201 MB, PostgreSQL 18 ([benchmarks](docs/benchmarks.md)) |
+| 10,000 tasks | 89.1 s first run, 57.6 s rerun, 202 MB, PostgreSQL 18 ([benchmarks](docs/benchmarks.md)) |
 | Security | OWASP ASVS 5.0 L2 as the design target, [OWASP LLM Top 10 matrix](docs/security/owasp-llm-top10.md) with a test per control, least-privilege DB roles ([docs/15](docs/15-security-asvs-l2.md)) |
 
 Architecture: a hexagonal layout with a pure domain core
