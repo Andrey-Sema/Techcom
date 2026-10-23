@@ -1,4 +1,4 @@
-# Observability stack (M10, ADR-0010): Prometheus, Loki, Alloy, Grafana.
+# Observability stack (ADR-0010): Prometheus, Loki, Alloy, Grafana.
 #
 #   make obs-secrets   # once: random Grafana admin credentials
 #   make up-obs        # start; Grafana on http://127.0.0.1:3000

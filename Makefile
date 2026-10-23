@@ -32,7 +32,7 @@ quality:
 	uv run --locked bandit -r tests/eval --exclude 'tests/eval/test_*.py'
 	uv run --locked lint-imports
 
-# Tier B gates (M0b): project invariants, complexity, dead code,
+# Tier B gates: project invariants, complexity, dead code,
 # dependency hygiene and vulnerabilities, spelling, YAML, workflows.
 gates: semgrep-test semgrep complexity deadcode deps audit spelling yaml \
        workflows pyproject-check docs dockerfile-lint
@@ -157,7 +157,7 @@ db-restore:
 	$(DB) pg_restore -U followup --dbname=followup --clean --if-exists \
 	  --exit-on-error --single-transaction < "$(FILE)"
 
-# Observability stack (M10, ADR-0010). Validators run inside the same
+# Observability stack (ADR-0010). Validators run inside the same
 # pinned images as the stack, taken from compose.observability.yaml.
 OBS = docker compose -f compose.observability.yaml
 
@@ -194,7 +194,7 @@ obs-check: obs-secrets
 obs-smoke: up-obs
 	uv run --locked python scripts/obs_smoke.py
 
-# Container images (M8). Scanners run from images pinned by digest; Trivy
+# Container images. Scanners run from images pinned by digest; Trivy
 # releases 0.69.4-0.69.6 were compromised, so never use a floating tag.
 # Behind a TLS-intercepting proxy pass, for example,
 #   DOCKER_BUILD_FLAGS="--secret id=ca_bundle,src=/path/to/ca.crt"
@@ -238,7 +238,7 @@ image-test: images
 	FOLLOWUP_TEST_IMAGE=$(IMAGE) FOLLOWUP_TEST_MOCK_IMAGE=$(MOCK_IMAGE) \
 	  uv run --locked pytest -m image --no-cov -p no:randomly tests/image
 
-# Supply chain (M9). CycloneDX SBOM of the locked runtime dependency set;
+# Supply chain. CycloneDX SBOM of the locked runtime dependency set;
 # image-scan adds the SBOM of the runtime image. CI keeps both as build
 # artefacts (ASVS 15.1.2).
 sbom:

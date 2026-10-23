@@ -8,7 +8,7 @@ imperative shell, packaged as a small modular monolith.**
 | Option considered | Verdict | Reason |
 |-------------------|---------|--------|
 | Single script / notebook-style | ✗ | Cannot demonstrate reliability, testability or swap-ability; fails "code structure". |
-| Full DDD + CQRS + event sourcing | ✗ | Over-engineering for ~10 entities and a 4-hour brief; slows live changes. |
+| Full DDD + CQRS + event sourcing | ✗ | Over-engineering for ~10 entities; slows live changes. |
 | Microservices + Celery/Redis | ✗ | Brief says not required; adds infra with no benefit at 10k/day. PostgreSQL already gives us a durable queue (`FOR UPDATE SKIP LOCKED`). |
 | **Hexagonal, functional core** | ✓ | Domain policy is pure and exhaustively testable; every external system (task API, LLM, delivery, DB, clock) sits behind a port, so faults can be injected deterministically and monday.com can replace the fixture without touching the domain. |
 
@@ -345,7 +345,7 @@ startup, fail fast on error).
 | LLM | **openai** SDK 3.x (Responses API) behind an `LLMRouter` implementing the `LLMClient` port — routes `gpt-6.1-sol` → `gpt-6-sol` → `gpt-5.6-sol`; deterministic **stub**; Gemini optional as a second backend (`ADR-0013`) | Real integration with native structured output (`response_schema`); candidate's production experience. |
 | Logging | **structlog** (JSON) + OpenTelemetry logs SDK (OTLP) | Context binding, redaction; shipped to Loki via Alloy — see `14`. |
 | Auth | **PyJWT[crypto]** (EdDSA) | Short-lived service tokens (ASVS 13.2.1, V9). |
-| Observability | Prometheus, Grafana, Loki, Grafana Alloy (compose profile) | Provisioned as code — see `13` §7–10. |
+| Observability | Prometheus, Grafana, Loki, Grafana Alloy (compose profile) | Provisioned as code under `deploy/` — see `14`. |
 | Metrics | **prometheus-client** | Counters/histograms for decisions, retries, LLM tokens/cost. |
 | Tests | pytest, pytest-asyncio, pytest-cov (branch), hypothesis, respx, testcontainers[postgres], syrupy, pytest-randomly, pytest-xdist | See `06-test-strategy.md`. |
 | Supply chain & security | pre-commit, gitleaks, pip-audit, CycloneDX SBOM, Trivy, Hadolint, Semgrep, zizmor, ZAP API scan, Dependabot | ASVS 5.0 L2 gates — see `15` §11. |

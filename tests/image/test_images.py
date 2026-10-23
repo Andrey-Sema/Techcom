@@ -1,4 +1,4 @@
-"""Container image tests (M8): run the built images, hardened.
+"""Container image tests: run the built images, hardened.
 
 Opt-in with ``-m image`` after ``make images``; the default run excludes
 them because they need the images, not just Docker. Every container

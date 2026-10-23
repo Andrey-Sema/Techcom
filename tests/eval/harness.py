@@ -1,4 +1,4 @@
-"""Replay exact recordings through the real M5 workflow and policy."""
+"""Replay exact recordings through the real LLM workflow and policy."""
 
 import sys
 from collections import deque

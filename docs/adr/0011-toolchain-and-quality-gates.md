@@ -5,7 +5,7 @@
 
 ## Context
 
-The strict audit (`16`) found quality claims without enforcing tools
+A design audit found quality claims without enforcing tools
 (complexity, dead code, dependency hygiene, project invariants). The
 candidate explicitly requires Ruff and Bandit.
 
@@ -25,5 +25,5 @@ tools and actions pinned (versions, SHAs, digests).
 + Every README claim maps to a failing gate.
 + Design invariants (no `str.format` on drafts, no `verify=False`, no
 naive clock in core) cannot regress silently.
-− More configuration to maintain; mitigated by `17` as the single source
-of truth and Dependabot with cooldown.
+− More configuration to maintain; mitigated by the `Makefile` as the
+single entry point and Dependabot with cooldown.

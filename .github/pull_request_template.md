@@ -18,7 +18,7 @@
 
 <!-- ASVS 5.0 requirement ids touched (e.g. V12.3.2), or "none". -->
 
-## Definition of done (docs/07 section 8)
+## Definition of done (CONTRIBUTING.md)
 
 - [ ] Behaviour is covered by tests that fail without the change
 - [ ] Docs, ADRs and the status table in docs/08 are updated

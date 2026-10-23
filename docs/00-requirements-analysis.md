@@ -51,7 +51,7 @@ fail, or time out after a successful write.
 | NFR-2 | Safety | No code path exists that changes task status/owner/dates in the source system. The only side effect is a *message proposal* delivered to a mock channel. |
 | NFR-3 | Reliability | At-least-once dispatch + idempotent receiver ⇒ effectively-once delivery. Every action ends in a terminal or explicitly retryable state. |
 | NFR-4 | Observability | Structured JSON logs with `run_id`, `task_id`, `operation_id`; audit trail; run report; Prometheus metrics. |
-| NFR-5 | Security | **OWASP ASVS 5.0 Level 2** baseline + OWASP Cheat Sheets + OWASP LLM Top 10 (`15`); secrets via Docker secrets / secret manager; `.env.example` without credentials; short-lived service JWTs; LLM has no tools; minimal data sent to LLM. |
+| NFR-5 | Security | **OWASP ASVS 5.0 Level 2** baseline + OWASP Cheat Sheets + OWASP LLM Top 10 (`15`); secrets via Docker secrets / secret manager; `.env.example` without credentials; short-lived service JWTs; LLM has only read-only tools; minimal data sent to LLM. |
 | NFR-11 | Observability | Log inventory, structured security events, Prometheus metrics + alerts, Grafana dashboards, Loki log shipping (`14`). |
 | NFR-6 | Quality | Python ≥ 3.13, strict PEP 8 (ruff, 79 cols), `mypy --strict`, **100 % line + branch coverage** gate. |
 | NFR-7 | Reproducibility | `uv.lock`, one-command bootstrap (`make demo`), Docker Compose with PostgreSQL 18. |
@@ -65,7 +65,7 @@ fail, or time out after a successful write.
 |---------------------------|------------------|
 | Python, API & code structure (20) | Hexagonal layout, typed ports, FastAPI + Typer adapters, pydantic-settings config, resilient HTTP client — `02-architecture.md` |
 | AI integration & validation (20) | OpenAI Responses structured output, strict local schemas, grounding, bounded tool-using orchestrator with envelope and guard, cache, circuit breaker — `04-decision-policy-and-llm.md`, ADR-0016 |
-| Business logic & automation (20) | Rule table, routing table, dedupe, scenario tests — `04`, `07` |
+| Business logic & automation (20) | Rule table, routing table, dedupe, scenario tests — `04`, `tests/scenarios/` |
 | Production reliability (20) | Outbox state machine, idempotency keys, reconciliation, retries, budgets, security — `05-reliability.md` |
 | Tests & documentation (10) | 100 % branch coverage, scenario tests, property tests, golden files, README — `06-test-strategy.md` |
 | Live technical review (10) | `make demo`, fault-injection scenarios, 10k/day operations — README, `09-operations-at-scale.md` |

@@ -6,8 +6,7 @@
 ## Context
 
 A small service must show clear modules, swappable integrations (fixture
-→ monday.com), and deterministic tests for failure scenarios within a short
-timebox.
+→ monday.com), and deterministic tests for failure scenarios.
 
 ## Decision
 

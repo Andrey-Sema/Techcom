@@ -46,6 +46,7 @@ dependency versions. Never edit it by hand: run `uv lock`.
 
 ## Definition of done
 
-See `docs/07-acceptance-criteria.md` section 8. In short: a failing-first
-test, all gates green, docs and the status table in
-`docs/08-implementation-plan.md` updated.
+A failing-first test; coverage stays 100 %; `make quality`, `make gates`
+and `make test` green; docs, ADRs and the status table in
+`docs/08-implementation-plan.md` updated; samples regenerated with
+`make demo` when outputs change.

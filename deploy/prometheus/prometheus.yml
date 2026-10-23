@@ -1,4 +1,4 @@
-# Prometheus configuration (M10). Alert rules mirror docs/09 section 3
+# Prometheus configuration. Alert rules mirror docs/09 section 3
 # and link to the runbook (docs/18). There is no Alertmanager in the
 # local stack: alerts are visible in the Prometheus and Grafana UIs.
 global:

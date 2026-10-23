@@ -6,7 +6,7 @@
 ## Context
 
 Unit tests prove that invalid LLM output is handled safely, but nothing
-measured whether valid output is *correct* (`16` #9). Live models are not
+measured whether valid output is *correct*. Live models are not
 bit-deterministic, so exact-match tests against them are flaky.
 
 ## Decision

@@ -1,9 +1,8 @@
-"""Property-based API tests of the mock receiver (M8, Schemathesis).
+"""Property-based API tests of the mock receiver (Schemathesis).
 
 Schemathesis generates requests from the published OpenAPI document and
 checks every response against it: no server errors, only documented
-status codes, bodies and headers that match their schemas. The same
-harness runs against the product API once it exists (M6b).
+status codes, bodies and headers that match their schemas.
 """
 
 import json
