@@ -97,6 +97,9 @@ key while the first request is still in progress → **409**; keys retained
 | Request correlation | inbound `X-Request-ID` (validated UUID, else generated) bound to logs and forwarded on outbound calls | log capture test |
 | Retention | `followup maintenance prune` deletes LLM cache > 30 d and terminal actions/audit beyond policy, in batches with `LIMIT` | integration test (as built, M12: `config/retention.toml`, maintenance role from migration `0003`, contract tests on both repositories, runbook `18`) |
 | Dry run | `followup run --dry-run` computes and reports decisions inside a rolled-back transaction | asserts zero rows persisted |
+| Saved runs need a database | `followup run` without `FOLLOWUP_DATABASE_URL` accepts only `--dry-run`; memory storage is limited to `followup demo`, which reruns inside one process | `tests/unit/cli/test_cli.py::test_saved_run_without_a_database_is_refused` |
+| Human review hold | A planned action marked `hold_for_review` is stored as `held`; claims select only `pending`/`unknown`, so no automated path sends it; `followup review --approve` moves it to `pending` with the same operation identity, `--reject` to `dead`, each with an audit event (ADR-0018, migration `0007`) | `tests/contract/persistence/test_review_hold.py`, `tests/unit/processing/test_review_flow.py` |
+| One escalation per unchanged state | Notification slots carry a stage (`notify`/`escalate`) from the policy baseline: an untouched overdue task still escalates once after the threshold (ADR-0017) | `tests/unit/processing/test_llm_hardening.py::test_unchanged_overdue_task_still_escalates_after_threshold` |
 
 ## 5. Failure-mode & effects analysis (FMEA)
 
@@ -119,6 +122,8 @@ key while the first request is still in progress → **409**; keys retained
 | F15 | Clock / timezone drift | injected clock | off-by-one deadlines | UTC dates, `as_of` explicit | `test_due_today_not_overdue` |
 | F16 | DB unavailable | connection error | partial state | fail fast, readiness probe red, no sends without persisted action | `test_db_down_no_side_effects` |
 | F17 | Secrets in logs | log scanning test | leak | `SecretStr`, redaction processor | `test_logs_redact_secrets` |
+| F18 | Many workers exceed the LLM budget together | shared ledger refuses | cost blow-up | worst-case reservation in a PostgreSQL ledger before each call; fail closed when unreachable | `test_concurrent_workers_cannot_overshoot_the_limit` |
+| F19 | Second CLI process without a database | refused before processing | re-enqueued actions | saved runs require PostgreSQL | `test_saved_run_without_a_database_is_refused` |
 
 ## 6. Observability for diagnosis
 

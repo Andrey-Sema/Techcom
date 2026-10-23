@@ -41,6 +41,23 @@ if the task state changed.
 * **Act:** restart dispatcher (leases expire → safe resend with same key);
   `unknown` rows are reconciled first, never blindly re-sent.
 
+## followup-held-for-review {#followup-held-for-review}
+
+* **Meaning:** the planner held an action for a person (conflicting
+  signals, an unclear note, a sensitive escalation or an uncertain
+  recipient) and nobody has decided it for 4 h. Held actions are never
+  sent automatically.
+* **Check:** `followup review` lists them with the code-owned rationale
+  and hold reason; the decision receipt's `plan.model_rationale` holds
+  the model's own (non-authoritative) explanation. A sudden rise across
+  many tasks can mean notes written to make the model hold everything
+  (an availability attack, not a safety one).
+* **Act:** `followup review --approve <operation-id>` releases one action
+  to `pending` with its original operation identity, so the next
+  dispatch sends it exactly once; `--reject <operation-id>` makes it
+  `dead`. Both write an audit event. If holds are being abused, set
+  `FOLLOWUP_LLM_PLANNER=templates` until the cause is fixed.
+
 ## followup-llm-fallback-rate-high {#followup-llm-fallback-rate-high}
 
 * **Meaning:** > 5 % of LLM calls failed or were rejected for 15 min.

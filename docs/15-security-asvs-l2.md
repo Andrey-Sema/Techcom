@@ -15,7 +15,8 @@
   persistence and outbound integrations. The mock API is a test double and
   out of scope, but it is still hardened and never shipped (15.2.3).
 * **ASVS does not cover LLM-specific risks**, so it is complemented by the
-  **OWASP Top 10 for LLM Applications 2025** (`04` §7) and the OWASP
+  **OWASP Top 10 for LLM Applications 2025** (threat, control and test
+  per risk in `security/owasp-llm-top10.md`) and the OWASP
   *LLM Prompt Injection Prevention* and *Secure AI Model Ops* cheat sheets.
 * Every applicable requirement gets exactly one status:
 
@@ -48,7 +49,7 @@ the claim "L2" is evidence-backed, not aspirational.
 | D8 | **Production surface minimised**: OpenAPI UI off in prod, metrics on a separate internal port, debug off, mock package not in the image. | 13.4.2, 13.4.5, 15.2.3 |
 | D9 | **Security headers on every API response**: `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`, HSTS in prod. CORS disabled (no browser client). | 3.4.x, 14.3.2 |
 | D10 | **Errors**: RFC 9457 `problem+json`, generic text + `request_id`; no stack traces, SQL or validation internals echoed. | 16.5.1, FastAPI cheat sheet |
-| D11 | **LLM data handling**: interpretation receives screened, escaped note text; drafting receives decision/reason codes, placeholders and approved phrasing, with facts rendered locally. Strict schema validation and deterministic fallback bound output. Provider retention/training terms and production workload credentials need deployment verification. | 14.2.3, 13.2.1 |
+| D11 | **LLM data handling**: interpretation receives screened, escaped note text; the orchestrator receives codes, recipient kinds and the redacted note and returns choices only (message intents, ADR-0018); drafting receives decision/reason codes and approved phrasing; facts are rendered locally. Strict schema validation and deterministic fallback bound output. Provider retention/training terms and production workload credentials need deployment verification. | 14.2.3, 13.2.1 |
 | D12 | **Logs via OTLP, no Docker socket in any container.** | OWASP Docker Security rule #1, 16.4.3 |
 
 ## 3. Chapter applicability
@@ -343,7 +344,7 @@ No component accepts a URL from users or task data (no SSRF surface).
 | Tampering | Prompt injection in notes alters decisions | No LLM capability over decisions/targets, closed schemas, grounding, screen + audit |
 | Repudiation | "Who triggered this run?" | `actor` (token `sub`) on every run, audit trail, append-only |
 | Information disclosure | Notes/PII leaked via logs or to LLM | Classification, redaction, minimisation, placeholders |
-| Denial of service | Flood of run triggers, giant fixture, LLM cost blow-up | Rate limits, size caps, run concurrency 1, budget + breaker |
+| Denial of service | Flood of run triggers, giant fixture, LLM cost blow-up | Rate limits, size caps, run concurrency 1, process budget + PostgreSQL spend ledger shared by all workers + breaker |
 | Elevation of privilege | App role altering audit or schema | Separate DB roles, REVOKE, read-only FS, non-root, `cap_drop: ALL` |
 | Abuse case | State flapping causes message storm to one recipient | Per-recipient daily cap (D6), dedupe, alert |
 

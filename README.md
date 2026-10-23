@@ -60,6 +60,19 @@ make test-fast                 # offline tests, no Docker
 make test                      # full suite with PostgreSQL 18, 100 % branch gate
 ```
 
+Repeated runs from the command line need PostgreSQL, so that a second
+process can recognise work the first one already sent (without a
+database `followup run` refuses anything but `--dry-run`):
+
+```sh
+make db-init                   # PostgreSQL 18 in Docker, schema, service role
+export FOLLOWUP_DATABASE_URL="postgresql+psycopg://followup_service:$(cat secrets/service_password)@127.0.0.1:5432/followup"
+make mock &                    # local task and delivery API
+uv run followup run --as-of 2026-10-21 --dispatch   # 7 sent
+uv run followup run --as-of 2026-10-21 --dispatch   # 7 duplicates, 0 sent
+uv run followup review         # actions the model held for a person
+```
+
 To use a real model, set `FOLLOWUP_LLM_PROVIDER=router` and an OpenAI
 key (`FOLLOWUP_OPENAI_API_KEY`); routes and prices are in
 [`config/llm.toml`](config/llm.toml).
@@ -109,34 +122,29 @@ flowchart LR
 
 ## The LLM orchestrator and how it is kept in check
 
-Security boundary: the model selects exact reviewed subject/body pairs
-for its chosen action; arbitrary prose is rejected. Names, dates and
-other facts are rendered by code. Titles and project labels are omitted
-from model context, contact data is redacted from notes, and every
-tracker text surface is screened. This is contact minimisation, not
-guaranteed anonymisation. The code records a bounded, code-owned rationale.
-
-Notification slots additionally enforce one action per source task state,
-independent of interpreter failures or changing model answers. Existing
-operation IDs stay unchanged. PostgreSQL migration 0006 backfills from
-decision receipts and refuses upgrades with unrecoverable old tombstones.
-See [ADR-0017](docs/adr/0017-llm-output-and-notification-boundaries.md).
-
 The assignment asks for an LLM that interprets notes and drafts messages
-without inventing facts. This service goes further: the model
-**orchestrates the follow-up** (it chooses the action, the recipient, the
-priority and the wording, and can escalate an previously notified overdue task), while
-every step is constrained, validated and audited by code.
+without inventing facts. Here the model **orchestrates the follow-up**:
+it chooses the action, the recipient, the priority, what the message
+asks for, its tone, whether to mention an earlier message, and whether a
+person should review the action before it is sent. Code bounds, checks
+and audits every one of those choices, and code writes every word.
 
 ### What the model decides, and what code decides
 
 | Code (deterministic) | LLM (bounded judgement) |
 |----------------------|-------------------------|
 | Whether a task needs attention at all | Which allowed action fits: follow up, request an ETA, clarify, escalate |
-| The envelope of allowed actions and recipients | Which allowed recipient: owner, coordinator, manager, assigned team |
+| The envelope of allowed actions, recipients, asks and tones | Which allowed recipient: owner, coordinator, manager, assigned team |
 | Every fact: names, dates, IDs, days overdue | Priority (it may raise it, never lower it) |
-| Deduplication, delivery, retries | One of the reviewed message phrasings |
-| Final approval of the plan | A proposed choice and evidence quoted from the note |
+| Every word of the message, from reviewed fragments | **What to ask**: one or two of status, blocker, unblock plan, delivery ETA, missing details, owner, completion date, on-track check |
+| Whether an earlier message really was sent | **Tone**: neutral, friendly, or firm (firm only after an unanswered, overdue message or for an escalation) |
+| Deduplication, delivery, retries, budgets | **Mention the earlier message** (only if one was sent) |
+| Final approval of the plan; release of held actions | **Hold for human review** with a closed reason instead of sending |
+
+The model never writes message text: the plan schema has no text field
+that reaches a recipient. Its free-text rationale is stored in the audit
+trail as *its opinion*, after the guard rejected links, contacts,
+instruction-like text and copied note text.
 
 ### The loop
 
@@ -149,19 +157,20 @@ sequenceDiagram
     P->>O: baseline + envelope (no names)
     O->>L: context, tools, step 1 of 4
     L->>O: get_history
-    O->>L: earlier actions for this task
-    L->>O: check_plan {decision, recipient, priority, subject, body, rationale}
+    O->>L: earlier actions for this task (closed fields)
+    L->>O: check_plan {decision, recipient, priority, asks, tone, earlier_contact, delivery}
     O->>G: review
-    G->>O: violations: ["recipient_not_permitted"]
-    O->>L: violations (repair)
+    G->>O: violations: ["unverified_earlier_contact"]
+    O->>L: violation codes only (repair)
     L->>O: submit_plan {...}
     O->>G: review
-    G->>O: approved: decision + message rendered by code
+    G->>O: approved: decision + message composed and rendered by code
 ```
 
 Tools are **read-only**: `get_history`, `check_plan`, `submit_plan`.
 Nothing the model does sends a message, changes a task or reaches the
-network. The outbox is the only executor.
+network. The outbox is the only executor. Only violation codes go back
+to the model, never its own earlier text.
 
 ### The envelope
 
@@ -173,63 +182,54 @@ network. The outbox is the only executor.
 | escalate to the manager | address the coordinator; never downgrade |
 | no action | the model is not called |
 
-First contacts therefore always follow the brief's routing; the model's
-extra authority is to chase an previously notified overdue task up the chain.
+Each decision also has its allowed asks (an ETA request must ask for the
+delivery date; "who should own this" only for an unowned task) and its
+allowed tones. First contacts always follow the brief's routing.
 
-### The guard
+### Human review
 
-Every proposal is reviewed by [`domain/guard.py`](src/techcom_followup/domain/guard.py)
-before it can become an action. It rejects, with closed violation codes:
-
-- a decision or recipient outside the envelope, or a lowered priority;
-- facts written as text instead of placeholders: any digit, dates and
-  relative deadlines ("within two days", "end of next week"), person
-  names and other proper nouns, links, e-mail addresses, phone numbers,
-  including obfuscated forms (`[at]`, `dot com`, look-alike characters);
-- unverifiable claims ("already shipped", "was approved"), claims that a
-  status changed, instruction-like text, copied note text, markup, any
-  non-ASCII character (homoglyphs, invisible and bidi characters), a
-  missing `{task_id}`;
-- an empty, linked or instruction-like rationale, and evidence that is
-  not a verbatim quote of at least eight characters from the note.
-
-Code renders placeholders such as `{recipient_name}` and `{due_date}`
-from task data; the model only chooses words. The rules are pattern
-based: they block every fact *shape* the tests know, and a rejected plan
-costs only wording, because the baseline template is sent instead.
+A plan with `delivery: hold_for_review` is stored as a **held** action.
+Dispatchers never claim it; `followup review` lists held actions and
+`followup review --approve <operation-id>` or `--reject <operation-id>`
+decides one, with an audit event. Approval keeps the original operation
+identity, so the next dispatch sends it exactly once. Holding can only
+reduce automation; an alert fires when an action waits for 4 hours.
 
 ### Failure handling and budgets
 
-The default planning deadline is 20 seconds for history lookup and the
-entire model conversation together. External cancellation propagates.
-Template, drafter and agent messages share the receiver's final limits:
-120-character subject and 800-character body. Long subjects use a compact
-code-owned form that preserves the full task ID; task details stay in the
-body. Contact minimisation preserves canonical IDs and calendar context.
-
 - At most **four steps** per plan; on the last one the model must submit.
+- Each model call has a 20-second timeout and the whole plan, including
+  the history lookup, a 60-second deadline.
 - Invalid JSON, an unknown tool, a timeout, an open circuit breaker, an
-  exhausted daily budget or a plan that never passes the guard all fall
-  back to the **baseline action and its template** (`llm_fallback` flag).
+  exhausted budget or a plan that never passes the guard all fall back
+  to the **baseline action and its template** (`llm_fallback` flag).
+- The worst-case cost of every call is reserved before the call, in the
+  process budget and in a **PostgreSQL ledger shared by all workers**;
+  an unreachable ledger admits nothing.
 - If the note, title or project name trips the injection screen, the
-  note is **withheld** from the model.
-- Recipients are opaque references; title and project are never sent and
-  contacts in notes are redacted. A note can still mention a person.
-- Each plan stores the baseline next to the chosen decision, a bounded
-  rationale, and an audit trace with the tools used, step count,
-  violation codes and outcome, in the same transaction as the decision.
+  note is **withheld** from the model. Titles and project names are never
+  sent, recipients are opaque references and contacts in notes are
+  redacted. A note can still mention a person.
+- Each plan stores the baseline next to the chosen decision, the chosen
+  intents, the model's rationale and an audit trace (tools, steps,
+  violation codes, outcome) in the same transaction as the decision.
+- Notification slots allow one action per source task state, plus one
+  escalation, whatever the interpreter or the model answers (ADR-0017).
 
 ### How containment is proven
 
 | Evidence | What it shows |
 |----------|---------------|
-| [`tests/property/test_agent_containment.py`](tests/property/test_agent_containment.py) | Hypothesis feeds arbitrary and hostile model outputs (fake tools, foreign recipients, `close_task`, injections, links, invented dates); every result is inside the envelope or is the baseline |
-| [`tests/unit/domain/test_guard.py`](tests/unit/domain/test_guard.py) | Each escape attempt maps to a closed violation code |
-| [`tests/unit/processing/test_orchestrator.py`](tests/unit/processing/test_orchestrator.py) | Repair loop, step budget, final-step rule, withheld notes, fallbacks, escalation after an unanswered follow-up |
-| [`tests/unit/processing/test_planned_processing.py`](tests/unit/processing/test_planned_processing.py) | A model that answers differently on every call still produces one action per task state; reruns make no model calls |
+| [OWASP LLM Top 10 matrix](docs/security/owasp-llm-top10.md) | Threat, controls and tests for each of LLM01–LLM10; a meta test keeps the matrix and the test markers in step |
+| [`tests/property/test_agent_containment.py`](tests/property/test_agent_containment.py) | Hypothesis feeds arbitrary and hostile plans (fake tools, foreign recipients, `close_task`, unknown asks and tones, smuggled `subject`/`body` fields); every result is inside the envelope or is the baseline |
+| [`tests/unit/domain/test_guard.py`](tests/unit/domain/test_guard.py) | Each escape attempt maps to a closed violation code; every composable message passes the fact rules |
+| [`tests/unit/llm/test_owasp_llm_top10.py`](tests/unit/llm/test_owasp_llm_top10.py) | No model text is fed back, the history tool returns closed facts, prompts hold no secrets, an earlier contact must be real |
+| [`tests/unit/processing/test_review_flow.py`](tests/unit/processing/test_review_flow.py) | A held action is not sent until a person approves it, then exactly once |
 | [`tests/eval/`](tests/eval/README.md) | Replay evaluation of note interpretation: 95 cases including 32 injections, macro-F1 0.99, zero unsafe outcomes (synthetic recordings) |
 
-Design record: [ADR-0016](docs/adr/0016-bounded-llm-orchestrator.md).
+Design records: [ADR-0016](docs/adr/0016-bounded-llm-orchestrator.md),
+[ADR-0017](docs/adr/0017-llm-output-and-notification-boundaries.md),
+[ADR-0018](docs/adr/0018-message-intents-review-and-shared-budget.md).
 `FOLLOWUP_LLM_PLANNER=templates` switches the orchestrator off.
 
 ---
@@ -278,12 +278,13 @@ A record from [`samples/decisions.json`](samples/decisions.json):
   "rule_id": "R5+agent",
   "baseline": {"decision": "request_eta", "rule_id": "R5"},
   "reason": "Blocked by materials; 3 day(s) overdue; delivery date unknown.",
-  "rationale": "Selected request_eta for assigned_team within the policy envelope.",
+  "rationale": "Agent chose request_eta for assigned_team, asking for delivery_eta in a neutral tone.",
   "flags": ["agent_planned"],
   "message": {
-    "subject": "Delivery ETA needed for TC-1002: Install handholes",
-    "body": "Hello Warehouse team, TC-1002 'Install handholes' (SURF Illinois) is waiting on materials and is due 2026-10-18. Could you confirm when the delivery will arrive, or tell us who can?",
-    "source": "llm"
+    "subject": "Delivery ETA needed: TC-1002 Install handholes",
+    "body": "Hello Warehouse team, TC-1002 'Install handholes' (SURF Illinois) is waiting on materials and is due 2026-10-18. Our tracker shows: Blocked by materials; 3 day(s) overdue; delivery date unknown. When will the materials arrive, or who can confirm the delivery date? Thank you.",
+    "source": "llm",
+    "template_id": "agent.v3"
   },
   "outcome": "enqueued"
 }
@@ -299,10 +300,12 @@ the full run with outbox states is [`samples/run_report.json`](samples/run_repor
 | Command | What it does |
 |---------|--------------|
 | `followup run --fixture … --dry-run` | Decisions and messages, no persistence, delivery or LLM calls |
-| `followup run --dispatch` | Process, then send due actions |
+| `followup run --dispatch` | Process, then send due actions (PostgreSQL) |
 | `followup dispatch --limit 50` | Send due actions (PostgreSQL) |
 | `followup reconcile --limit 50` | Resolve uncertain sends by lookup |
 | `followup report --run-id …` | Decisions and outbox states of a run |
+| `followup review [--approve ID \| --reject ID]` | List actions held for human review, or decide one |
+| `followup demo` | Run, dispatch, reconcile and rerun in memory against the mock |
 | `followup maintenance prune` | Apply retention (maintenance role) |
 | `followup-api` | Optional authenticated REST API ([docs/19](docs/19-api-and-deployment.md)) |
 
@@ -310,7 +313,7 @@ the full run with outbox states is [`samples/run_report.json`](samples/run_repor
 |----------|---------|---------|
 | `FOLLOWUP_LLM_PROVIDER` | `stub` | `stub` (offline) or `router` (OpenAI Responses API) |
 | `FOLLOWUP_LLM_PLANNER` | `agent` | `agent` (bounded orchestrator) or `templates` |
-| `FOLLOWUP_DATABASE_URL` | unset | PostgreSQL; memory storage when unset |
+| `FOLLOWUP_DATABASE_URL` | unset | PostgreSQL; without it only `--dry-run` and `demo` run |
 | `FOLLOWUP_DISPATCH_ENABLED` | `true` | Kill switch for new sends |
 | `FOLLOWUP_WRITE_CONCURRENCY` | `8` | Concurrent planning and writes per batch (1–16) |
 | `FOLLOWUP_RECIPIENT_DAILY_LIMIT` | `20` | Messages per recipient per UTC day |
@@ -326,14 +329,14 @@ Thresholds, routing and status synonyms live in [`config/`](config/).
 
 | Gate | Result |
 |------|--------|
-| Tests | 1,200+ unit, property, contract, scenario and integration tests |
+| Tests | 1,500+ unit, property, contract, scenario and integration tests |
 | Observability | Every metric behind the alerts and dashboard is emitted (`docs/14` §8, checked by a test); allow-listed JSON logs with run, plan and LLM cost fields |
 | Coverage | 100 % statements and branches (application and mock) |
 | Static checks | Ruff `ALL` (79 columns), mypy `--strict`, Bandit, import-linter (hexagonal layers) |
 | Mutation testing | mutmut on policy, identity and messages |
 | LLM evaluation | Replay harness, 95 cases, macro-F1 0.99, unsafe outcomes 0 |
 | 10,000 tasks | 85.2 s first run, 51.5 s rerun, 201 MB, PostgreSQL 18 ([benchmarks](docs/benchmarks.md)) |
-| Security | OWASP ASVS 5.0 L2 as the design target, OWASP LLM Top 10 controls, least-privilege DB roles ([docs/15](docs/15-security-asvs-l2.md)) |
+| Security | OWASP ASVS 5.0 L2 as the design target, [OWASP LLM Top 10 matrix](docs/security/owasp-llm-top10.md) with a test per control, least-privilege DB roles ([docs/15](docs/15-security-asvs-l2.md)) |
 
 Architecture: a hexagonal layout with a pure domain core
 (`domain/`), use cases (`application/`), adapters for HTTP, PostgreSQL,
@@ -351,9 +354,9 @@ OpenAI and the CLI (`adapters/`), and composition in `bootstrap.py`.
   missing and triggers a clarification instead of a guess.
 - **PostgreSQL instead of a broker.** The outbox, `SKIP LOCKED` claims and
   advisory locks cover the workload without Redis or Celery (ADR-0002).
-- **Placeholders over free facts.** The model writes prose but cannot
-  type a date or a name; this costs some style and removes a whole class
-  of hallucinations.
+- **Intents over prose.** The model chooses what to ask and how firmly;
+  code writes the words and renders the facts. Messages are less varied
+  than free prose, and a whole class of hallucinations disappears.
 - **Per-decision transactions.** Simple to reason about and atomic; it is
   the main cost in the 10k benchmark.
 
@@ -365,9 +368,8 @@ OpenAI and the CLI (`adapters/`), and composition in `bootstrap.py`.
 |------|--------|
 | Real task tracker and e-mail/SMS provider | The brief asks for a mock API and forbids real messages; both sit behind ports |
 | Re-reminders on an unchanged task | Needs a product decision on cadence and quiet hours |
-| Human approval queue for escalations | A UI/workflow feature; the envelope already limits escalation to unanswered, overdue tasks |
+| A review UI and API endpoint | Held actions are reviewed with `followup review`; a UI with role-based approval is product work |
 | Measured quality on a real LLM provider | No labelled real notes; the evaluation harness and an opt-in live test are ready |
-| Cross-process LLM spend ledger | The budget is per process; it belongs next to the PostgreSQL recipient quota |
 | Real identity provider, internal TLS | Tokens are verified with configured keys; TLS is a deployment concern |
 | 60 s / 30 s targets for 10,000 tasks | Would need batched multi-row writes; current speed is 1,000× the stated volume |
 
@@ -381,8 +383,8 @@ Details: [docs/08](docs/08-implementation-plan.md).
 2. TLS gateway and IdP-issued service tokens for the API.
 3. Calibrate the orchestrator on labelled real notes; record provider
    responses into the evaluation harness and gate prompt changes on it.
-4. A shared LLM spend ledger in PostgreSQL.
-5. Re-reminder cadence and an approval queue once product rules exist.
+4. A provider-side spend cap on top of the shared ledger.
+5. Re-reminder cadence and a review UI once product rules exist.
 
 ---
 
@@ -400,7 +402,8 @@ Details: [docs/08](docs/08-implementation-plan.md).
 | [15 Security](docs/15-security-asvs-l2.md) | ASVS 5.0 L2, OWASP API and LLM Top 10 |
 | [18 Runbook](docs/18-runbook.md) | Alerts, levers, backup and restore |
 | [19 API and deployment](docs/19-api-and-deployment.md) | Authenticated API, runtime configuration |
-| [ADRs](docs/adr/) | Architecture decisions 0001–0016 |
+| [OWASP LLM Top 10](docs/security/owasp-llm-top10.md) | Threats, controls and tests for LLM01–LLM10 |
+| [ADRs](docs/adr/) | Architecture decisions 0001–0018 |
 
 Time spent: about six hours of focused work over several sessions. AI
 coding assistants were used, as the brief allows.

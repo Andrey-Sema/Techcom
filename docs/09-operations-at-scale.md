@@ -41,11 +41,12 @@ visibility and access control** are.
 
 | Signal | Metric | Alert |
 |--------|--------|-------|
-| Cost | `followup_llm_cost_usd_total` (daily) | > budget × 1.2 |
+| Cost | `followup_llm_cost_usd_total` (daily); the daily budget itself is enforced before each call by the PostgreSQL ledger shared by all workers (ADR-0018) | > budget × 1.2 |
 | LLM quality | fallback rate, validation failures by stage | > 5 % for 15 min |
 | Safety | `note.flagged` count | spike vs 7-day baseline |
 | Delivery | outbox backlog by status, age of oldest `pending`/`unknown` | oldest > 30 min |
 | Dead letters | `dead` count | any (each one is investigated) |
+| Human review | age of the oldest `held` action | > 4 h |
 | Duplicates | receiver replays (`Idempotent-Replayed`) | trend only — replays are *working as intended*, but a rise means timeouts upstream |
 | Dependency health | circuit state, retry rate | breaker open > 5 min |
 
@@ -69,8 +70,9 @@ time (`04` §2a), not in the decision policy.
 
 ## 4. Limiting access (least privilege)
 
-* **LLM**: no tools, no write access, minimal data (note + title only), PII
-  minimised; outputs are proposals.
+* **LLM**: three read-only tools, no write access, minimal data (the
+  screened note with contacts redacted; never names, titles or project
+  names); outputs are choices that code checks and turns into text.
 * **Service credentials**: task API token is *read-only*; delivery token can
   only create messages; separate DB roles — app (DML on its tables), migrator
   (DDL), read-only analyst.
@@ -80,6 +82,7 @@ time (`04` §2a), not in the decision policy.
   trigger audited with the token subject.
 * **Secrets**: env from a secret manager; rotation without redeploy; never
   in logs (redaction processor + test).
-* **Human-in-the-loop**: escalations and any future "write back to CRM"
-  capability go through an approval queue; the AI never gets direct write
-  authority over project status.
+* **Human-in-the-loop**: the model can hold any action for a person
+  (`followup review`); any future "write back to CRM" capability goes
+  through the same review; the AI never gets direct write authority over
+  project status.

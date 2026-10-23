@@ -228,12 +228,24 @@ the action inside an envelope computed by code:
 | `no_action` | not planned: the model is never called |
 
 Loop: `get_history` → `check_plan` → `submit_plan`, at most four steps;
-violation codes from the guard are fed back for repair. Messages use the
-placeholders `{recipient_name}`, `{task_id}`, `{task_title}`, `{project}`,
-`{due_date}`, `{days_overdue}`, `{missing_fields}`, `{owner_name}` and
-`{reason_text}`; code renders them. Any failure returns the baseline and
-its template with `llm_fallback`. The dedupe key always comes from the
-baseline, so reruns never call the model or send twice.
+only closed violation codes are fed back for repair. The plan carries
+choices, never message text (ADR-0018):
+
+| Intent | Allowed values | Code-enforced condition |
+|--------|----------------|-------------------------|
+| `asks` (1–2) | status, blocker, unblock_plan, delivery_eta, missing_details, owner_assignment, completion_date, confirm_on_track | per decision kind; one required ask per kind (ETA request → delivery_eta, clarification → missing_details or owner_assignment, escalation → unblock_plan); owner_assignment only for unowned tasks |
+| `tone` | neutral, friendly, firm | firm only after an unanswered, overdue message or for an escalation |
+| `earlier_contact` | true / false | true only when a sent action exists for the task |
+| `delivery` | send, hold_for_review (+ closed `hold_reason`) | a held action is stored as `held` and only an operator releases it |
+
+`domain/agent_messages.py` composes subject and body from reviewed
+fragments in a fixed order and code renders the facts
+(`{recipient_name}`, `{task_id}`, `{task_title}`, `{project}`,
+`{due_date}`, `{missing_fields}`, `{owner_name}`, `{reason_text}`).
+Any failure returns the baseline and its template with `llm_fallback`.
+The dedupe key always comes from the baseline, so reruns never call the
+model or send twice. Each call has a 20 s timeout; the whole plan has a
+60 s deadline.
 
 ## 8. Message templates (fallback and default for flagged notes)
 
@@ -278,11 +290,22 @@ unchanged data yields `duplicate_suppressed` for every actionable task and
 
 ## Security boundary update (ADR-0017)
 
-The orchestrator now selects exact reviewed message pairs rather than free
-prose. Code renders facts and records the accepted choice in a code-owned
+The orchestrator selected exact reviewed message pairs rather than free
+prose (superseded by message intents, ADR-0018, below). Code renders facts and records the accepted choice in a code-owned
 rationale. Evidence must occur in both original and visible redacted
 notes. Task title/project are omitted from the model context; all tracker
 text surfaces are screened. A materials interpretation with needs_eta=false
 uses a dedicated progress follow-up, not an assertion of unknown ETA.
 Durable source-state slots prevent classification changes from creating
 a second notification. See ADR-0017 for migration prerequisites and risks.
+
+## Message intents and human review (ADR-0018)
+
+The reviewed-pair wording of ADR-0017 is replaced by message intents
+(§7a): the model decides what to ask, how firmly and whether to mention
+an earlier message, and may hold an action for a person; code writes
+every word. The model's rationale is stored as `model_rationale` in the
+plan audit after the guard rejected links, contacts, instruction-like
+text and copied note text. The daily LLM budget is shared by all
+workers through a PostgreSQL ledger. Threats, controls and tests for
+OWASP LLM01–LLM10: [`security/owasp-llm-top10.md`](security/owasp-llm-top10.md).
