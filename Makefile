@@ -1,4 +1,4 @@
-.PHONY: bootstrap quality test test-fast test-integration mock demo db-up db-down
+.PHONY: bootstrap quality test test-fast test-integration eval eval-test mock demo db-up db-down
 
 bootstrap:
 	uv sync --locked --all-packages
@@ -8,6 +8,7 @@ quality:
 	uv run --locked ruff format --check .
 	uv run --locked mypy
 	uv run --locked bandit -c pyproject.toml -r src mocks/src migrations scripts
+	uv run --locked bandit -r tests/eval --exclude 'tests/eval/test_*.py'
 	uv run --locked lint-imports
 
 test:
@@ -19,6 +20,12 @@ test-fast:
 
 test-integration:
 	uv run --locked pytest -m integration --no-cov
+
+eval:
+	PYTHONPATH=tests uv run --locked python -m eval
+
+eval-test:
+	PYTHONPATH=tests COVERAGE_FILE=.coverage.eval uv run --locked pytest -o addopts='' tests/eval --strict-markers --strict-config --cov=eval --cov-branch --cov-fail-under=100
 
 mock:
 	mkdir -p var
