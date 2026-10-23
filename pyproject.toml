@@ -41,7 +41,29 @@ dev = [
     "syrupy>=4.8",
     "techcom-mocks",
     "testcontainers[postgres]>=4.8",
-    "types-docker>=7.1",
+    "pyyaml>=6.0.3",
+    "types-pyyaml>=6.0.12.20260906",
+    "schemathesis>=4.31,<4.32",
+]
+# Mutation testing (make mutation): slow, so it runs nightly in CI.
+mutation = [
+    "mutmut>=3.8",
+]
+docs = [
+    "mkdocs>=1.6,<2",
+    "mkdocs-material>=9.7.7",
+]
+gates = [
+    "check-jsonschema>=0.38.2",
+    "codespell>=2.4.3",
+    "commitizen>=4.19.2",
+    "deptry>=0.25.1",
+    "pip-audit>=2.10.1",
+    "validate-pyproject[all]>=0.26",
+    "vulture>=2.16",
+    "xenon>=0.9.3",
+    "yamllint>=1.38.0",
+    "zizmor>=1.31.1",
 ]
 
 [build-system]
@@ -65,6 +87,10 @@ techcom-mocks = { workspace = true }
 line-length = 79                       # strict PEP 8
 target-version = "py313"               # keep in sync with mypy
 src = ["src", "mocks/src", "tests"]
+# Semgrep rule fixtures are deliberately insecure code.
+extend-exclude = [".semgrep"]
+# Apply the exclusion to files that pre-commit passes explicitly, too.
+force-exclude = true
 
 [tool.ruff.lint]
 select = ["ALL"]
@@ -78,6 +104,10 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101", "D", "PLR2004", "ANN", "ARG", "FBT", "INP001", "SLF001"]
+# Image tests drive the docker CLI with fixed argument vectors.
+"tests/image/**" = ["S603"]
+# Developer CLI tools: they talk to the terminal and are not a package.
+"scripts/**" = ["T201", "INP001"]
 
 [tool.ruff.lint.pycodestyle]
 max-doc-length = 72
@@ -133,7 +163,7 @@ testpaths = ["tests"]
 addopts = [
     "-ra", "--strict-markers", "--strict-config",
     "--cov", "--cov-branch", "--cov-report=term-missing",
-    "-m", "not live_llm",
+    "-m", "not live_llm and not image and not bench",
 ]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
@@ -143,6 +173,8 @@ markers = [
     "live_llm: calls the real LLM provider (opt-in, needs a key)",
     "integration: requires PostgreSQL 18 in Docker",
     "asvs: evidence for an implemented ASVS security control",
+    "image: runs the built container images (make image-test)",
+    "bench: 10,000-task benchmark against PostgreSQL 18 (make bench)",
 ]
 
 # ------------------------------------------------------------ coverage --
@@ -178,3 +210,51 @@ layers = [
 name = "Mock isolation"
 type = "independence"
 modules = ["techcom_followup", "techcom_mocks"]
+
+# ------------------------------------------------------------ gates --
+[tool.vulture]
+paths = ["src", "mocks/src"]
+min_confidence = 80
+sort_by_size = true
+
+[tool.deptry]
+known_first_party = ["techcom_followup", "techcom_mocks"]
+# The mock distribution declares its own dependencies in
+# mocks/pyproject.toml; deptry checks it in a separate run.
+extend_exclude = ["mocks", "migrations", "scripts", "docs", ".semgrep"]
+
+[tool.deptry.per_rule_ignores]
+# alembic runs the migrations/ scripts; psycopg is the SQLAlchemy
+# driver selected by the "postgresql+psycopg" URL. Neither is imported.
+DEP002 = ["alembic", "psycopg"]
+
+[tool.codespell]
+skip = """*.lock,./fixtures/*,./.git/*,./.venv/*,./.*_cache/*,./var/*,\
+./.hypothesis/*,*.svg,./tests/golden/__snapshots__/*"""
+check-hidden = true
+# "nd" (2nd), "cancell" (regex stem), "caf" (test data), "ot" (OTLP).
+ignore-words-list = "nd,cancell,caf,ot"
+
+[tool.commitizen]
+name = "cz_conventional_commits"
+version_provider = "uv"
+tag_format = "v$version"
+update_changelog_on_bump = true
+major_version_zero = true
+
+[tool.mutmut]
+# Mutation testing of the decision core (docs/06 s. 6): >= 90 % killed.
+source_paths = ["src/"]
+only_mutate = [
+    "src/techcom_followup/domain/policy.py",
+    "src/techcom_followup/domain/identity.py",
+    "src/techcom_followup/domain/messages.py",
+]
+also_copy = ["tests/", "config/", "fixtures/", "mocks/"]
+pytest_add_cli_args = ["--no-cov", "-p", "no:randomly", "-q"]
+pytest_add_cli_args_test_selection = [
+    "tests/unit/domain",
+    "tests/unit/infrastructure",
+    "tests/property",
+    "tests/golden",
+]

@@ -219,7 +219,12 @@ def test_kill_switch_is_checked_without_delivery_io(
 
 @pytest.mark.parametrize(
     "command",
-    [["dispatch"], ["reconcile"], ["report", "--run-id", str(UUID(int=1))]],
+    [
+        ["dispatch"],
+        ["reconcile"],
+        ["report", "--run-id", str(UUID(int=1))],
+        ["maintenance", "prune"],
+    ],
 )
 def test_separate_commands_fail_clearly_without_persistence(
     command: list[str],

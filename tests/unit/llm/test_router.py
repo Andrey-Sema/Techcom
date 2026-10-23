@@ -214,6 +214,7 @@ async def test_bad_credentials_stop_the_walk(
     assert backend.calls == ["gpt-6.1-sol"]
 
 
+@pytest.mark.asvs("2.4.1")
 async def test_exhausted_budget_blocks_calls(
     routing_config: RoutingConfig,
     request_: LLMRequest,

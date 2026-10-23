@@ -10,6 +10,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   quality:
+    name: quality
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -25,6 +26,7 @@ jobs:
       - run: make quality
       - run: uv run --locked pre-commit run --all-files
   test:
+    name: test (${{ matrix.python }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
     strategy:
@@ -45,3 +47,89 @@ jobs:
       - run: make eval
       - run: make eval-test
       - run: uv build --package techcom-followup --wheel
+  gates:
+    name: gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+        with:
+          version: "0.12.23"
+          python-version: "3.14"
+          enable-cache: true
+      - run: uv sync --locked --all-packages --group gates --group docs
+      - run: make gates
+      - run: make sbom
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sbom-dependencies
+          path: var/sbom/techcom-followup.cdx.json
+          if-no-files-found: error
+  smoke:
+    name: smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+        with:
+          version: "0.12.23"
+          python-version: "3.14"
+          enable-cache: true
+      - run: uv sync --locked --all-packages
+      - run: make demo-check
+  secrets:
+    name: secrets
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          # gitleaks scans the whole history, not just the last commit.
+          fetch-depth: 0
+          persist-credentials: false
+      - run: make secrets-scan
+  observability:
+    name: observability
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+        with:
+          version: "0.12.23"
+          python-version: "3.14"
+          enable-cache: true
+      - run: uv sync --locked --all-packages
+      - run: make obs-check
+      - run: make obs-smoke
+      - if: always()
+        run: docker compose -f compose.observability.yaml down -v
+  image:
+    name: image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+        with:
+          version: "0.12.23"
+          python-version: "3.14"
+          enable-cache: true
+      - run: uv sync --locked --all-packages
+      - run: make image-scan
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sbom-runtime-image
+          path: var/sbom/runtime-image.cdx.json
+          if-no-files-found: error
+      - run: make image-test

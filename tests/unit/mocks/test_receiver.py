@@ -69,7 +69,6 @@ async def test_tasks_and_missing_lookup() -> None:
         assert (await client.get(f"/v1/messages/{uuid4()}")).status_code == 404
 
 
-@pytest.mark.asvs
 async def test_replay_conflict_and_recovery(tmp_path: Path) -> None:
     journal = tmp_path / "delivery.jsonl"
     store = DeliveryStore(journal)
@@ -94,7 +93,6 @@ async def test_replay_conflict_and_recovery(tmp_path: Path) -> None:
     assert len(journal.read_text().splitlines()) == 1
 
 
-@pytest.mark.asvs
 async def test_competing_requests_commit_once() -> None:
     store = DeliveryStore()
     operation_id = uuid4()
@@ -121,7 +119,6 @@ async def test_cancelled_reservation_can_be_retried() -> None:
     assert store.count == 1
 
 
-@pytest.mark.asvs
 async def test_pending_lookup_never_signals_safe_to_resend() -> None:
     store = DeliveryStore()
     operation_id = uuid4()
@@ -152,7 +149,6 @@ async def test_non_idempotent_receiver_really_duplicates() -> None:
     assert await store.lookup(operation_id) == second
 
 
-@pytest.mark.asvs
 async def test_timeout_after_commit_can_reconcile_without_resending(
     tmp_path: Path,
 ) -> None:
@@ -296,7 +292,6 @@ def test_fault_plan_consumes_only_named_endpoint() -> None:
     assert plan.next_fault("tasks") is Fault.RATE_LIMIT
 
 
-@pytest.mark.asvs
 @pytest.mark.parametrize(
     ("headers", "change"),
     [

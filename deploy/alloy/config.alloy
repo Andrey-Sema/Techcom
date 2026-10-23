@@ -1,0 +1,75 @@
+// Log pipeline (M10): the app pushes OTLP logs here; Alloy limits
+// memory, strips fields that must never be stored, batches and forwards
+// to Loki's native OTLP endpoint. No Docker socket, no file tailing.
+
+otelcol.receiver.otlp "app" {
+	http {
+		endpoint = "0.0.0.0:4318"
+	}
+
+	output {
+		logs = [otelcol.processor.memory_limiter.default.input]
+	}
+}
+
+otelcol.processor.memory_limiter "default" {
+	check_interval = "1s"
+	limit          = "200MiB"
+
+	output {
+		logs = [otelcol.processor.attributes.redact.input]
+	}
+}
+
+// Defence in depth for ASVS 16.2.5: the app already never logs these
+// fields (Semgrep rule no-untrusted-text-in-logs); if one slips
+// through, it is dropped before storage.
+otelcol.processor.attributes "redact" {
+	action {
+		key    = "notes"
+		action = "delete"
+	}
+
+	action {
+		key    = "prompt"
+		action = "delete"
+	}
+
+	action {
+		key    = "raw_output"
+		action = "delete"
+	}
+
+	action {
+		key    = "input_text"
+		action = "delete"
+	}
+
+	action {
+		key    = "api_key"
+		action = "delete"
+	}
+
+	action {
+		key    = "authorization"
+		action = "delete"
+	}
+
+	output {
+		logs = [otelcol.processor.batch.default.input]
+	}
+}
+
+otelcol.processor.batch "default" {
+	output {
+		logs = [otelcol.exporter.otlphttp.loki.input]
+	}
+}
+
+otelcol.exporter.otlphttp "loki" {
+	client {
+		// Plain HTTP inside the isolated network only; production uses TLS
+		// and authentication between collector and backend.
+		endpoint = "http://loki:3100/otlp"
+	}
+}

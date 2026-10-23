@@ -1,0 +1,110 @@
+# Observability stack (M10, ADR-0010): Prometheus, Loki, Alloy, Grafana.
+#
+#   make obs-secrets   # once: random Grafana admin credentials
+#   make up-obs        # start; Grafana on http://127.0.0.1:3000
+#
+# Images are pinned by tag and digest. No container mounts the Docker
+# socket: the app pushes logs to Alloy over OTLP (OWASP Docker Security
+# Cheat Sheet, rule 1). Published ports bind to 127.0.0.1 only.
+name: techcom-observability
+
+x-hardening: &hardening
+  read_only: true
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: [ALL]
+  tmpfs: [/tmp]
+  restart: unless-stopped
+  networks: [observability]
+
+services:
+  prometheus:
+    <<: *hardening
+    image: prom/prometheus:v3.15.0@sha256:efd719c99d83b060d9daefdcf00360461adf279f45ef5391f8d111892118753e
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+    volumes:
+      - ./deploy/prometheus:/etc/prometheus:ro
+      - promdata:/prometheus
+    ports: ["127.0.0.1:9090:9090"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:9090/-/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+
+  loki:
+    <<: *hardening
+    image: grafana/loki:3.7.8@sha256:1107dd5274e0ada47e42472b7a7e71f3b2a2fe878878108f3e2f9e51528f0193
+    command: ["-config.file=/etc/loki/loki.yml"]
+    volumes:
+      - ./deploy/loki/loki.yml:/etc/loki/loki.yml:ro
+      - lokidata:/loki
+    # The image is distroless (no shell, no wget), so readiness is
+    # checked from outside: make obs-smoke polls /ready.
+    ports: ["127.0.0.1:3100:3100"]
+
+  alloy:
+    <<: *hardening
+    image: grafana/alloy:v1.20.1@sha256:2aa2099af76c0098d4af7a4d6e48f86cb66dc1a000222ad927a1c67c6542d13f
+    command:
+      - run
+      - --server.http.listen-addr=0.0.0.0:12345
+      # Ephemeral WAL on tmpfs: the image's /var/lib/alloy is root-only.
+      - --storage.path=/tmp/alloy
+      - /etc/alloy/config.alloy
+    # The image defaults to root; nothing here needs it.
+    user: "65534:65534"
+    volumes:
+      - ./deploy/alloy/config.alloy:/etc/alloy/config.alloy:ro
+    # OTLP/HTTP for the app; bound to localhost for local runs.
+    ports: ["127.0.0.1:4318:4318"]
+    depends_on: [loki]
+
+  grafana:
+    <<: *hardening
+    image: grafana/grafana:13.2.3@sha256:b28bae15e219c998fb0e0424ed724930cc61b1f61fb404d47c862f9a23f9e572
+    environment:
+      GF_SECURITY_ADMIN_USER__FILE: /run/secrets/grafana_admin_user
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin_password
+      GF_SECURITY_DISABLE_GRAVATAR: "true"
+      GF_SECURITY_COOKIE_SAMESITE: strict
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"
+    secrets: [grafana_admin_user, grafana_admin_password]
+    volumes:
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafanadata:/var/lib/grafana
+    ports: ["127.0.0.1:3000:3000"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+    depends_on:
+      prometheus:
+        condition: service_healthy
+      loki:
+        condition: service_started
+
+networks:
+  observability:
+    name: techcom-observability
+
+volumes:
+  promdata:
+  lokidata:
+  grafanadata:
+
+secrets:
+  grafana_admin_user:
+    file: ./secrets/grafana_admin_user
+  grafana_admin_password:
+    file: ./secrets/grafana_admin_password

@@ -66,6 +66,7 @@ async def test_run_lifecycle_and_detached_stats(
     assert not await repository.finish_run(uuid4(), {}, NOW)
 
 
+@pytest.mark.asvs("2.3.3")
 async def test_atomic_enqueue_and_replay(repository: Repository) -> None:
     write = await action_write(repository)
     stored = await repository.record_decision(write, NOW)
@@ -83,6 +84,7 @@ async def test_atomic_enqueue_and_replay(repository: Repository) -> None:
     assert len(await repository.list_audit()) == 1
 
 
+@pytest.mark.asvs("2.3.4")
 async def test_two_runs_concurrently_dedupe_one_action(
     repository: Repository,
 ) -> None:
@@ -102,6 +104,7 @@ async def test_two_runs_concurrently_dedupe_one_action(
     assert len(await repository.list_audit()) == 5
 
 
+@pytest.mark.asvs("2.3.4")
 async def test_same_run_task_race_creates_one_decision(
     repository: Repository,
 ) -> None:
@@ -125,6 +128,7 @@ async def test_no_action_never_creates_outbox(repository: Repository) -> None:
     assert await repository.list_actions() == ()
 
 
+@pytest.mark.asvs("2.3.3")
 async def test_failed_write_leaves_nothing(repository: Repository) -> None:
     write = await action_write(repository)
     with pytest.raises(ValueError, match="run does not exist"):
@@ -136,6 +140,7 @@ async def test_failed_write_leaves_nothing(repository: Repository) -> None:
     assert await repository.list_decisions(write.run_id) == ()
 
 
+@pytest.mark.asvs("2.3.4")
 async def test_parallel_dispatchers_claim_disjoint_batches(
     repository: Repository,
 ) -> None:
@@ -153,6 +158,7 @@ async def test_parallel_dispatchers_claim_disjoint_batches(
 
 
 @pytest.mark.parametrize("terminal", [ActionStatus.SENT, ActionStatus.DEAD])
+@pytest.mark.asvs("2.3.1")
 async def test_terminal_rows_never_leave_terminal(
     repository: Repository, terminal: ActionStatus
 ) -> None:
@@ -198,6 +204,7 @@ async def test_retry_is_not_claimed_until_scheduled(
     )
 
 
+@pytest.mark.asvs("16.5.3")
 async def test_unknown_requires_lookup_before_resend(
     repository: Repository,
 ) -> None:
@@ -219,6 +226,7 @@ async def test_unknown_requires_lookup_before_resend(
     assert resend.attempts == 2
 
 
+@pytest.mark.asvs("2.3.1")
 async def test_expired_send_is_unknown_and_old_worker_is_fenced(
     repository: Repository,
 ) -> None:
@@ -263,6 +271,7 @@ async def test_expired_reconciliation_claim_is_fenced(
     )
 
 
+@pytest.mark.asvs("2.3.1")
 async def test_nonowners_cannot_mutate_claim(repository: Repository) -> None:
     await enqueue(repository)
     pending = (await repository.list_actions())[0]

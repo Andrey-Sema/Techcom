@@ -20,10 +20,14 @@ from techcom_followup.application.repository import (
     ClaimRequest,
     DecisionOutcome,
     DecisionWrite,
+    PruneCounts,
+    RetentionCutoffs,
     RunRecord,
     StoredDecision,
     require_aware,
 )
+
+_TERMINAL = frozenset({ActionStatus.SENT, ActionStatus.DEAD})
 
 
 class InMemoryRepository:
@@ -302,6 +306,70 @@ class InMemoryRepository:
     async def list_audit(self) -> tuple[AuditEvent, ...]:
         """Detach nested payloads from append-only storage."""
         return deepcopy(tuple(self._audit))
+
+    async def prune(
+        self, cutoffs: RetentionCutoffs, limit: int
+    ) -> PruneCounts:
+        """Mirror the PostgreSQL retention rules in one locked batch."""
+        async with self._lock:
+            return PruneCounts(
+                self._prune_cache(cutoffs.cache, limit),
+                self._prune_actions(cutoffs.actions, limit),
+                self._prune_decisions(cutoffs.decisions, limit),
+                self._prune_audit(cutoffs.audit, limit),
+                self._prune_runs(cutoffs.decisions, limit),
+            )
+
+    def _prune_cache(self, cutoff: datetime, limit: int) -> int:
+        keys = [k for k, e in self._cache.items() if e.expires_at <= cutoff]
+        for key in keys[:limit]:
+            del self._cache[key]
+        return len(keys[:limit])
+
+    def _prune_actions(self, cutoff: datetime, limit: int) -> int:
+        old = [
+            action
+            for action in self._actions.values()
+            if action.status in _TERMINAL
+            and (action.sent_at or action.next_attempt_at) < cutoff
+        ][:limit]
+        for action in old:
+            del self._actions[action.id]
+            self._keys.discard(action.identity.idempotency_key)
+        return len(old)
+
+    def _prune_decisions(self, cutoff: datetime, limit: int) -> int:
+        referenced = {action.decision_id for action in self._actions.values()}
+        old = [
+            key
+            for key, stored in self._decisions.items()
+            if self._runs[key[0]].started_at < cutoff
+            and stored.id not in referenced
+        ][:limit]
+        for key in old:
+            del self._decisions[key]
+        return len(old)
+
+    def _prune_audit(self, cutoff: datetime, limit: int) -> int:
+        old = [i for i, e in enumerate(self._audit) if e.at < cutoff][:limit]
+        dropped = set(old)
+        self._audit = [
+            event
+            for index, event in enumerate(self._audit)
+            if index not in dropped
+        ]
+        return len(old)
+
+    def _prune_runs(self, cutoff: datetime, limit: int) -> int:
+        used = {run_id for run_id, _ in self._decisions}
+        old = [
+            run.id
+            for run in self._runs.values()
+            if run.started_at < cutoff and run.id not in used
+        ][:limit]
+        for run_id in old:
+            del self._runs[run_id]
+        return len(old)
 
 
 def _visible(action: ActionRecord, query: ActionReadQuery) -> bool:

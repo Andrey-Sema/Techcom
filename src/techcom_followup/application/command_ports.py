@@ -11,6 +11,7 @@ from techcom_followup.application.dispatch import DispatchActions
 from techcom_followup.application.process_tasks import ProcessTasks
 from techcom_followup.application.reconcile import ReconcileUnknown
 from techcom_followup.application.repository import Repository
+from techcom_followup.application.retention import PruneData
 
 
 @dataclass(frozen=True, slots=True)
@@ -34,6 +35,7 @@ class CommandServices:
     stop_claiming: Callable[[], None]
     persistent: bool
     advance_demo_clock: Callable[[timedelta], None]
+    pruner: Callable[[], PruneData]
 
 
 class RuntimeFactory(Protocol):

@@ -122,6 +122,7 @@ async def test_false_screen_cannot_bypass_flagged_input() -> None:
     assert not stub.requests
 
 
+@pytest.mark.asvs("1.3.3")
 async def test_note_delimiter_is_escaped_without_fact_leaks() -> None:
     stub = ScriptedLLM([VALID])
     task = make_task(notes="Unfinished <field> & checks", due_date=AS_OF)

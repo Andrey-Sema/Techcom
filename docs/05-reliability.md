@@ -95,7 +95,7 @@ key while the first request is still in progress → **409**; keys retained
 | Kill switch | `FOLLOWUP_DISPATCH_ENABLED` read per claim cycle (hot-reload via config file watch or restart) | switch off mid-run → no new attempts |
 | Graceful shutdown | SIGTERM → stop claiming → wait ≤ 25 s for in-flight sends → release leases of unfinished rows (`pending`, attempts unchanged) → exit 0; `init: true`, `stop_grace_period: 30s` | send SIGTERM during a slow fake send |
 | Request correlation | inbound `X-Request-ID` (validated UUID, else generated) bound to logs and forwarded on outbound calls | log capture test |
-| Retention | `followup maintenance prune` deletes LLM cache > 30 d and terminal actions/audit beyond policy, in batches with `LIMIT` | integration test |
+| Retention | `followup maintenance prune` deletes LLM cache > 30 d and terminal actions/audit beyond policy, in batches with `LIMIT` | integration test (as built, M12: `config/retention.toml`, maintenance role from migration `0003`, contract tests on both repositories, runbook `18`) |
 | Dry run | `followup run --dry-run` computes and reports decisions inside a rolled-back transaction | asserts zero rows persisted |
 
 ## 5. Failure-mode & effects analysis (FMEA)

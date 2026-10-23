@@ -1,7 +1,6 @@
 """Composition root: own resources and wire CLI use cases explicitly."""
 
 import json
-import os
 import time
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
@@ -59,6 +58,7 @@ from techcom_followup.application.processing_ports import (
 )
 from techcom_followup.application.reconcile import ReconcileUnknown
 from techcom_followup.application.repository import Repository
+from techcom_followup.application.retention import PruneData
 from techcom_followup.application.retry import RetryBudget
 from techcom_followup.infrastructure.http_client import (
     HttpEndpoint,
@@ -67,6 +67,7 @@ from techcom_followup.infrastructure.http_client import (
 from techcom_followup.infrastructure.log_config import configure_logging
 from techcom_followup.infrastructure.policy_files import (
     load_decision_policy,
+    load_retention_policy,
 )
 from techcom_followup.infrastructure.resilience import CircuitBreaker
 from techcom_followup.infrastructure.settings import load_openai_settings
@@ -261,13 +262,10 @@ class _RuntimeScope:
                     cooldown_s=30,
                     monotonic=time.monotonic,
                 ),
+                # FOLLOWUP_DISPATCH_ENABLED comes in through settings,
+                # loaded when each command starts.
                 enabled=lambda: (
-                    not self._stopping
-                    and self._settings.dispatch_enabled
-                    and os.environ.get(
-                        "FOLLOWUP_DISPATCH_ENABLED", "true"
-                    ).lower()
-                    in {"true", "1", "yes"}
+                    not self._stopping and self._settings.dispatch_enabled
                 ),
             )
         return self._dispatcher
@@ -275,6 +273,16 @@ class _RuntimeScope:
     def reconciler(self) -> ReconcileUnknown:
         """Recover using delivery settings without LLM credentials."""
         return ReconcileUnknown(self._delivery())
+
+    def pruner(self) -> PruneData:
+        """Apply retention; needs neither HTTP nor LLM clients."""
+        return PruneData(
+            self._storage.repository,
+            load_retention_policy(
+                self._settings.config_dir / "retention.toml"
+            ),
+            self._clock.now,
+        )
 
     def stop_claiming(self) -> None:
         """Close admission even before lazy construction."""
@@ -325,6 +333,7 @@ class RuntimeBuilder:
                 scope.stop_claiming,
                 storage.persistent,
                 partial(_advance, clock),
+                scope.pruner,
             )
 
 

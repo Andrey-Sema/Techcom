@@ -135,12 +135,20 @@ def test_r4_unknown_status_asks_the_owner(policy: DecisionPolicy) -> None:
         ReasonCode.UNKNOWN_STATUS,
         OWNER,
     )
+    assert policy.decide(task, as_of=AS_OF).reason == (
+        "Status value is not recognised."
+    )
 
 
 class TestR5Materials:
     @pytest.mark.parametrize(
         ("days", "priority"),
-        [(-3, Priority.HIGH), (0, Priority.HIGH), (4, Priority.NORMAL)],
+        [
+            (-3, Priority.HIGH),
+            (0, Priority.HIGH),
+            (1, Priority.NORMAL),
+            (4, Priority.NORMAL),
+        ],
     )
     def test_materials_request_an_eta_from_the_warehouse(
         self, policy: DecisionPolicy, days: int, priority: Priority
@@ -193,6 +201,14 @@ class TestR6Escalate:
         task = make_task(due_date=due_in(-1))
         upstream = reading(BlockerCategory.UPSTREAM_DEPENDENCY)
         assert decide(policy, task, upstream)[1] == "R6"
+
+    @pytest.mark.parametrize(("days", "rule"), [(-1, "R6"), (0, "R9")])
+    def test_dependency_on_a_working_task_waits_for_the_due_date(
+        self, policy: DecisionPolicy, days: int, rule: str
+    ) -> None:
+        task = make_task(due_date=due_in(days))
+        upstream = reading(BlockerCategory.UPSTREAM_DEPENDENCY)
+        assert decide(policy, task, upstream)[1] == rule
 
     def test_dependency_note_on_a_healthy_task_is_not_noise(
         self, policy: DecisionPolicy
@@ -282,8 +298,10 @@ class TestR8DueSoon:
         decision = policy.decide(task, as_of=AS_OF)
         assert decision.rule_id == rule
         if rule == "R8":
+            assert decision.kind is DecisionKind.FOLLOW_UP_OWNER
             assert decision.reason_code is ReasonCode.DUE_SOON_NOT_STARTED
             assert decision.target == OWNER
+            assert decision.reason.endswith("; not started.")
 
     @pytest.mark.parametrize(
         ("last_update", "rule"),
@@ -301,6 +319,7 @@ class TestR8DueSoon:
         decision = policy.decide(
             make_task(due_date=due_in(0), last_update=None), as_of=AS_OF
         )
+        assert decision.kind is DecisionKind.FOLLOW_UP_OWNER
         assert decision.reason_code is ReasonCode.DUE_SOON_STALE
         assert decision.reason == "Due today; no update recorded."
 
@@ -403,6 +422,10 @@ class TestConfigValidation:
     ) -> None:
         with pytest.raises(ValueError, match="validation error"):
             RoutingTable.model_validate(bad)
+
+    def test_recipient_errors_name_the_rule(self) -> None:
+        with pytest.raises(ValueError, match="recipient names must be short"):
+            RoutingTable.model_validate({"fallback_team": "Ops\r\nBcc: x"})
 
     def test_project_lookup_ignores_case_and_spacing(self) -> None:
         table = RoutingTable.model_validate(

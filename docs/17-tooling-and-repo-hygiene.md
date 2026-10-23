@@ -459,6 +459,11 @@ repos:
 
 ## 7. Semgrep custom rules (`.semgrep/project-invariants.yml`)
 
+> As built (M0b): seven rules are enforced; `no-llm-output-without-validation`
+> lands with the M5 interpreter, because it needs the real call sites.
+> Semgrep runs through `uvx` pinned to one version: as a project dependency
+> it cannot be resolved together with the application's dependency set.
+
 Each rule encodes a design decision so it cannot silently regress.
 
 | Rule id | Forbids | Protects |

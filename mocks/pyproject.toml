@@ -17,3 +17,10 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/techcom_mocks"]
+
+[tool.deptry]
+known_first_party = ["techcom_mocks"]
+
+[tool.deptry.per_rule_ignores]
+# uvicorn serves the app from the command line (make mock).
+DEP002 = ["uvicorn"]

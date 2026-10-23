@@ -8,7 +8,7 @@ from alembic.migration import MigrationContext
 from pydantic import TypeAdapter
 from sqlalchemy import event, inspect, select, text
 from sqlalchemy.engine import Connection
-from sqlalchemy.exc import DBAPIError
+from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from persistence_support import NOW, action_write, migration_config
@@ -171,6 +171,7 @@ async def test_cancelled_claim_rolls_back_lease_and_attempt(
     assert len(await repository.claim_actions(ClaimRequest(NOW))) == 1
 
 
+@pytest.mark.asvs("2.3.3")
 async def test_late_failure_rolls_back_action_decision_and_audit(
     pg_engine: AsyncEngine,
 ) -> None:
@@ -202,3 +203,38 @@ async def test_late_failure_rolls_back_action_decision_and_audit(
     assert await repository.list_decisions(write.run_id) == ()
     assert await repository.list_actions() == ()
     assert await repository.list_audit() == ()
+
+
+async def test_only_a_missing_run_becomes_a_value_error(
+    pg_engine: AsyncEngine,
+) -> None:
+    repository = PgRepository(pg_engine)
+    write = await action_write(repository)
+    async with pg_engine.begin() as connection:
+        await connection.execute(
+            text("""
+            CREATE FUNCTION reject_test_decision() RETURNS trigger
+            LANGUAGE plpgsql AS $$
+            BEGIN
+                RAISE EXCEPTION 'injected check'
+                    USING ERRCODE = 'check_violation';
+            END; $$
+        """)
+        )
+        await connection.execute(
+            text("""
+            CREATE TRIGGER reject_test_decision BEFORE INSERT ON decisions
+            FOR EACH ROW EXECUTE FUNCTION reject_test_decision()
+        """)
+        )
+    try:
+        with pytest.raises(IntegrityError, match="injected check"):
+            await repository.record_decision(write, NOW)
+    finally:
+        async with pg_engine.begin() as connection:
+            await connection.execute(
+                text("DROP TRIGGER reject_test_decision ON decisions")
+            )
+            await connection.execute(
+                text("DROP FUNCTION reject_test_decision")
+            )

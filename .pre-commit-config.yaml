@@ -1,4 +1,6 @@
 minimum_pre_commit_version: "4.0.0"
+default_install_hook_types: [pre-commit, commit-msg, pre-push]
+default_stages: [pre-commit]
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c # v6.0.0
@@ -9,6 +11,8 @@ repos:
       - id: check-json
       - id: check-toml
       - id: check-yaml
+        # Syntax only: mkdocs.yml uses a !!python/name tag (Mermaid fence).
+        args: [--unsafe]
       - id: debug-statements
       - id: detect-private-key
       - id: end-of-file-fixer
@@ -37,6 +41,17 @@ repos:
         entry: make quality
         language: system
         pass_filenames: false
+      - id: hadolint
+        name: hadolint (image pinned by digest)
+        entry: make dockerfile-lint
+        language: system
+        files: ^Dockerfile$
+        pass_filenames: false
+      - id: gitleaks
+        name: gitleaks on staged changes (image pinned by digest)
+        entry: make secrets-staged
+        language: system
+        pass_filenames: false
       - id: no-coverage-suppression
         name: no coverage suppression
         entry: 'pragma:\s*no\s*(cover|branch)'
@@ -52,3 +67,43 @@ repos:
         entry: '#\s*nosec(?!\s+B\d{3})'
         language: pygrep
         types: [python]
+      # M0b gates. They run from the locked "gates" group, so hook
+      # versions come from uv.lock and nothing is fetched at hook time.
+      - id: codespell
+        name: codespell
+        entry: uv run --locked --group gates codespell
+        language: system
+        pass_filenames: false
+      - id: yamllint
+        name: yamllint
+        entry: uv run --locked --group gates yamllint --strict
+        language: system
+        types: [yaml]
+      - id: validate-pyproject
+        name: validate-pyproject
+        entry: uv run --locked --group gates validate-pyproject
+        language: system
+        files: (^|/)pyproject\.toml$
+      - id: workflows
+        name: zizmor and workflow schemas
+        entry: make workflows
+        language: system
+        files: ^\.github/
+        pass_filenames: false
+      - id: commitizen
+        name: Conventional Commits message
+        entry: uv run --locked --group gates cz check --commit-msg-file
+        language: system
+        stages: [commit-msg]
+      - id: vulture
+        name: vulture (dead code)
+        entry: uv run --locked --group gates vulture
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
+      - id: complexity
+        name: xenon (complexity)
+        entry: make complexity
+        language: system
+        pass_filenames: false
+        stages: [pre-push]

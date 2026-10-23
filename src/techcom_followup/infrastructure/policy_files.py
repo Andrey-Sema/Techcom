@@ -7,6 +7,7 @@ silently changing who gets messaged (AC-F7).
 import tomllib
 from pathlib import Path
 
+from techcom_followup.application.retention import RetentionPolicy
 from techcom_followup.domain.policy import (
     DecisionPolicy,
     PolicyConfig,
@@ -44,3 +45,15 @@ def load_decision_policy(config_dir: Path) -> DecisionPolicy:
         load_policy_config(config_dir / "policy.toml"),
         load_routing_table(config_dir / "routing.toml"),
     )
+
+
+def load_retention_policy(path: Path) -> RetentionPolicy:
+    """Read and validate ``config/retention.toml``.
+
+    Raises:
+        OSError: If the file cannot be read.
+        tomllib.TOMLDecodeError: If the file is not valid TOML.
+        pydantic.ValidationError: If the content violates the schema.
+    """
+    with path.open("rb") as handle:
+        return RetentionPolicy.model_validate(tomllib.load(handle))

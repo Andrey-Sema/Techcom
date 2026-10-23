@@ -2,17 +2,17 @@
 
 import os
 import secrets
+import socket
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import UTC, datetime
+from urllib.parse import urlsplit
 
-import docker
 import pytest
 import pytest_asyncio
 from alembic import command
 from alembic.config import Config
-from docker.errors import DockerException
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
@@ -26,6 +26,32 @@ from techcom_followup.domain.messages import compose
 from techcom_followup.domain.models import TaskId, TaskStatus
 
 NOW = datetime(2026, 10, 21, 9, tzinfo=UTC)
+DEFAULT_DOCKER_HOST = "unix:///var/run/docker.sock"
+
+
+def docker_unreachable() -> str | None:
+    """Return why the Docker daemon cannot be reached, or ``None``.
+
+    The Docker SDK leaks its socket when the daemon refuses the
+    connection, and ``filterwarnings = error`` then turns the leak into
+    an unrelated error at interpreter shutdown. A plain socket closed by
+    ``with`` keeps the real reason visible. Schemes other than ``unix``
+    and ``tcp`` are left to testcontainers to judge.
+    """
+    host = os.environ.get("DOCKER_HOST") or DEFAULT_DOCKER_HOST
+    target = urlsplit(host)
+    try:
+        if target.scheme == "unix":
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
+                sock.settimeout(5)
+                sock.connect(target.path)
+        elif target.scheme == "tcp":
+            address = (target.hostname or "localhost", target.port or 2375)
+            with socket.create_connection(address, timeout=5):
+                pass
+    except OSError as error:
+        return f"{host}: {error.strerror or type(error).__name__}"
+    return None
 
 
 @pytest.fixture(scope="session")
@@ -34,16 +60,11 @@ def postgres_url() -> Iterator[str]:
     if configured:
         yield configured
         return
-    try:
-        client = docker.from_env(version="1.45")
-        try:
-            client.ping()
-        finally:
-            client.close()
-    except (DockerException, OSError) as error:
+    reason = docker_unreachable()
+    if reason is not None:
         if os.environ.get("CI"):
-            pytest.fail(f"Docker required in CI: {type(error).__name__}")
-        pytest.skip("Docker unavailable; PostgreSQL contract tests require it")
+            pytest.fail(f"Docker required in CI ({reason})", pytrace=False)
+        pytest.skip(f"Docker unavailable ({reason}); PostgreSQL tests need it")
     with PostgresContainer(
         "postgres:18", driver="psycopg", password=secrets.token_urlsafe(24)
     ) as postgres:

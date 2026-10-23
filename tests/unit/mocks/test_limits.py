@@ -1,14 +1,12 @@
 from collections.abc import AsyncIterator
 
 import httpx
-import pytest
 from starlette.types import Message, Receive, Scope, Send
 
 from techcom_mocks.app import create_app
 from techcom_mocks.limits import MAX_REQUEST_BYTES, BodyLimitMiddleware
 
 
-@pytest.mark.asvs
 async def test_chunked_body_limit_ignores_claimed_content_length() -> None:
     async def chunks() -> AsyncIterator[bytes]:
         yield b"x" * (MAX_REQUEST_BYTES // 2)

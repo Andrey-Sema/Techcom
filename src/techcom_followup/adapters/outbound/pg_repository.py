@@ -27,11 +27,15 @@ from techcom_followup.application.repository import (
     ClaimRequest,
     DecisionOutcome,
     DecisionWrite,
+    PruneCounts,
+    RetentionCutoffs,
     RunRecord,
     StoredDecision,
     require_aware,
 )
 
+_FOREIGN_KEY_VIOLATION = "23503"
+_TERMINAL = ("sent", "dead")
 _WRITE = TypeAdapter(DecisionWrite)
 _ACTION = TypeAdapter(ActionRecord)
 _RUN = TypeAdapter(RunRecord)
@@ -118,40 +122,51 @@ class PgRepository:
     async def record_decision(
         self, write: DecisionWrite, now: datetime
     ) -> StoredDecision:
-        """Commit decision, deduped action and audit together."""
+        """Commit decision, deduped action and audit together.
+
+        One round trip per statement that changes state: the foreign key
+        proves the run exists, and a fresh insert is returned from the
+        write itself instead of being read back.
+        """
         write.validate()
         require_aware(now)
         async with self._engine.begin() as connection:
-            existing_run = await connection.scalar(
-                sa.select(runs.c.id).where(runs.c.id == write.run_id)
-            )
-            if existing_run is None:
-                message = "run does not exist"
-                raise ValueError(message)
-            inserted = await connection.execute(
-                insert(decisions)
-                .values(
-                    run_id=write.run_id,
-                    task_id=write.decision.task_id,
-                    data=_WRITE.dump_python(write, mode="json"),
-                    state_fingerprint=write.fingerprint,
-                    outcome="none",
+            try:
+                inserted = await connection.execute(
+                    insert(decisions)
+                    .values(
+                        run_id=write.run_id,
+                        task_id=write.decision.task_id,
+                        data=_WRITE.dump_python(write, mode="json"),
+                        state_fingerprint=write.fingerprint,
+                        outcome="none",
+                    )
+                    .on_conflict_do_nothing(
+                        index_elements=[
+                            decisions.c.run_id,
+                            decisions.c.task_id,
+                        ]
+                    )
+                    .returning(decisions.c.id)
                 )
-                .on_conflict_do_nothing(
-                    index_elements=[decisions.c.run_id, decisions.c.task_id]
-                )
-                .returning(decisions.c.id)
-            )
+            except sa.exc.IntegrityError as error:
+                sqlstate = getattr(error.orig, "sqlstate", None)
+                if sqlstate == _FOREIGN_KEY_VIOLATION:
+                    message = "run does not exist"
+                    raise ValueError(message) from error
+                raise
             decision_id = inserted.scalar_one_or_none()
-            if decision_id is not None:
-                await self._enqueue(connection, write, decision_id, now)
-            result = await connection.execute(
-                sa.select(decisions).where(
-                    decisions.c.run_id == write.run_id,
-                    decisions.c.task_id == write.decision.task_id,
+            if decision_id is None:
+                # The same run already decided this task: replay it.
+                result = await connection.execute(
+                    sa.select(decisions).where(
+                        decisions.c.run_id == write.run_id,
+                        decisions.c.task_id == write.decision.task_id,
+                    )
                 )
-            )
-            return _stored(result.mappings().one())
+                return _stored(result.mappings().one())
+            outcome = await self._enqueue(connection, write, decision_id, now)
+            return StoredDecision(decision_id, write, outcome)
 
     async def _enqueue(
         self,
@@ -159,7 +174,7 @@ class PgRepository:
         write: DecisionWrite,
         decision_id: UUID,
         now: datetime,
-    ) -> None:
+    ) -> DecisionOutcome:
         outcome = DecisionOutcome.NONE
         identity = write.identity
         if identity is not None:
@@ -179,11 +194,12 @@ class PgRepository:
                 if result.scalar_one_or_none() is not None
                 else DecisionOutcome.DUPLICATE_SUPPRESSED
             )
-        await connection.execute(
-            decisions.update()
-            .where(decisions.c.id == decision_id)
-            .values(outcome=outcome.value)
-        )
+            # Decisions without an action keep the inserted "none".
+            await connection.execute(
+                decisions.update()
+                .where(decisions.c.id == decision_id)
+                .values(outcome=outcome.value)
+            )
         await connection.execute(
             audit_events.insert().values(
                 kind=f"decision.{outcome.value}",
@@ -193,6 +209,7 @@ class PgRepository:
                 payload={"decision_id": str(decision_id)},
             )
         )
+        return outcome
 
     async def list_decisions(self, run_id: UUID) -> tuple[StoredDecision, ...]:
         """Return stable insertion order using UUIDv7 row keys."""
@@ -427,3 +444,61 @@ class PgRepository:
                 )
                 for row in result.mappings()
             )
+
+    async def prune(
+        self, cutoffs: RetentionCutoffs, limit: int
+    ) -> PruneCounts:
+        """Delete one bounded batch per table in a single transaction.
+
+        Order matters: actions go first, so their decisions become
+        eligible in the same batch, and runs go last.
+        """
+        unreferenced = ~sa.exists().where(
+            actions.c.decision_id == decisions.c.id
+        )
+        old_runs = sa.select(runs.c.id).where(
+            runs.c.started_at < cutoffs.decisions
+        )
+        steps = (
+            (
+                llm_cache,
+                llm_cache.c.cache_key,
+                llm_cache.c.expires_at <= cutoffs.cache,
+            ),
+            (
+                actions,
+                actions.c.id,
+                actions.c.status.in_(_TERMINAL)
+                & (
+                    sa.func.coalesce(
+                        actions.c.sent_at, actions.c.next_attempt_at
+                    )
+                    < cutoffs.actions
+                ),
+            ),
+            (
+                decisions,
+                decisions.c.id,
+                decisions.c.run_id.in_(old_runs) & unreferenced,
+            ),
+            (
+                audit_events,
+                audit_events.c.id,
+                audit_events.c.at < cutoffs.audit,
+            ),
+            (
+                runs,
+                runs.c.id,
+                (runs.c.started_at < cutoffs.decisions)
+                & ~sa.exists().where(decisions.c.run_id == runs.c.id),
+            ),
+        )
+        deleted: list[int] = []
+        async with self._engine.begin() as connection:
+            for table, key, condition in steps:
+                victims = sa.select(key).where(condition).limit(limit)
+                result = await connection.execute(
+                    sa.delete(table).where(key.in_(victims))
+                )
+                deleted.append(result.rowcount)
+        return PruneCounts(*deleted)
