@@ -405,5 +405,4 @@ Details: [docs/08](docs/08-implementation-plan.md).
 | [OWASP LLM Top 10](docs/security/owasp-llm-top10.md) | Threats, controls and tests for LLM01–LLM10 |
 | [ADRs](docs/adr/) | Architecture decisions 0001–0018 |
 
-Time spent: about six hours of focused work over several sessions. AI
-coding assistants were used, as the brief allows.
+AI coding assistants were used, as the brief allows.

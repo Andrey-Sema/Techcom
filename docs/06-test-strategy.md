@@ -49,13 +49,14 @@ the policy) — coverage is the floor, not the proof.
 
 ## 2b. LLM evaluation harness (`ADR-0012`)
 
-* Dataset `tests/eval/notes.jsonl`: ≥ 60 synthetic, labelled notes —
+* Dataset `tests/eval/bundles/hardening.v2/notes.jsonl`: 95 synthetic,
+  labelled notes —
   materials (incl. "backorder", "awaiting delivery"), upstream dependency,
   permit, site access, none, genuinely ambiguous, and ≥ 30 injection
   variants (direct, homoglyph, base64, multilingual, "role" tags).
-* Recorded provider responses (`tests/eval/recordings/<prompt_version>/`)
-  are replayed in CI; `make eval` re-records against the live provider
-  (opt-in, needs a key).
+* Recorded responses (`tests/eval/bundles/hardening.v2/recordings/`) are
+  replayed by `make eval`; they are synthetic scripts, so provider quality
+  stays UNVERIFIED until real captures are added.
 * Metrics: per-class precision/recall, macro-F1, confusion matrix,
   fallback rate, **unsafe-outcome count** (any decision that differs from
   the rules-only decision in a forbidden direction, e.g. overdue →
@@ -69,7 +70,7 @@ the policy) — coverage is the floor, not the proof.
   stub LLM, PostgreSQL 18 via testcontainers; budgets: full run < 60 s,
   rerun (all duplicates) < 30 s, peak RSS < 300 MB. Results written to
   `docs/benchmarks.md` with hardware info.
-* As built (M8): `make bench`. Measured 83 s / 71 s / 218 MB after the
+* As built: `make bench`. Measured 83 s / 71 s / 218 MB after the
   benchmark exposed eight round trips per decision (now five) and a
   connection per transaction in the test helper. The 60 s / 30 s targets
   are not met; the test guards against regressions at 120 s, and
@@ -77,16 +78,16 @@ the policy) — coverage is the floor, not the proof.
 * Schemathesis against the running API (`/openapi.json`) with all checks
   (status-code conformance, response schema, server errors) using a CI
   service token; plus negative-auth stateful checks.
-* As built (M8): the same harness runs in-process against the mock
+* As built: the same harness runs in-process against the mock
   receiver (`tests/contract/api/test_mock_openapi.py`). Its first run
   found that the mock's OpenAPI described FastAPI's default 422 body and
   omitted 400/404/409/413/503; the routes now document what they send.
 
 ## 3. Property-based invariants (hypothesis)
 
-Implemented with M1 (`tests/property/test_domain_properties.py`): 1–6, 8,
-9, 10. Invariants 7, 11 and 12 need the use cases and the LLM
-interpreter and arrive with M4/M5.
+Tested in `tests/property/test_domain_properties.py` (1–6, 8–10),
+`test_parallel_processing.py` (7), `test_llm_output.py` (11) and
+`tests/unit/processing/test_retry_and_http.py` (12).
 
 1. **Totality**: every normalized task yields exactly one decision.
 2. **Done is quiet**: `status == DONE ⇒ decision == no_action`.
@@ -106,10 +107,10 @@ interpreter and arrive with M4/M5.
    no URLs/e-mails, length within bounds.
 10. **Normalization totality**: for arbitrary JSON values in every field
     (`st.recursive` over None/bool/int/float/str/list/dict), `normalize`
-    never raises and returns `Task` or `RejectedRecord` (`16` #2).
+    never raises and returns `Task` or `RejectedRecord`.
 11. **Any LLM text is safe**: for arbitrary stub output (`st.text()`,
     JSON-like strings), processing never crashes and an overdue non-Done
-    task is never `no_action` (`16` #8).
+    task is never `no_action`.
 12. **Retry allocation**: for any sequence of dependency failures, retry
     admissions never exceed `floor(allocated_request_units / 5)`. This
     invariant concerns the configured allocation, not the ratio of actual
@@ -162,7 +163,7 @@ exclude_also = [
 manual CI job (too slow for every push). Surviving mutants are either killed
 with a new test or documented as equivalent.
 
-As built (M8): `make mutation` (scope in `[tool.mutmut]`,
+As built: `make mutation` (scope in `[tool.mutmut]`,
 gate in `scripts/mutation_gate.py`), nightly workflow `nightly.yaml`. The
 first run killed 583/613 (95.1 %); the survivors exposed missing boundary
 tests (R5 priority at one day, R6 dependency due today, R8 kind and

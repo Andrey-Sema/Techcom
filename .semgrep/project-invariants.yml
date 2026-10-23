@@ -1,4 +1,4 @@
-# Project invariants (docs/17 section 7). Each rule encodes a design
+# Project invariants (ADR-0011). Each rule encodes a design
 # decision so that it cannot regress silently. Every rule has positive
 # and negative cases in project-invariants.py (run: make semgrep-test).
 rules:

@@ -9,7 +9,7 @@
 
 * **Wording:** "ASVS 5.0 L2 **design target**, verified items listed in
   `docs/asvs-traceability.md`, local deviations in §4" — never a bare
-  "L2 compliant" (`16` #18).
+  "L2 compliant".
 * **Target:** OWASP ASVS **5.0.0, Level 2** (L2 includes all L1
   requirements) for the `techcom-followup` service: REST API, CLI, workers,
   persistence and outbound integrations. The mock API is a test double and
@@ -364,7 +364,7 @@ No component accepts a URL from users or task data (no SSRF surface).
 | Process | Threat Modeling, Abuse Case, Secure Code Review, **Secure Coding with AI** (AI assistants are allowed by the brief: no hallucinated packages, review every dependency, no secrets in prompts), Vulnerability Disclosure, User Privacy Protection |
 
 Each cheat sheet in **bold** gets a short checklist file under
-`docs/security/` during M9, with every item mapped to a control or an N/A
+`docs/security/`, with every item mapped to a control or an N/A
 reason, exactly like the ASVS tables above.
 
 ## 10a. OWASP API Security Top 10 (2023) mapping

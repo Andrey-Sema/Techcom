@@ -67,7 +67,7 @@ repos:
         entry: '#\s*nosec(?!\s+B\d{3})'
         language: pygrep
         types: [python]
-      # M0b gates. They run from the locked "gates" group, so hook
+      # Quality gates. They run from the locked "gates" group, so hook
       # versions come from uv.lock and nothing is fetched at hook time.
       - id: codespell
         name: codespell

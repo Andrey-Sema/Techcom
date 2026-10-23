@@ -1,7 +1,7 @@
 """Factory for a loopback-only, single-worker development receiver.
 
 Do not expose this mock to production or an untrusted network. Service
-JWTs and project authorization belong to the production API (M6b).
+JWTs and project authorization belong to the product API (`serving.py`).
 """
 
 import asyncio

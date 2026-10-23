@@ -53,7 +53,7 @@ visibility and access control** are.
 Dashboards: one Grafana board with the above; logs searchable by `run_id`,
 `task_id`, `operation_id`.
 
-## 3a. Rollout strategy (added after `16` #22)
+## 3a. Rollout strategy
 
 1. **Shadow mode (1–2 weeks):** the service decides and logs, dispatch is
    disabled (kill switch). Ops compare its decisions with what humans

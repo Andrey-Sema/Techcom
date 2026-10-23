@@ -73,7 +73,7 @@ works on UTC calendar dates. Production design: each project carries an
 IANA time zone in `routing.toml`; `Δ` is computed on the project's local
 date; tests pin both behaviours.
 
-## 2b. Implementation notes (M1, as built)
+## 2b. Implementation notes
 
 Choices made while coding the table, each pinned by a unit test:
 
@@ -98,7 +98,7 @@ Choices made while coding the table, each pinned by a unit test:
 * **Placeholders are not blind spots.** The draft validator checks the
   text with each placeholder replaced by a word, so `{project}.com` or
   `{recipient_name}@example.org` still read as a host or a mailbox and
-  are rejected (found by mutation testing, M8).
+  are rejected (found by mutation testing).
 * **Code location.** `domain/{normalize,injection,interpretation,
   policy,identity,messages}.py`; thresholds in `config/policy.toml`,
   recipients in `config/routing.toml`, both validated at load

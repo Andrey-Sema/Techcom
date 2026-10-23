@@ -101,8 +101,8 @@ if the task state changed.
   every other alert is blind.
 * **Check:** is the service running and attached to the
   `techcom-observability` network? Does `/metrics` answer on the internal
-  port 9464? Until the API (M6b) exists this alert is expected in the
-  local stack.
+  port 9464? Start the API with `compose.api.yaml` on the observability
+  network; without it this alert is expected in the local stack.
 
 ## Diagnostics toolbox (never in the production image)
 

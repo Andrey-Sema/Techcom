@@ -1,4 +1,4 @@
-"""Static checks of the observability stack (M10); no Docker needed.
+"""Static checks of the observability stack; no Docker needed.
 
 The live counterpart is ``make obs-smoke``; ``make obs-check`` runs
 promtool, Loki and Alloy validators inside the pinned images.

@@ -17,7 +17,7 @@ The full OWASP LLM Top 10 matrix is in
 [`owasp-llm-top10.md`](owasp-llm-top10.md).
 Status words follow [`15`](../15-security-asvs-l2.md) §1. The note
 interpreter and drafter are in `application/interpreter.py`,
-`application/drafter.py` and `application/llm_workflow.py` (M5).
+`application/drafter.py` and `application/llm_workflow.py`.
 
 | Recommendation | Control here | Evidence | Status |
 |----------------|--------------|----------|--------|

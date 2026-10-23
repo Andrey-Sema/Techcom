@@ -1,4 +1,4 @@
-# Loki, single binary with filesystem storage (M10).
+# Loki, single binary with filesystem storage.
 #
 # auth_enabled is false only because Loki sits on the isolated
 # "observability" network and its port is bound to 127.0.0.1; production

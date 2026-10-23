@@ -25,7 +25,7 @@ enabled.
 − Four extra containers in the optional profile; the core demo does not
 depend on them.
 
-## As built (M10)
+## As built
 
 * Images pinned by tag and digest; Dependabot (`docker-compose`) proposes
   updates with a 7-day cooldown.

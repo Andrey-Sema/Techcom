@@ -1,4 +1,4 @@
-# Dockerfile policy (M8): `make dockerfile-lint`, part of `make gates`.
+# Dockerfile policy: `make dockerfile-lint`, part of `make gates`.
 failure-threshold: warning
 trustedRegistries:
   - docker.io

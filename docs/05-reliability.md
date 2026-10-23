@@ -77,7 +77,7 @@ FOLLOWUP_MOCK_FAULTS="tasks:429@1,tasks:503@2,messages:timeout_after_commit@1"
 | `timeout_after_commit` | Commit message + log line, then sleep past client timeout. |
 | `malformed` | 200 with a non-JSON body. |
 | `reset` | Close connection without response. |
-| `non_idempotent` | Receiver **ignores** `Idempotency-Key` (models a provider without idempotency support) — used to prove that reconcile-before-resend alone prevents duplicates (`16` #4). |
+| `non_idempotent` | Receiver **ignores** `Idempotency-Key` (models a provider without idempotency support) — used to prove that reconcile-before-resend alone prevents duplicates. |
 
 Receiver semantics (mirrors Stripe and the IETF `Idempotency-Key` draft):
 first request with a key stores status + body; repeats with the same key and
@@ -86,7 +86,7 @@ same payload hash return the stored response with header
 key while the first request is still in progress → **409**; keys retained
 ≥ 24 h.
 
-## 4a. Concurrency and lifecycle controls (added after `16`)
+## 4a. Concurrency and lifecycle controls
 
 | Control | Mechanism | Test |
 |---------|-----------|------|
@@ -95,7 +95,7 @@ key while the first request is still in progress → **409**; keys retained
 | Kill switch | `FOLLOWUP_DISPATCH_ENABLED` read per claim cycle (hot-reload via config file watch or restart) | switch off mid-run → no new attempts |
 | Graceful shutdown | SIGTERM → stop claiming → wait ≤ 25 s for in-flight sends → release leases of unfinished rows (`pending`, attempts unchanged) → exit 0; `init: true`, `stop_grace_period: 30s` | send SIGTERM during a slow fake send |
 | Request correlation | inbound `X-Request-ID` (validated UUID, else generated) bound to logs and forwarded on outbound calls | log capture test |
-| Retention | `followup maintenance prune` deletes LLM cache > 30 d and terminal actions/audit beyond policy, in batches with `LIMIT` | integration test (as built, M12: `config/retention.toml`, maintenance role from migration `0003`, contract tests on both repositories, runbook `18`) |
+| Retention | `followup maintenance prune` deletes LLM cache > 30 d and terminal actions/audit beyond policy, in batches with `LIMIT` | integration test (`config/retention.toml`, maintenance role from migration `0003`, contract tests on both repositories, runbook `18`) |
 | Dry run | `followup run --dry-run` computes and reports decisions inside a rolled-back transaction | asserts zero rows persisted |
 | Saved runs need a database | `followup run` without `FOLLOWUP_DATABASE_URL` accepts only `--dry-run`; memory storage is limited to `followup demo`, which reruns inside one process | `tests/unit/cli/test_cli.py::test_saved_run_without_a_database_is_refused` |
 | Human review hold | A planned action marked `hold_for_review` is stored as `held`; claims select only `pending`/`unknown`, so no automated path sends it; `followup review --approve` moves it to `pending` with the same operation identity, `--reject` to `dead`, each with an audit event (ADR-0018, migration `0007`) | `tests/contract/persistence/test_review_hold.py`, `tests/unit/processing/test_review_flow.py` |

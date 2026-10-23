@@ -25,6 +25,6 @@ production image, logs shipped without Docker-socket access.
 ## Consequences
 
 + Security is evidence-based and reviewable requirement by requirement.
-+ Several latent issues were found and fixed at design time (see `12`).
-− About 4 extra hours (M9) and more tests; local compose keeps documented
++ Several latent issues were found and fixed at design time.
+− More tests to maintain; local compose keeps documented
 deviations (internal TLS, static per-machine DB/LLM credentials).
