@@ -2,8 +2,10 @@
 
 import pytest
 
-from techcom_followup.adapters.outbound.llm_agent_stub import _WORDING
+from techcom_followup.domain.agent_messages import agent_phrasings
 from techcom_followup.domain.free_text import free_text_violations
+from techcom_followup.domain.messages import MessageTemplate
+from techcom_followup.domain.models import DecisionKind
 
 OWNER = ["John Smith"]
 
@@ -61,10 +63,15 @@ def test_plain_requests_pass(body: str) -> None:
     )
 
 
-@pytest.mark.parametrize("wording", list(_WORDING.values()))
-def test_offline_model_wording_passes(wording: tuple[str, str]) -> None:
-    subject, body = wording
-    assert free_text_violations(subject, body, known_names=OWNER) == ()
+@pytest.mark.parametrize(
+    "wording",
+    [choice for kind in DecisionKind for choice in agent_phrasings(kind)],
+)
+def test_approved_agent_phrasings_pass(wording: MessageTemplate) -> None:
+    assert (
+        free_text_violations(wording.subject, wording.body, known_names=OWNER)
+        == ()
+    )
 
 
 def test_single_token_names_are_left_to_the_message_validator() -> None:

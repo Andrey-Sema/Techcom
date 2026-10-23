@@ -6,6 +6,7 @@ from datetime import date
 import pytest
 
 from support import AS_OF, make_task, repo_policy
+from techcom_followup.domain.agent_messages import agent_phrasings
 from techcom_followup.domain.envelope import ActionEnvelope, build_envelope
 from techcom_followup.domain.guard import (
     AGENT_TEMPLATE_ID,
@@ -23,16 +24,15 @@ from techcom_followup.domain.models import (
 
 POLICY = repo_policy()
 NOTE = "Crew waiting on the splice trailer since last week."
+WORDING = agent_phrasings(DecisionKind.FOLLOW_UP_OWNER)[0]
+ESCALATION = agent_phrasings(DecisionKind.ESCALATE)[0]
 TASK = make_task(due_date=date(2026, 10, 18), notes=NOTE)
 GOOD = PlanProposal(
     kind=DecisionKind.FOLLOW_UP_OWNER,
     recipient="owner",
     priority=Priority.NORMAL,
-    subject="Status check: {task_id} {task_title}",
-    body=(
-        "Hi {recipient_name}, could you share a short update on {task_id} "
-        "({project})? It was due {due_date}. Thanks!"
-    ),
+    subject=WORDING.subject,
+    body=WORDING.body,
     rationale="Overdue with an unclear note; asking the owner first.",
     evidence=("waiting on the splice trailer",),
 )
@@ -70,14 +70,20 @@ def test_valid_plan_is_rendered_by_code_with_code_owned_facts() -> None:
     assert Flag.AGENT_PLANNED in result.decision.flags
     assert result.decision.target is not None
     assert result.decision.target.name == "John Smith"
-    assert result.message.body.startswith("Hi John Smith, could you")
+    assert result.message.body.startswith("Hi John Smith, I am checking")
     assert "2026-10-18" in result.message.body
     assert result.message.template_id == AGENT_TEMPLATE_ID
     assert result.message.source is DraftSource.LLM
 
 
 def test_changed_decision_is_labelled_and_priority_only_rises() -> None:
-    proposal = replace(GOOD, kind=DecisionKind.ESCALATE, recipient="manager")
+    proposal = replace(
+        GOOD,
+        kind=DecisionKind.ESCALATE,
+        recipient="manager",
+        subject=ESCALATION.subject,
+        body=ESCALATION.body,
+    )
     result = review(
         proposal, envelope(chased=1), TASK, as_of=AS_OF, note_visible=True
     )
@@ -178,6 +184,8 @@ def test_lowering_an_escalation_priority_is_rejected() -> None:
         recipient="manager",
         priority=Priority.NORMAL,
         evidence=(),
+        subject=ESCALATION.subject,
+        body=ESCALATION.body,
     )
     result = review(proposal, built, task, as_of=AS_OF, note_visible=False)
     assert result.violations == ("priority_lowered",)
@@ -203,4 +211,4 @@ def test_placeholder_flooding_cannot_exceed_rendered_bounds() -> None:
         evidence=(),
     )
     result = review(proposal, envelope(), TASK, as_of=AS_OF, note_visible=True)
-    assert result.violations == ("rendered_length",)
+    assert result.violations == ("unapproved_phrasing",)

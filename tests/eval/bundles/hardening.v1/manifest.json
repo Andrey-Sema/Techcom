@@ -1,0 +1,10 @@
+{
+  "dataset_sha256": "bcab023dad1fe13f7c64f21800299f57f8e7009c152b470987d2fa12af7889f0",
+  "recordings_sha256": "56210f9babafbd13b94e3fec8a06c67382151319ccdd7972ec781b9e4c716b15",
+  "dataset_version": "hardening.v1",
+  "provenance": "Synthetic, manually authored scripted replay fixtures. No provider API was called; provider quality remains UNVERIFIED.",
+  "interpretation_prompt": "interp.v1",
+  "drafting_prompt": "draft.v2",
+  "pipeline_commit": "73b90f0e3a582cc03cdc5caf88d4478de47be976",
+  "pipeline_sha256": "c3fb879372328a4dafa3f0667389c0a0cc4a8bef2c6f4c9ca54e6be589f59539"
+}

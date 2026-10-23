@@ -40,7 +40,13 @@ def reading(
     confidence: float = 0.9,
     source: InterpretationSource = InterpretationSource.LLM,
 ) -> NoteInterpretation:
-    return NoteInterpretation(blocker, False, confidence, "quote", source)
+    return NoteInterpretation(
+        blocker,
+        blocker is BlockerCategory.MATERIALS,
+        confidence,
+        "quote",
+        source,
+    )
 
 
 def decide(

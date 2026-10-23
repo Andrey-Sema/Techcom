@@ -129,6 +129,16 @@ action_keys = sa.Table(
     sa.Column("idempotency_key", sa.Text, primary_key=True),
     sa.Column("operation_id", UUID, unique=True, nullable=False),
 )
+# Written only by the actions trigger (migration 0006); never pruned.
+notification_slots = sa.Table(
+    "notification_slots",
+    metadata,
+    sa.Column("task_id", sa.Text, primary_key=True),
+    sa.Column("project", sa.Text, primary_key=True),
+    sa.Column("state_fingerprint", sa.Text, primary_key=True),
+    sa.Column("stage", sa.Text, primary_key=True),
+    sa.CheckConstraint("stage IN ('notify', 'escalate')"),
+)
 api_rate_buckets = sa.Table(
     "api_rate_buckets",
     metadata,

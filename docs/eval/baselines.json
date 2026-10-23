@@ -24,5 +24,19 @@
     "report_sha256": "4dbdbc18f325dcb6c1d6159064ba46e36986b8636ca8f93da4ca534109f6d6b7",
     "bundle": "tests/eval/bundles/postfix.v1",
     "status": "Archived synthetic evidence; superseded after integration of the main branch."
+  },
+  "postfix.v2": {
+    "pipeline_commit": "fd62581268ea579e5d5e151b3f3cbebd6df8c441",
+    "report": "docs/eval/interp.v1-draft.v2-postfix.v2.md",
+    "report_sha256": "e0ba23903e426871fb561bf8097537c28ceb526b7912c0528da1d5c4daaf61a8",
+    "bundle": "tests/eval/bundles/postfix.v2",
+    "status": "Archived synthetic evidence; regenerated for the audit fixes (PR #18), then superseded by hardening.v1. Labels unchanged."
+  },
+  "hardening.v1": {
+    "pipeline_commit": "73b90f0e3a582cc03cdc5caf88d4478de47be976",
+    "report": "docs/eval/interp.v1-draft.v2-hardening.v1.md",
+    "report_sha256": "bb21a986c28b4d7c06d5e9ed1aa229d7d7a65131540600c809e86d04ad0a8e39",
+    "bundle": "tests/eval/bundles/hardening.v1",
+    "status": "Archived synthetic evidence; superseded by hardening.v2. Labels and recordings unchanged."
   }
 }

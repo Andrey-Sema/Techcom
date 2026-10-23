@@ -169,7 +169,7 @@ def test_operational_identifiers_survive_redaction() -> None:
             "purpose": "orchestrate",
             "model": "gpt-6.1-sol",
             "cost_usd": "0.0123",
-            "prompt_version": "orchestrate.v1",
+            "prompt_version": "orchestrate.v2",
             "tokens_in": 812,
         },
     ) == {
@@ -178,7 +178,7 @@ def test_operational_identifiers_survive_redaction() -> None:
         "purpose": "orchestrate",
         "model": "gpt-6.1-sol",
         "cost_usd": "0.0123",
-        "prompt_version": "orchestrate.v1",
+        "prompt_version": "orchestrate.v2",
         "tokens_in": 812,
     }
 
@@ -190,11 +190,11 @@ def test_orchestrator_validation_stages_are_kept() -> None:
         {
             "event": "llm.validation_failed",
             "stage": "final_step",
-            "prompt_version": "orchestrate.v1",
+            "prompt_version": "orchestrate.v2",
         },
     )
     assert safe["stage"] == "final_step"
-    assert safe["prompt_version"] == "orchestrate.v1"
+    assert safe["prompt_version"] == "orchestrate.v2"
 
 
 def test_run_and_plan_summaries_keep_closed_fields_only() -> None:

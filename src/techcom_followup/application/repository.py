@@ -18,7 +18,11 @@ from pydantic import JsonValue
 
 from techcom_followup.domain.identity import ActionIdentity
 from techcom_followup.domain.messages import MessageDraft
-from techcom_followup.domain.models import Decision, NoteInterpretation
+from techcom_followup.domain.models import (
+    Decision,
+    DecisionKind,
+    NoteInterpretation,
+)
 
 MAX_BATCH_SIZE = 1000
 MAX_ERROR_LENGTH = 200
@@ -67,6 +71,22 @@ class DecisionWrite:
         if self.plan_audit is not None:
             payload["plan"] = dict(self.plan_audit)
         return payload
+
+    def notification_slot(self) -> tuple[str, str, str, str]:
+        """Return the durable slot one source state may notify once.
+
+        A classifier or model change for the same state cannot buy a
+        second message, but an unchanged task that crosses the
+        escalation threshold still reaches the manager once: the
+        policy baseline decides the stage, not the model.
+        """
+        target = self.decision.target
+        project = self.source_project or (
+            target.project if target is not None else None
+        )
+        slot = self.decision if self.baseline is None else self.baseline
+        stage = "escalate" if slot.kind is DecisionKind.ESCALATE else "notify"
+        return (self.decision.task_id, project or "", self.fingerprint, stage)
 
     def validate(self) -> None:
         """Reject partial actions or a forged operation identity.
