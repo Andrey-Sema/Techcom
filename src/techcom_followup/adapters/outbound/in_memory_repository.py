@@ -6,6 +6,7 @@ from copy import deepcopy
 from dataclasses import replace
 from datetime import date, datetime
 from heapq import nsmallest
+from itertools import islice
 from uuid import UUID, uuid4
 
 from pydantic import JsonValue
@@ -21,6 +22,7 @@ from techcom_followup.application.repository import (
     ClaimRequest,
     DecisionOutcome,
     DecisionWrite,
+    OutboxStatus,
     PruneCounts,
     RetentionCutoffs,
     RunRecord,
@@ -181,12 +183,30 @@ class InMemoryRepository:
     ) -> tuple[ActionRecord, ...]:
         """Filter authority using at most ``limit`` working rows."""
         query.validate()
+        if query.newest_first:
+            # Insertion order is creation order in this repository.
+            latest = (
+                action
+                for action in reversed(self._actions.values())
+                if _visible(action, query)
+            )
+            return tuple(islice(latest, query.limit))
         visible = (
             action
             for action in self._actions.values()
             if _visible(action, query)
         )
         return tuple(nsmallest(query.limit, visible, key=lambda row: row.id))
+
+    async def outbox_summary(self) -> tuple[OutboxStatus, ...]:
+        """Group actions by status with their earliest due time."""
+        due: dict[ActionStatus, list[datetime]] = {}
+        for action in self._actions.values():
+            due.setdefault(action.status, []).append(action.next_attempt_at)
+        return tuple(
+            OutboxStatus(status, len(times), min(times))
+            for status, times in sorted(due.items())
+        )
 
     def _recover(self, now: datetime) -> None:
         for action in tuple(self._actions.values()):

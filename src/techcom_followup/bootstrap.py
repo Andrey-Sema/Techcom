@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Literal
 
 import httpx
+import structlog
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -77,6 +78,9 @@ from techcom_followup.infrastructure.policy_files import (
 )
 from techcom_followup.infrastructure.resilience import CircuitBreaker
 from techcom_followup.infrastructure.settings import load_openai_settings
+from techcom_followup.infrastructure.telemetry import PrometheusTelemetry
+
+_log = structlog.get_logger(__name__)
 
 _LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", "mock-api"})
 _MAX_FIXTURE_BYTES = 2_000_000
@@ -104,6 +108,8 @@ class RuntimeSettings(BaseSettings):
         default=DEFAULT_WRITE_CONCURRENCY, ge=1, le=MAX_WRITE_CONCURRENCY
     )
     recipient_daily_limit: int = Field(default=20, ge=1, le=10_000)
+    # node_exporter textfile collector target for CLI command metrics.
+    metrics_file: Path | None = None
 
 
 class FixtureTaskSource:
@@ -183,6 +189,7 @@ def _language(
     stack: AsyncExitStack,
     settings: RuntimeSettings,
     clock: Clock,
+    telemetry: PrometheusTelemetry,
     *,
     disabled: bool = False,
 ) -> tuple[LLMClient | None, str]:
@@ -193,7 +200,9 @@ def _language(
     config = load_routing_config(settings.config_dir / "llm.toml")
     client = build_openai_client(load_openai_settings())
     stack.push_async_callback(client.close)
-    router = build_router(config, client, today=clock.today)
+    router = build_router(
+        config, client, today=clock.today, telemetry=telemetry
+    )
     # Route, pricing and policy changes invalidate cache identity.
 
     return router, sha256(config.model_dump_json().encode()).hexdigest()
@@ -209,8 +218,10 @@ class _RuntimeScope:
         options: CommandOptions,
         clock: Clock,
         storage: _Storage,
+        telemetry: PrometheusTelemetry,
     ) -> None:
         self._stack = stack
+        self._telemetry = telemetry
         self._settings = settings
         self._options = options
         self._clock = clock
@@ -246,8 +257,25 @@ class _RuntimeScope:
             )
             policy = load_decision_policy(settings.config_dir)
             language, model = _language(
-                self._stack, settings, self._clock, disabled=options.dry_run
+                self._stack,
+                settings,
+                self._clock,
+                self._telemetry,
+                disabled=options.dry_run,
             )
+            interpreter = NoteInterpreter(
+                language,
+                self._storage.repository,
+                model=model,
+                now=self._clock.now,
+                monotonic=time.monotonic,
+                due_soon_days=policy.due_soon_days,
+            )
+            drafter = MessageDrafter(
+                None if settings.llm_provider == "stub" else language
+            )
+            interpreter.calls.telemetry = self._telemetry
+            drafter.calls.telemetry = self._telemetry
             self._processor = ProcessTasks(
                 ProcessingDependencies(
                     self._storage.repository,
@@ -255,22 +283,17 @@ class _RuntimeScope:
                     policy,
                     self._clock,
                     self._storage.lock,
+                    self._telemetry,
                 ),
-                interpreter=NoteInterpreter(
-                    language,
-                    self._storage.repository,
-                    model=model,
-                    now=self._clock.now,
-                    monotonic=time.monotonic,
-                    due_soon_days=policy.due_soon_days,
-                ),
-                drafter=MessageDrafter(
-                    None if settings.llm_provider == "stub" else language
-                ),
+                interpreter=interpreter,
+                drafter=drafter,
                 planner=None
                 if settings.llm_planner == "templates" or options.dry_run
                 else FollowUpOrchestrator(
-                    language, self._storage.repository, policy
+                    language,
+                    self._storage.repository,
+                    policy,
+                    telemetry=self._telemetry,
                 ),
                 write_concurrency=settings.write_concurrency,
             )
@@ -283,19 +306,22 @@ class _RuntimeScope:
                 self._endpoint(self._settings.delivery_api_url), self._clock
             ),
             self._clock,
+            self._telemetry,
         )
 
     def dispatcher(self) -> DispatchActions:
         """Share breaker state and the stop flag within the command."""
         if self._dispatcher is None:
+            breaker = CircuitBreaker(
+                failure_threshold=5, cooldown_s=30, monotonic=time.monotonic
+            )
+            self._telemetry.watch_circuit(
+                "delivery", partial(_breaker_state, breaker)
+            )
             self._dispatcher = DispatchActions(
                 self._delivery(),
                 quota=self._storage.quota,
-                breaker=CircuitBreaker(
-                    failure_threshold=5,
-                    cooldown_s=30,
-                    monotonic=time.monotonic,
-                ),
+                breaker=breaker,
                 # FOLLOWUP_DISPATCH_ENABLED comes in through settings,
                 # loaded when each command starts.
                 enabled=lambda: (
@@ -325,12 +351,42 @@ class _RuntimeScope:
             self._dispatcher.stop()
 
 
+def _breaker_state(breaker: CircuitBreaker) -> str:
+    return breaker.state.value
+
+
+async def _export_metrics(
+    telemetry: PrometheusTelemetry,
+    storage: _Storage,
+    clock: Clock,
+    path: Path,
+) -> None:
+    """Write command metrics; a failed export never fails a command."""
+    try:
+        if storage.persistent:
+            telemetry.set_outbox(
+                await storage.repository.outbox_summary(), clock.now()
+            )
+        telemetry.write_textfile(path)
+    except OSError:
+        _log.warning("metrics.export_failed")
+
+
 class RuntimeBuilder:
     """Build a fresh runtime per CLI command without global clients."""
 
-    def __init__(self, settings: RuntimeSettings | None = None) -> None:
-        """Allow explicit settings in tests and managed deployments."""
+    def __init__(
+        self,
+        settings: RuntimeSettings | None = None,
+        *,
+        telemetry: PrometheusTelemetry | None = None,
+    ) -> None:
+        """Allow explicit settings in tests and managed deployments.
+
+        The API passes its process telemetry; each CLI command gets one.
+        """
         self._settings = settings
+        self._telemetry = telemetry
 
     @asynccontextmanager
     async def __call__(
@@ -356,19 +412,28 @@ class RuntimeBuilder:
             if options.demo
             else SystemClock()
         )
+        telemetry = self._telemetry or PrometheusTelemetry()
         async with AsyncExitStack() as stack:
             storage = _storage(stack, settings, options)
-            scope = _RuntimeScope(stack, settings, options, clock, storage)
-            yield CommandServices(
-                storage.repository,
-                scope.processor,
-                scope.dispatcher,
-                scope.reconciler,
-                scope.stop_claiming,
-                storage.persistent,
-                partial(_advance, clock),
-                scope.pruner,
+            scope = _RuntimeScope(
+                stack, settings, options, clock, storage, telemetry
             )
+            try:
+                yield CommandServices(
+                    storage.repository,
+                    scope.processor,
+                    scope.dispatcher,
+                    scope.reconciler,
+                    scope.stop_claiming,
+                    storage.persistent,
+                    partial(_advance, clock),
+                    scope.pruner,
+                )
+            finally:
+                if settings.metrics_file is not None:
+                    await _export_metrics(
+                        telemetry, storage, clock, settings.metrics_file
+                    )
 
 
 def main() -> None:

@@ -23,6 +23,11 @@ from techcom_followup.application.repository import (
 )
 from techcom_followup.application.resilience_ports import BreakerPermit
 from techcom_followup.application.retry import RetryBudget, RetryPolicy
+from techcom_followup.application.telemetry import (
+    NULL_TELEMETRY,
+    CounterName,
+    Telemetry,
+)
 
 _RANDOM = SystemRandom()
 
@@ -34,6 +39,7 @@ class DeliveryDependencies:
     repository: Repository
     gateway: DeliveryGateway
     clock: Clock
+    telemetry: Telemetry = NULL_TELEMETRY
 
 
 class DeliveryBreaker(Protocol):
@@ -209,6 +215,9 @@ class DispatchActions:
                 if admission is not None:
                     admission.breaker.record_failure(admission.permit)
                 raise
+            self._deps.telemetry.count(
+                CounterName.DELIVERY_ATTEMPTS, result=result.kind.value
+            )
             if admission is not None:
                 if result.kind in {
                     DeliveryKind.UNKNOWN,
@@ -256,6 +265,10 @@ class DispatchActions:
             )
         )
         if applied:
+            if status is not ActionStatus.PENDING:
+                self._deps.telemetry.count(
+                    CounterName.ACTIONS, outcome=status.value
+                )
             await audit_delivery(
                 self._deps.repository,
                 action,

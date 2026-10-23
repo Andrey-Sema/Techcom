@@ -5,6 +5,7 @@ from dataclasses import replace
 from persistence_support import NOW, action_write
 from support import AS_OF
 from techcom_followup.application.repository import (
+    ActionReadQuery,
     DecisionOutcome,
     Repository,
 )
@@ -47,3 +48,28 @@ async def test_planned_decision_round_trips_with_its_trace(
     again = replace(baseline, run_id=rerun.id, baseline=None, plan_audit=None)
     duplicate = await repository.record_decision(again, NOW)
     assert duplicate.outcome is DecisionOutcome.DUPLICATE_SUPPRESSED
+
+
+async def test_outbox_summary_groups_actions_by_status(
+    repository: Repository,
+) -> None:
+    assert await repository.outbox_summary() == ()
+    write = await action_write(repository)
+    await repository.record_decision(write, NOW)
+    (summary,) = await repository.outbox_summary()
+    assert summary.status.value == "pending"
+    assert summary.count == 1
+    assert summary.earliest_due == NOW
+
+
+async def test_newest_first_returns_the_latest_actions(
+    repository: Repository,
+) -> None:
+    for task_id in ("TC-1", "TC-2", "TC-3"):
+        await repository.record_decision(
+            await action_write(repository, task_id), NOW
+        )
+    newest = await repository.query_actions(
+        ActionReadQuery(all_projects=True, limit=2, newest_first=True)
+    )
+    assert [a.decision.task_id for a in newest] == ["TC-3", "TC-2"]

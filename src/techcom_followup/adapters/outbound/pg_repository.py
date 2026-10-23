@@ -29,6 +29,7 @@ from techcom_followup.application.repository import (
     ClaimRequest,
     DecisionOutcome,
     DecisionWrite,
+    OutboxStatus,
     PruneCounts,
     RetentionCutoffs,
     RunRecord,
@@ -305,11 +306,30 @@ class PgRepository:
             statement = statement.where(decisions.c.task_id == query.task_id)
         if query.status is not None:
             statement = statement.where(actions.c.status == query.status.value)
+        order = actions.c.id.desc() if query.newest_first else actions.c.id
         async with self._engine.connect() as connection:
             result = await connection.execute(
-                statement.order_by(actions.c.id).limit(query.limit)
+                statement.order_by(order).limit(query.limit)
             )
             return tuple(_action(row) for row in result.mappings())
+
+    async def outbox_summary(self) -> tuple[OutboxStatus, ...]:
+        """Group actions by status with their earliest due time."""
+        statement = (
+            sa.select(
+                actions.c.status,
+                sa.func.count(),
+                sa.func.min(actions.c.next_attempt_at),
+            )
+            .group_by(actions.c.status)
+            .order_by(actions.c.status)
+        )
+        async with self._engine.connect() as connection:
+            rows = (await connection.execute(statement)).all()
+        return tuple(
+            OutboxStatus(ActionStatus(status), count, earliest)
+            for status, count, earliest in rows
+        )
 
     async def claim_actions(
         self, request: ClaimRequest

@@ -12,7 +12,8 @@ immediately because every route of a provider shares the credentials.
 from asyncio import Semaphore, timeout
 from collections.abc import Callable, Mapping
 from datetime import date
-from typing import TYPE_CHECKING, Protocol
+from decimal import Decimal
+from typing import Protocol
 
 import structlog
 
@@ -36,13 +37,17 @@ from techcom_followup.application.ports import (
     RouteAttempt,
 )
 from techcom_followup.application.resilience_ports import BreakerPermit
+from techcom_followup.application.telemetry import (
+    NULL_TELEMETRY,
+    CounterName,
+    HistogramName,
+    Telemetry,
+)
 from techcom_followup.infrastructure.resilience import (
     CircuitBreaker,
     DailySpendBudget,
+    SpendReservation,
 )
-
-if TYPE_CHECKING:
-    from decimal import Decimal
 
 _log = structlog.get_logger(__name__)
 
@@ -70,6 +75,7 @@ class LLMRouter:
         backends: Mapping[str, LLMBackend],
         monotonic: Callable[[], float],
         today: Callable[[], date],
+        telemetry: Telemetry = NULL_TELEMETRY,
     ) -> None:
         """Wire routes, breakers (one per model) and the daily budget.
 
@@ -87,6 +93,7 @@ class LLMRouter:
             msg = f"no backend for providers: {', '.join(sorted(missing))}"
             raise LLMConfigurationError(msg)
         self._config = config
+        self._telemetry = telemetry
         self._backends = dict(backends)
         self._semaphore = Semaphore(4)
         self._monotonic = monotonic
@@ -103,6 +110,11 @@ class LLMRouter:
             for routes in config.routes.values()
             for route in routes
         }
+
+    @property
+    def breakers(self) -> Mapping[str, CircuitBreaker]:
+        """Expose per-model breakers for state metrics."""
+        return self._breakers
 
     @property
     def budget(self) -> DailySpendBudget:
@@ -173,7 +185,21 @@ class LLMRouter:
             return result
         finally:
             breaker.abandon(permit)
-            self._budget.settle(reservation, cost)
+            self._settle(reservation, cost, request)
+
+    def _settle(
+        self,
+        reservation: SpendReservation,
+        cost: Decimal | None,
+        request: LLMRequest,
+    ) -> None:
+        self._budget.settle(reservation, cost)
+        if cost is not None:
+            self._telemetry.count(
+                CounterName.LLM_COST,
+                float(cost),
+                purpose=request.purpose.value,
+            )
 
     async def _reserved_route(
         self,
@@ -228,6 +254,20 @@ class LLMRouter:
         )
         attempts.append(_attempt(route, "ok"))
         latency = self._monotonic() - started
+        purpose = request.purpose.value
+        self._telemetry.observe(
+            HistogramName.LLM_LATENCY, latency, purpose=purpose
+        )
+        for direction, tokens in (
+            ("input", reply.usage.input_tokens),
+            ("output", reply.usage.output_tokens),
+        ):
+            self._telemetry.count(
+                CounterName.LLM_TOKENS,
+                tokens,
+                purpose=purpose,
+                direction=direction,
+            )
         _log.info(
             "llm.call",
             purpose=request.purpose,

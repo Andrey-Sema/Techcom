@@ -43,6 +43,11 @@ from techcom_followup.application.repository import (
     ActionStatus,
     Repository,
 )
+from techcom_followup.application.telemetry import (
+    NULL_TELEMETRY,
+    CounterName,
+    Telemetry,
+)
 from techcom_followup.domain.envelope import ActionEnvelope, build_envelope
 from techcom_followup.domain.guard import (
     AGENT_PLACEHOLDERS,
@@ -240,11 +245,16 @@ class FollowUpOrchestrator:
         *,
         monotonic: Callable[[], float] = time.monotonic,
         timeout_s: float = 20,
+        telemetry: Telemetry = NULL_TELEMETRY,
     ) -> None:
         """Inject the language port, history source and policy."""
         self.calls = LanguageCall(
-            client, monotonic=monotonic, timeout_s=timeout_s
+            client,
+            monotonic=monotonic,
+            timeout_s=timeout_s,
+            telemetry=telemetry,
         )
+        self._telemetry = telemetry
         self._repository = repository
         self._policy = policy
 
@@ -276,7 +286,11 @@ class FollowUpOrchestrator:
             and not screen(task.notes).suspicious,
             history=history,
         )
-        return await self._converse(session)
+        planned = await self._converse(session)
+        self._telemetry.count(
+            CounterName.AGENT_PLANS, outcome=str(planned.audit["outcome"])
+        )
+        return planned
 
     async def _converse(self, session: _Session) -> PlannedAction:
         for step in range(MAX_STEPS):
@@ -327,7 +341,10 @@ class FollowUpOrchestrator:
     async def _history(self, task: Task) -> tuple[list[JsonValue], int]:
         actions = await self._repository.query_actions(
             ActionReadQuery(
-                all_projects=True, task_id=task.task_id, limit=MAX_HISTORY
+                all_projects=True,
+                task_id=task.task_id,
+                limit=MAX_HISTORY,
+                newest_first=True,
             )
         )
         sent = sum(action.status is ActionStatus.SENT for action in actions)

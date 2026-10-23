@@ -3,12 +3,14 @@
 from contextlib import suppress
 
 import structlog
-from prometheus_client import CollectorRegistry, Counter
+from prometheus_client import Counter
 
 from techcom_followup.adapters.inbound.api.ports import (
     EventSink,
     SecurityEvent,
 )
+from techcom_followup.application.telemetry import CounterName
+from techcom_followup.infrastructure.telemetry import PrometheusTelemetry
 
 
 class StructuredEventSink:
@@ -27,19 +29,21 @@ class StructuredEventSink:
 class Observer:
     """Isolated metrics with protection against sink errors."""
 
-    def __init__(self, sink: EventSink | None = None) -> None:
-        """Build counters in a private metrics registry."""
-        self.registry = CollectorRegistry()
+    def __init__(
+        self,
+        sink: EventSink | None = None,
+        *,
+        telemetry: PrometheusTelemetry | None = None,
+    ) -> None:
+        """Build API counters next to the process telemetry families."""
+        self.telemetry = (
+            telemetry if telemetry is not None else PrometheusTelemetry()
+        )
+        self.registry = self.telemetry.registry
         self._requests = Counter(
             "followup_api_requests_total",
             "API response outcomes",
             ("status",),
-            registry=self.registry,
-        )
-        self._events = Counter(
-            "followup_api_security_events_total",
-            "Security event outcomes",
-            ("event",),
             registry=self.registry,
         )
         self._logging_errors = Counter(
@@ -55,7 +59,9 @@ class Observer:
 
     def emit(self, event: SecurityEvent) -> None:
         """Count sink failures without breaking request processing."""
-        self._events.labels(event.name).inc()
+        self.telemetry.count(
+            CounterName.SECURITY_EVENTS, kind=event.name.split(".", 1)[-1]
+        )
         emitted = False
         with suppress(Exception):
             self._sink.emit(event)

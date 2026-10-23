@@ -1,6 +1,7 @@
 """Process source records through policy and an atomic outbox write."""
 
 import asyncio
+import time
 from collections.abc import Coroutine, Iterable, Mapping
 from dataclasses import dataclass, field, replace
 from datetime import date
@@ -21,6 +22,12 @@ from techcom_followup.application.repository import (
     DecisionOutcome,
     DecisionWrite,
     Repository,
+)
+from techcom_followup.application.telemetry import (
+    NULL_TELEMETRY,
+    CounterName,
+    HistogramName,
+    Telemetry,
 )
 from techcom_followup.domain.identity import ActionIdentity, state_fingerprint
 from techcom_followup.domain.injection import screen
@@ -56,6 +63,7 @@ class ProcessingDependencies:
     policy: DecisionPolicy
     clock: Clock
     run_lock: RunLock
+    telemetry: Telemetry = NULL_TELEMETRY
 
 
 @dataclass(frozen=True, slots=True)
@@ -117,10 +125,22 @@ class ProcessTasks:
         self, *, as_of: date, dry_run: bool = False
     ) -> RunReport:
         """Compute decisions; dry runs perform zero persistence."""
-        async with self._deps.run_lock.acquire() as acquired:
-            if not acquired:
-                return RunReport(None, "skipped_locked")
-            return await self._run(as_of, dry_run=dry_run)
+        telemetry, started = self._deps.telemetry, time.perf_counter()
+        result = "failed"
+        try:
+            async with self._deps.run_lock.acquire() as acquired:
+                report = (
+                    await self._run(as_of, dry_run=dry_run)
+                    if acquired
+                    else RunReport(None, "skipped_locked")
+                )
+            result = report.status
+            return report
+        finally:
+            telemetry.count(CounterName.RUNS, result=result)
+            telemetry.observe(
+                HistogramName.RUN_DURATION, time.perf_counter() - started
+            )
 
     async def _run(self, as_of: date, *, dry_run: bool) -> RunReport:
         deps = self._deps
@@ -136,6 +156,12 @@ class ProcessTasks:
         try:
             result = normalize(await deps.source.fetch_tasks(), as_of)
             progress.rejected = result.rejected
+            deps.telemetry.count(
+                CounterName.TASKS, len(result.tasks), outcome="processed"
+            )
+            deps.telemetry.count(
+                CounterName.TASKS, len(result.rejected), outcome="rejected"
+            )
             if run is not None:
                 await self._rejects(run.id, result.rejected)
             await self._process(result.tasks, progress, as_of, dry_run=dry_run)
@@ -192,6 +218,11 @@ class ProcessTasks:
             batch: list[DecisionWrite] = []
             for position, draft in enumerate(prepared, start):
                 write = replace(draft, source_position=position)
+                self._deps.telemetry.count(
+                    CounterName.DECISIONS,
+                    decision=write.decision.kind.value,
+                    rule=write.decision.rule_id.split("+", 1)[0],
+                )
                 progress.decisions.append(write.decision)
                 progress.plans.append(write)
                 batch.append(write)
@@ -206,6 +237,10 @@ class ProcessTasks:
         dry_run: bool,
     ) -> _Proposal:
         screening = screen(task.notes)
+        if screening.suspicious:
+            self._deps.telemetry.count(
+                CounterName.SECURITY_EVENTS, kind="note_flagged"
+            )
         interpretation = (
             None if screening.suspicious else prefilter(task.notes)
         )
@@ -307,6 +342,10 @@ class ProcessTasks:
         progress.duplicates += (
             stored.outcome is DecisionOutcome.DUPLICATE_SUPPRESSED
         )
+        if stored.outcome is not DecisionOutcome.NONE:
+            self._deps.telemetry.count(
+                CounterName.ACTIONS, outcome=stored.outcome.value
+            )
 
     async def _rejects(
         self, run_id: UUID, rejected: tuple[RejectedRecord, ...]
