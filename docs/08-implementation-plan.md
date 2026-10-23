@@ -25,7 +25,7 @@ The core runs with `make demo` alone: no Docker, database or API key.
 | LLM: bounded orchestrator (tools, envelope, guard, audit) | done | ADR-0016 |
 | CLI and offline demo with committed samples | done | `make demo-check` compares a fresh run with `samples/` |
 | REST API, JWT, project authorization, shared limits | done | Optional; see `19` |
-| Observability (Prometheus, Grafana, Loki, Alloy, OTLP) | done | Provisioned as code |
+| Observability (Prometheus, Grafana, Loki, Alloy, OTLP) | done | Catalogued metrics emitted by the API and CLI (textfile); alerts and dashboard checked against the catalogue |
 | Retention, backup/restore, DB roles | done | Runbook `18` |
 | Images, SBOM, scanners, CI workflows | done | CI cannot start until the repository has Actions minutes |
 | DAST (ZAP) and registry attestation | prepared | Run in a deployment environment |

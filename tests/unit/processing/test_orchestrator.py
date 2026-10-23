@@ -122,6 +122,17 @@ async def test_violations_are_fed_back_and_the_repaired_plan_wins() -> None:
         json.dumps({"tool": "check_plan", "plan": None}),
         LLMError("provider down"),
         TimeoutError(),
+        "",
+        "null",
+        "[" * 5000 + "]" * 5000,
+        "{" + " " * 20_000 + "}",
+        json.dumps({"tool": "submit_plan", "plan": PLAN, "exec": "rm"}),
+        step("submit_plan", target_email="boss@evil.test"),
+        step("submit_plan", decision=1),
+        step("submit_plan", priority="urgent"),
+        step("submit_plan", recipient="OWNER"),
+        step("submit_plan", recipient="\u043ewner"),
+        step("submit_plan", evidence=["a" * 9] * 4),
     ],
 )
 async def test_any_model_failure_falls_back_to_the_baseline(
@@ -135,6 +146,21 @@ async def test_any_model_failure_falls_back_to_the_baseline(
     )
     assert planned.message.source.value == "template"
     assert planned.audit["outcome"] == "model_failure"
+
+
+async def test_duplicate_keys_cannot_smuggle_a_foreign_recipient() -> None:
+    smuggled = (
+        '{"tool":"submit_plan","plan":'
+        + json.dumps(PLAN)
+        + ',"plan":'
+        + json.dumps(PLAN | {"recipient": "manager"})
+        + "}"
+    )
+    planned = await orchestrator(ScriptedLLM([smuggled] * 4)).plan(
+        DECISION, TASK, as_of=AS_OF
+    )
+    assert planned.decision.target == DECISION.target
+    assert "recipient_not_permitted" in planned.audit["violations"]
 
 
 async def test_disabled_model_falls_back_without_a_call() -> None:

@@ -169,15 +169,21 @@ Every proposal is reviewed by [`domain/guard.py`](src/techcom_followup/domain/gu
 before it can become an action. It rejects, with closed violation codes:
 
 - a decision or recipient outside the envelope, or a lowered priority;
-- facts written as text instead of placeholders: names, dates, numbers,
-  links, e-mail addresses, phone numbers;
-- claims that a status changed, instruction-like text, copied note text,
-  a missing `{task_id}`;
+- facts written as text instead of placeholders: any digit, dates and
+  relative deadlines ("within two days", "end of next week"), person
+  names and other proper nouns, links, e-mail addresses, phone numbers,
+  including obfuscated forms (`[at]`, `dot com`, look-alike characters);
+- unverifiable claims ("already shipped", "was approved"), claims that a
+  status changed, instruction-like text, copied note text, markup, any
+  non-ASCII character (homoglyphs, invisible and bidi characters), a
+  missing `{task_id}`;
 - an empty, linked or instruction-like rationale, and evidence that is
   not a verbatim quote of at least eight characters from the note.
 
 Code renders placeholders such as `{recipient_name}` and `{due_date}`
-from task data; the model only chooses words.
+from task data; the model only chooses words. The rules are pattern
+based: they block every fact *shape* the tests know, and a rejected plan
+costs only wording, because the baseline template is sent instead.
 
 ### Failure handling and budgets
 
@@ -185,7 +191,8 @@ from task data; the model only chooses words.
 - Invalid JSON, an unknown tool, a timeout, an open circuit breaker, an
   exhausted daily budget or a plan that never passes the guard all fall
   back to the **baseline action and its template** (`llm_fallback` flag).
-- A note flagged by the injection screen is **withheld** from the model.
+- If the note, title or project name trips the injection screen, all
+  three are **withheld** from the model.
 - The model never sees personal names; recipients are opaque references.
 - Each plan stores the baseline next to the chosen decision, a bounded
   rationale, and an audit trace with the tools used, step count,
@@ -286,6 +293,7 @@ the full run with outbox states is [`samples/run_report.json`](samples/run_repor
 | `FOLLOWUP_DISPATCH_ENABLED` | `true` | Kill switch for new sends |
 | `FOLLOWUP_WRITE_CONCURRENCY` | `8` | Concurrent planning and writes per batch (1–16) |
 | `FOLLOWUP_RECIPIENT_DAILY_LIMIT` | `20` | Messages per recipient per UTC day |
+| `FOLLOWUP_METRICS_FILE` | unset | Write command metrics for the node_exporter textfile collector |
 | `FOLLOWUP_OPENAI_API_KEY` | unset | Only for `router`; never committed |
 
 Thresholds, routing and status synonyms live in [`config/`](config/).
@@ -297,12 +305,13 @@ Thresholds, routing and status synonyms live in [`config/`](config/).
 
 | Gate | Result |
 |------|--------|
-| Tests | 1,100+ unit, property, contract, scenario and integration tests |
+| Tests | 1,200+ unit, property, contract, scenario and integration tests |
+| Observability | Every metric behind the alerts and dashboard is emitted (`docs/14` §8, checked by a test); allow-listed JSON logs with run, plan and LLM cost fields |
 | Coverage | 100 % statements and branches (application and mock) |
 | Static checks | Ruff `ALL` (79 columns), mypy `--strict`, Bandit, import-linter (hexagonal layers) |
 | Mutation testing | mutmut on policy, identity and messages |
 | LLM evaluation | Replay harness, 95 cases, macro-F1 0.99, unsafe outcomes 0 |
-| 10,000 tasks | 78.9 s first run, 53.2 s rerun, 200 MB, PostgreSQL 18 ([benchmarks](docs/benchmarks.md)) |
+| 10,000 tasks | 85.2 s first run, 51.5 s rerun, 201 MB, PostgreSQL 18 ([benchmarks](docs/benchmarks.md)) |
 | Security | OWASP ASVS 5.0 L2 as the design target, OWASP LLM Top 10 controls, least-privilege DB roles ([docs/15](docs/15-security-asvs-l2.md)) |
 
 Architecture: a hexagonal layout with a pure domain core
