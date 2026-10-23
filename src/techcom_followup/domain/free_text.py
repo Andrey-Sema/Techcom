@@ -14,7 +14,7 @@ by what they look like.
 
 import re
 import unicodedata
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 
 from techcom_followup.domain.messages import has_contact_or_link
 
@@ -75,30 +75,17 @@ def free_text_violations(
 
 def _violations(text: str, known_names: Iterable[str]) -> Iterator[str]:
     normalized = unicodedata.normalize("NFKC", text)
-    if any(
-        not (char.isascii() and (char.isprintable() or char == "\n"))
-        and char not in _TYPOGRAPHY
-        for char in normalized
-    ):
+    if any(_unexpected(char) for char in normalized):
         yield "non_ascii"
-    bare = re.sub(r"\{reason_text\}", ".", normalized)
-    bare = re.sub(r"\{[a-z_]+\}", "x", bare)
-    if any(char.isdigit() for char in bare):
-        yield "digits"
-    checks = (
-        ("relative_date", _RELATIVE_TIME),
-        ("unverified_claim", _UNVERIFIED_CLAIM),
-        ("state_change_claim", _STATE_CLAIM),
-        ("contact_obfuscation", _OBFUSCATED_CONTACT),
-        ("markup", _MARKUP),
-    )
-    yield from (code for code, pattern in checks if pattern.search(bare))
-    if has_contact_or_link(bare):
-        yield "contact_obfuscation"
-    if _has_proper_noun(bare):
-        yield "proper_noun"
+    bare = _PLACEHOLDER.sub("x", _REASON.sub(".", normalized))
+    yield from (code for code, found in _CHECKS if found(bare))
     if any(_mentions(bare, name) for name in known_names):
         yield "person_name"
+
+
+def _unexpected(char: str) -> bool:
+    printable = char.isascii() and (char.isprintable() or char == "\n")
+    return not printable and char not in _TYPOGRAPHY
 
 
 def _has_proper_noun(text: str) -> bool:
@@ -118,3 +105,17 @@ def _mentions(text: str, name: str) -> bool:
         return False
     pattern = r"\b" + r"\s+".join(re.escape(token) for token in tokens) + r"\b"
     return re.search(pattern, text, re.IGNORECASE) is not None
+
+
+_REASON = re.compile(r"\{reason_text\}")
+_PLACEHOLDER = re.compile(r"\{[a-z_]+\}")
+_CHECKS: tuple[tuple[str, Callable[[str], object]], ...] = (
+    ("digits", re.compile(r"\d").search),
+    ("relative_date", _RELATIVE_TIME.search),
+    ("unverified_claim", _UNVERIFIED_CLAIM.search),
+    ("state_change_claim", _STATE_CLAIM.search),
+    ("contact_obfuscation", _OBFUSCATED_CONTACT.search),
+    ("markup", _MARKUP.search),
+    ("contact_obfuscation", has_contact_or_link),
+    ("proper_noun", _has_proper_noun),
+)

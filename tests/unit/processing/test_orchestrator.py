@@ -160,7 +160,9 @@ async def test_duplicate_keys_cannot_smuggle_a_foreign_recipient() -> None:
         DECISION, TASK, as_of=AS_OF
     )
     assert planned.decision.target == DECISION.target
-    assert "recipient_not_permitted" in planned.audit["violations"]
+    violations = planned.audit["violations"]
+    assert isinstance(violations, list)
+    assert "recipient_not_permitted" in violations
 
 
 async def test_disabled_model_falls_back_without_a_call() -> None:
