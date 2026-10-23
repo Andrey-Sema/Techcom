@@ -11,8 +11,8 @@ rule_files:
   - /etc/prometheus/rules/*.rules.yml
 
 scrape_configs:
-  # The service exposes /metrics on an internal port (M6b). Until it
-  # joins the "observability" network this target is reported as down.
+  # The API exposes every service metric on its private port; run
+  # compose.api.yaml with the observability stack to scrape it.
   - job_name: followup-app
     metrics_path: /metrics
     static_configs:

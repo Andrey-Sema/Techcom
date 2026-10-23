@@ -166,24 +166,39 @@ Field names follow the OWASP Logging Vocabulary / ECS spirit (`event`,
 
 ## 8. Metrics catalogue
 
+Every family below is created by `infrastructure/telemetry.py` (or the
+API observer) at start-up, so an export is complete even before the
+first event; `tests/meta/test_observability_config.py` keeps this table,
+the code, the alert rules and the dashboard in sync. Label values come
+from closed enums or rule ids, never from task data.
+
 | Metric | Type | Labels |
 |--------|------|--------|
-| `followup_runs_total` | counter | `result` |
+| `followup_runs_total` | counter | `result` (`completed`, `failed`, `skipped_locked`, `dry_run`) |
 | `followup_run_duration_seconds` | histogram | — |
 | `followup_tasks_total` | counter | `outcome` (`processed`, `rejected`) |
-| `followup_decisions_total` | counter | `decision`, `rule` |
-| `followup_actions_total` | counter | `outcome` (`enqueued`, `duplicate_suppressed`, `sent`, `dead`, `reconciled`) |
-| `followup_delivery_attempts_total` | counter | `result` (`accepted`, `replayed`, `retryable`, `permanent`, `unknown`) |
-| `followup_outbox_backlog` | gauge | `status` |
-| `followup_outbox_oldest_age_seconds` | gauge | `status` |
-| `followup_http_retries_total` | counter | `dependency`, `reason` |
-| `followup_circuit_state` | gauge | `dependency`, `state` |
-| `followup_llm_requests_total` | counter | `purpose`, `result` |
+| `followup_decisions_total` | counter | `decision`, `rule` (`R1`–`R9`) |
+| `followup_actions_total` | counter | `outcome` (`enqueued`, `duplicate_suppressed`, `sent`, `unknown`, `dead`, `reconciled`) |
+| `followup_delivery_attempts_total` | counter | `result` (`accepted`, `retryable`, `permanent`, `unknown`) |
+| `followup_outbox_backlog` | gauge | `status` (refreshed from the database before each export) |
+| `followup_outbox_oldest_age_seconds` | gauge | `status` (how long the earliest due action has waited) |
+| `followup_circuit_state` | gauge | `dependency` (`delivery`, `llm:<model>`), `state` |
+| `followup_llm_requests_total` | counter | `purpose`, `result` (`ok`, `invalid`, `error`, `unavailable`) |
 | `followup_llm_latency_seconds` | histogram | `purpose` |
-| `followup_llm_tokens_total` | counter | `purpose`, `direction` |
+| `followup_llm_tokens_total` | counter | `purpose`, `direction` (`input`, `output`) |
 | `followup_llm_cost_usd_total` | counter | `purpose` |
-| `followup_security_events_total` | counter | `kind` |
-| `followup_http_requests_total` / `_duration_seconds` | counter / histogram | `route` (template), `method`, `status_class` |
+| `followup_agent_plans_total` | counter | `outcome` (`accepted`, `model_failure`, `step_budget`) |
+| `followup_security_events_total` | counter | `kind` (`note_flagged`, `authn_failed`, `authz_denied`, `rate_limited`, `request_rejected`, …) |
+| `followup_api_requests_total` | counter | `status` |
+| `followup_api_logging_errors_total` | counter | — |
+| `followup_otlp_logs_exported_total` | counter | — |
+| `followup_otlp_logs_dropped_total` | counter | — |
+
+**Where they are exported.** The API process serves all families on its
+private metrics listener (`:9464`, Prometheus job `followup-app`). A CLI
+command writes them to `FOLLOWUP_METRICS_FILE` (node_exporter textfile
+collector format) when that variable is set, including outbox gauges
+read from PostgreSQL.
 
 ## 9. Service level objectives (for the 10k/day discussion)
 

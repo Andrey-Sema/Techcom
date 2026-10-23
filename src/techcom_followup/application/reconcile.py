@@ -13,6 +13,7 @@ from techcom_followup.application.repository import (
     ClaimRequest,
 )
 from techcom_followup.application.retry import RetryPolicy
+from techcom_followup.application.telemetry import CounterName
 
 
 class ReconcileUnknown:
@@ -41,6 +42,14 @@ class ReconcileUnknown:
             await self._reconcile(rows[0])
             completed += 1
         return completed
+
+    def _count(self, status: ActionStatus) -> None:
+        outcome = {
+            ActionStatus.SENT: "reconciled",
+            ActionStatus.DEAD: "dead",
+        }.get(status)
+        if outcome is not None:
+            self._deps.telemetry.count(CounterName.ACTIONS, outcome=outcome)
 
     async def _reconcile(self, action: ActionRecord) -> None:
         if action.lease_token is None:
@@ -77,6 +86,7 @@ class ReconcileUnknown:
                 )
             )
             if applied:
+                self._count(status)
                 await audit_delivery(
                     self._deps.repository,
                     action,

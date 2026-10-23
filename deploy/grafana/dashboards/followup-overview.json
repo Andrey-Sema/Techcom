@@ -973,7 +973,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (kind) (increase(followup_security_events_total{kind=~\"rate_limited|validation_rejected\"}[1h]))",
+          "expr": "sum by (kind) (increase(followup_security_events_total{kind=~\"rate_limited|request_rejected\"}[1h]))",
           "legendFormat": "{{kind}}"
         }
       ],

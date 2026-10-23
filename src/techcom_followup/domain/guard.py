@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from datetime import date
 
 from techcom_followup.domain.envelope import ActionEnvelope, priority_rank
+from techcom_followup.domain.free_text import free_text_violations
 from techcom_followup.domain.injection import screen
 from techcom_followup.domain.messages import (
     LLM_PLACEHOLDERS,
@@ -134,9 +135,13 @@ def _action_violations(
 
 
 def _message_violations(proposal: PlanProposal, task: Task) -> Iterator[str]:
-    validator = MessageValidator([task.owner] if task.owner else [])
+    names = [task.owner] if task.owner else []
+    validator = MessageValidator(names)
     yield from validator.violations(
         proposal.subject, proposal.body, allowed=AGENT_PLACEHOLDERS
+    )
+    yield from free_text_violations(
+        proposal.subject, proposal.body, known_names=names
     )
     if "{task_id}" not in f"{proposal.subject}{proposal.body}":
         yield "missing_task_reference"

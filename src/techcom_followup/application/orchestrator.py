@@ -24,6 +24,7 @@ from datetime import date
 from functools import partial
 from typing import Annotated, Literal
 
+import structlog
 from pydantic import Field, JsonValue
 
 from techcom_followup.application.llm_workflow import (
@@ -43,6 +44,11 @@ from techcom_followup.application.repository import (
     ActionStatus,
     Repository,
 )
+from techcom_followup.application.telemetry import (
+    NULL_TELEMETRY,
+    CounterName,
+    Telemetry,
+)
 from techcom_followup.domain.envelope import ActionEnvelope, build_envelope
 from techcom_followup.domain.guard import (
     AGENT_PLACEHOLDERS,
@@ -50,7 +56,7 @@ from techcom_followup.domain.guard import (
     PlanProposal,
     review,
 )
-from techcom_followup.domain.injection import screen
+from techcom_followup.domain.injection import screen_task
 from techcom_followup.domain.messages import (
     BODY_MAX_CHARS,
     BODY_MIN_CHARS,
@@ -67,6 +73,7 @@ from techcom_followup.domain.models import (
 from techcom_followup.domain.policy import DecisionPolicy
 
 PROMPT_VERSION = "orchestrate.v1"
+_log = structlog.get_logger(__name__)
 MAX_STEPS = 4
 MAX_HISTORY = 10
 MAX_EVIDENCE_QUOTES = 3
@@ -150,11 +157,16 @@ class _Session:
     envelope: ActionEnvelope
     task: Task
     as_of: date
-    note_visible: bool
+    withheld: bool
     history: list[JsonValue]
     transcript: list[JsonValue] = field(default_factory=list)
     tools: list[str] = field(default_factory=list)
     violations: tuple[str, ...] = ()
+
+    @property
+    def note_visible(self) -> bool:
+        """Show a note only when nothing in the task was flagged."""
+        return bool(self.task.notes) and not self.withheld
 
     def context(self) -> dict[str, JsonValue]:
         task, baseline = self.task, self.envelope.baseline
@@ -182,10 +194,10 @@ class _Session:
             },
             "envelope": self.envelope.describe(),
             "untrusted": {
-                "title": task.title,
-                "project": task.project,
+                "title": None if self.withheld else task.title,
+                "project": None if self.withheld else task.project,
                 "note": task.notes.value if self.note_visible else None,
-                "note_withheld": not self.note_visible,
+                "withheld": self.withheld,
             },
         }
 
@@ -240,11 +252,16 @@ class FollowUpOrchestrator:
         *,
         monotonic: Callable[[], float] = time.monotonic,
         timeout_s: float = 20,
+        telemetry: Telemetry = NULL_TELEMETRY,
     ) -> None:
         """Inject the language port, history source and policy."""
         self.calls = LanguageCall(
-            client, monotonic=monotonic, timeout_s=timeout_s
+            client,
+            monotonic=monotonic,
+            timeout_s=timeout_s,
+            telemetry=telemetry,
         )
+        self._telemetry = telemetry
         self._repository = repository
         self._policy = policy
 
@@ -271,12 +288,23 @@ class FollowUpOrchestrator:
             envelope,
             task,
             as_of,
-            note_visible=bool(task.notes)
-            and Flag.PROMPT_INJECTION_SUSPECTED not in decision.flags
-            and not screen(task.notes).suspicious,
+            withheld=Flag.PROMPT_INJECTION_SUSPECTED in decision.flags
+            or screen_task(task).suspicious,
             history=history,
         )
-        return await self._converse(session)
+        planned = await self._converse(session)
+        audit = planned.audit
+        self._telemetry.count(
+            CounterName.AGENT_PLANS, outcome=str(audit["outcome"])
+        )
+        _log.info(
+            "agent.plan",
+            outcome=audit["outcome"],
+            steps=audit["steps"],
+            decision_changed=audit["decision_changed"],
+            recipient_changed=audit["recipient_changed"],
+        )
+        return planned
 
     async def _converse(self, session: _Session) -> PlannedAction:
         for step in range(MAX_STEPS):
@@ -327,7 +355,10 @@ class FollowUpOrchestrator:
     async def _history(self, task: Task) -> tuple[list[JsonValue], int]:
         actions = await self._repository.query_actions(
             ActionReadQuery(
-                all_projects=True, task_id=task.task_id, limit=MAX_HISTORY
+                all_projects=True,
+                task_id=task.task_id,
+                limit=MAX_HISTORY,
+                newest_first=True,
             )
         )
         sent = sum(action.status is ActionStatus.SENT for action in actions)

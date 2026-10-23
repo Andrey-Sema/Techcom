@@ -11,6 +11,15 @@ import structlog
 from structlog.contextvars import merge_contextvars
 from structlog.typing import EventDict, WrappedLogger
 
+from techcom_followup.application.drafter import PROMPT_VERSION as DRAFT_PROMPT
+from techcom_followup.application.interpreter import (
+    PROMPT_VERSION as INTERPRET_PROMPT,
+)
+from techcom_followup.application.orchestrator import (
+    PROMPT_VERSION as ORCHESTRATE_PROMPT,
+)
+from techcom_followup.application.ports import LLMPurpose
+
 _UUID_TEXT_LENGTH = 36
 _MIN_HTTP_STATUS = 100
 _MAX_HTTP_STATUS = 599
@@ -31,6 +40,9 @@ _EVENTS = _SECURITY_EVENTS | frozenset(
         "log.redacted",
         "command.completed",
         "command.failed",
+        "run.completed",
+        "agent.plan",
+        "metrics.export_failed",
         "llm.call",
         "llm.route_failover",
         "llm.unavailable",
@@ -48,30 +60,80 @@ _COUNTERS = frozenset(
         "enqueued",
         "duplicates",
         "delivered",
+        "decisions",
+        "rejected",
+        "steps",
     }
 )
 _CLOSED_FIELDS = {
-    "stage": frozenset(
+    "prompt_version": frozenset(
+        {INTERPRET_PROMPT, DRAFT_PROMPT, ORCHESTRATE_PROMPT}
+    ),
+    "purpose": frozenset(purpose.value for purpose in LLMPurpose),
+    "kind": frozenset({"transient", "rejected"}),
+    "outcome": frozenset(
         {
-            "size",
-            "json",
-            "schema",
-            "confidence",
-            "ungrounded",
-            "transport",
-            "unapproved_phrasing",
-            "message_rules",
+            "accepted",
+            "model_failure",
+            "step_budget",
+            "completed",
+            "failed",
+            "skipped_locked",
+            "dry_run",
         }
     ),
-    "prompt_version": frozenset({"interp.v1", "draft.v2"}),
+}
+_STAGES = frozenset(
+    {
+        "size",
+        "json",
+        "schema",
+        "confidence",
+        "ungrounded",
+        "transport",
+        "unapproved_phrasing",
+        "message_rules",
+        "plan_arguments",
+        "final_step",
+    }
+)
+# Code- or configuration-owned identifiers, never task or user text.
+_PATTERNS = {
+    "error_type": re.compile(r"[A-Za-z][A-Za-z0-9]{0,63}"),
+    "model": re.compile(r"[a-z0-9][a-z0-9.\-]{0,63}"),
+    "cost_usd": re.compile(r"\d{1,6}(?:\.\d{1,12})?"),
+}
+_LEVELS = {
+    "debug": "debug",
+    "info": "info",
+    "warning": "warning",
+    "warn": "warning",
+    "error": "error",
+    "exception": "error",
+    "critical": "critical",
+    "fatal": "critical",
 }
 
 
-def _validation_metadata(event: EventDict, safe: EventDict) -> None:
+def _closed_metadata(event: EventDict, safe: EventDict) -> None:
     for key, allowed in _CLOSED_FIELDS.items():
         value = event.get(key)
         if isinstance(value, str) and value in allowed:
+            safe[key] = str(value)
+    for key, pattern in _PATTERNS.items():
+        value = event.get(key)
+        if isinstance(value, str) and pattern.fullmatch(value):
             safe[key] = value
+    for key in ("decision_changed", "recipient_changed"):
+        value = event.get(key)
+        if isinstance(value, bool):
+            safe[key] = value
+
+
+def _validation_metadata(event: EventDict, safe: EventDict) -> None:
+    stage = event.get("stage")
+    if isinstance(stage, str) and stage in _STAGES:
+        safe["stage"] = stage
     digest = event.get("output_sha256")
     if isinstance(digest, str) and re.fullmatch(r"[a-f0-9]{64}", digest):
         safe["output_sha256"] = digest
@@ -120,10 +182,9 @@ def redact_event(
         "event": name
         if isinstance(name, str) and name in _EVENTS
         else "log.redacted",
-        "level": method
-        if method in {"debug", "info", "warning", "error", "critical"}
-        else "info",
+        "level": _LEVELS.get(method, "info"),
     }
+    _closed_metadata(event, safe)
     _counter_metadata(event, safe)
     _run_metadata(event, safe)
     _request_metadata(event, safe)

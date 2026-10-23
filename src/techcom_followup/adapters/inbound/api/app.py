@@ -2,6 +2,7 @@
 
 import asyncio
 import hashlib
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Annotated, Literal, NoReturn
 from uuid import UUID
@@ -421,12 +422,21 @@ def create_app(  # noqa: PLR0913
     return app
 
 
-def create_metrics_app(observer: Observer) -> FastAPI:
-    """Build metrics for a separate internal listener."""
+def create_metrics_app(
+    observer: Observer,
+    refresh: Callable[[], Awaitable[None]] | None = None,
+) -> FastAPI:
+    """Build metrics for a separate internal listener.
+
+    ``refresh`` updates gauges derived from shared state (the outbox)
+    before each scrape.
+    """
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None, debug=False)
 
     @app.get("/metrics")
     async def metrics() -> Response:
+        if refresh is not None:
+            await refresh()
         return Response(
             generate_latest(observer.registry), media_type=CONTENT_TYPE_LATEST
         )

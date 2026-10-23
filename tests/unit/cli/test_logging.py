@@ -158,3 +158,103 @@ def test_security_metadata_rejects_raw_values(
             "actor_id": "private",
         },
     ) == {"event": "security.authn_failed", "level": "info"}
+
+
+def test_operational_identifiers_survive_redaction() -> None:
+    assert redact_event(
+        None,
+        "info",
+        {
+            "event": "llm.call",
+            "purpose": "orchestrate",
+            "model": "gpt-6.1-sol",
+            "cost_usd": "0.0123",
+            "prompt_version": "orchestrate.v1",
+            "tokens_in": 812,
+        },
+    ) == {
+        "event": "llm.call",
+        "level": "info",
+        "purpose": "orchestrate",
+        "model": "gpt-6.1-sol",
+        "cost_usd": "0.0123",
+        "prompt_version": "orchestrate.v1",
+        "tokens_in": 812,
+    }
+
+
+def test_orchestrator_validation_stages_are_kept() -> None:
+    safe = redact_event(
+        None,
+        "warning",
+        {
+            "event": "llm.validation_failed",
+            "stage": "final_step",
+            "prompt_version": "orchestrate.v1",
+        },
+    )
+    assert safe["stage"] == "final_step"
+    assert safe["prompt_version"] == "orchestrate.v1"
+
+
+def test_run_and_plan_summaries_keep_closed_fields_only() -> None:
+    assert redact_event(
+        None,
+        "info",
+        {
+            "event": "agent.plan",
+            "outcome": "step_budget",
+            "steps": 4,
+            "decision_changed": True,
+            "recipient_changed": "yes",
+            "note": "PRIVATE",
+        },
+    ) == {
+        "event": "agent.plan",
+        "level": "info",
+        "outcome": "step_budget",
+        "steps": 4,
+        "decision_changed": True,
+    }
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("model", "gpt 6 with spaces"),
+        ("model", "../etc/passwd"),
+        ("cost_usd", "1e9"),
+        ("cost_usd", "PRIVATE"),
+        ("error_type", "Value Error: secret"),
+        ("purpose", "exfiltrate"),
+        ("kind", "PRIVATE"),
+        ("outcome", "sent to boss@evil.test"),
+    ],
+)
+def test_untrusted_shapes_are_dropped(key: str, value: str) -> None:
+    assert key not in redact_event(
+        None, "info", {"event": "llm.call", key: value}
+    )
+
+
+@pytest.mark.parametrize(
+    ("method", "level"),
+    [("exception", "error"), ("warn", "warning"), ("fatal", "critical")],
+)
+def test_method_aliases_keep_their_severity(method: str, level: str) -> None:
+    assert (
+        redact_event(None, method, {"event": "command.failed"})["level"]
+        == level
+    )
+
+
+def test_command_failure_names_the_error_class() -> None:
+    assert redact_event(
+        None,
+        "error",
+        {"event": "command.failed", "error_type": "OperationalError"},
+    ) == {
+        "event": "command.failed",
+        "level": "error",
+        "error_type": "OperationalError",
+    }

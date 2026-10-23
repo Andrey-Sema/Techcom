@@ -6,8 +6,10 @@ from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING, cast
 from unittest.mock import AsyncMock, Mock
 
+import httpx
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
@@ -24,6 +26,10 @@ from techcom_followup.adapters.outbound.in_memory_repository import (
 )
 from techcom_followup.application.command_ports import CommandOptions
 from techcom_followup.bootstrap import RuntimeSettings
+from techcom_followup.infrastructure.telemetry import PrometheusTelemetry
+
+if TYPE_CHECKING:
+    from fastapi import FastAPI
 
 
 def api_settings(tmp_path: Path) -> serving.ApiRuntimeSettings:
@@ -87,7 +93,13 @@ async def test_serve_composes_shared_limits_and_disposes_engine(
     services = Services()
     options: list[object] = []
 
-    def builder(_settings: RuntimeSettings) -> Callable[..., object]:
+    telemetries: list[PrometheusTelemetry] = []
+
+    def builder(
+        _settings: RuntimeSettings, *, telemetry: PrometheusTelemetry
+    ) -> Callable[..., object]:
+        telemetries.append(telemetry)
+
         @asynccontextmanager
         async def build(option: object) -> AsyncIterator[Services]:
             options.append(option)
@@ -97,11 +109,18 @@ async def test_serve_composes_shared_limits_and_disposes_engine(
 
     monkeypatch.setattr(serving, "RuntimeBuilder", builder)
     served: list[int] = []
+    scraped: list[str] = []
 
     async def run_listeners(
         listeners: list[serving._Listener], stop: Callable[[], None]
     ) -> None:
         served.append(len(listeners))
+        metrics_app = cast("FastAPI", listeners[1].config.app)
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=metrics_app),
+            base_url="http://internal",
+        ) as client:
+            scraped.append((await client.get("/metrics")).text)
         stop()
         await asyncio.sleep(0.15)
 
@@ -113,6 +132,11 @@ async def test_serve_composes_shared_limits_and_disposes_engine(
         api_settings(tmp_path),
     )
     assert served == [2]
+    # One registry: processing, API and outbox families in one scrape.
+    assert len(telemetries) == 1
+    assert 'followup_outbox_backlog{status="pending"} 0.0' in scraped[0]
+    assert "followup_runs_total" in scraped[0]
+    assert "followup_api_requests_total" in scraped[0]
     assert services.stopped == [True]
     assert len(options) == 1
     assert isinstance(options[0], CommandOptions)

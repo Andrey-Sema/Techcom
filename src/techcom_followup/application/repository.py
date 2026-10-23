@@ -151,6 +151,15 @@ class ActionRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class OutboxStatus:
+    """Outbox rows in one status and their earliest due time."""
+
+    status: ActionStatus
+    count: int
+    earliest_due: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
 class ActionReadQuery:
     """Filter server-authorized actions before the row bound.
 
@@ -165,6 +174,7 @@ class ActionReadQuery:
     task_id: str | None = None
     status: ActionStatus | None = None
     limit: int = MAX_ACTION_READ_LIMIT
+    newest_first: bool = False
 
     def validate(self) -> None:
         """Reject unbounded reads and ambiguous project authority."""
@@ -413,6 +423,10 @@ class Repository(Protocol):
 
     async def list_actions(self) -> tuple[ActionRecord, ...]:
         """Read detached snapshots for reports and reconciliation."""
+        ...
+
+    async def outbox_summary(self) -> tuple[OutboxStatus, ...]:
+        """Count actions per status for backlog and latency metrics."""
         ...
 
     async def query_actions(

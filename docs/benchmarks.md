@@ -16,9 +16,9 @@ same host, Python 3.14.6, eight concurrent writers.
 
 | Measure | Sequential writes, templates | Parallel writes, templates | Parallel writes + orchestrator (current) | Target |
 |---------|------------------------------|----------------------------|------------------------------------------|--------|
-| First run, 10,000 tasks | 110.4 s | 55.6 s | **78.9 s** | < 60 s |
-| Rerun, all duplicates | 97.7 s | 53.2 s | **53.2 s** | < 30 s |
-| Peak RSS | 229 MB | 194 MB | **200 MB** | < 300 MB |
+| First run, 10,000 tasks | 110.4 s | 55.6 s | **85.2 s** | < 60 s |
+| Rerun, all duplicates | 97.7 s | 53.2 s | **51.5 s** | < 30 s |
+| Peak RSS | 229 MB | 194 MB | **201 MB** | < 300 MB |
 | Decisions / enqueued / rerun duplicates | 10,000 / 6,360 / 6,360 | same | same | asserted |
 
 The test guards against regressions at 120 s per run and 300 MB.
@@ -27,7 +27,8 @@ The test guards against regressions at 120 s per run and 300 MB.
 receipt are one transaction (per-decision atomicity), so a run is about
 10,000 short transactions; eight writers overlap them. The orchestrator
 adds, per new action, one indexed history lookup (`decisions_task_idx`)
-and about 1.5 ms of CPU for three loop steps and the guard. Planning runs
+and about 2 ms of CPU for three loop steps and the guard, including
+the free-text rules. Planning runs
 concurrently within each batch and its audit trace is written in the
 decision's own transaction. A rerun never calls the model: every slot is
 already taken.
@@ -38,7 +39,7 @@ and a batched history lookup. Both trade per-decision isolation for
 throughput and are not needed at the stated volume.
 
 **Operational meaning.** 10,000 tasks a day is 0.12 tasks per second
-(`09`); 79 s per 10,000 tasks is about 125 tasks per second. With a real
+(`09`); 85 s per 10,000 tasks is about 115 tasks per second. With a real
 model, latency dominates: up to four calls per *new* action, eight
 actions planned concurrently per batch, bounded by per-call timeouts,
 the circuit breaker and the daily budget.

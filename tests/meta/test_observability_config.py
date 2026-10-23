@@ -9,12 +9,17 @@ import re
 import tomllib
 from decimal import Decimal
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 import pytest
 import yaml
 
 from support import ROOT
+from techcom_followup.adapters.inbound.api.observability import Observer
+from techcom_followup.infrastructure.otlp import OtlpLogExporter
+
+if TYPE_CHECKING:
+    import httpx
 
 DEPLOY = ROOT / "deploy"
 RULES = DEPLOY / "prometheus" / "rules" / "followup.rules.yml"
@@ -36,11 +41,7 @@ def catalogue() -> set[str]:
         encoding="utf-8"
     )
     section = text.split("## 8. Metrics catalogue", 1)[1].split("## 9.", 1)[0]
-    names = set(re.findall(r"`(followup_[a-z_]+)`", section))
-    # "`followup_http_requests_total` / `_duration_seconds`" row.
-    if "followup_http_requests_total" in names:
-        names.add("followup_http_requests_duration_seconds")
-    return names
+    return set(re.findall(r"^\| `(followup_[a-z_]+)`", section, re.MULTILINE))
 
 
 def base_metric(name: str) -> str:
@@ -77,6 +78,25 @@ def test_rules_and_dashboard_use_only_catalogued_metrics() -> None:
     }
     assert used
     assert used <= catalogue(), used - catalogue()
+
+
+def exported_families() -> set[str]:
+    """Families the API process exports, counters with their suffix."""
+    observer = Observer()
+    # The exporter only registers its counters; it is never started.
+    OtlpLogExporter(
+        cast("httpx.AsyncClient", None),
+        "https://alloy/v1/logs",
+        observer.registry,
+    )
+    return {
+        family.name + ("_total" if family.type == "counter" else "")
+        for family in observer.registry.collect()
+    }
+
+
+def test_catalogue_is_exactly_what_the_service_exports() -> None:
+    assert exported_families() == catalogue()
 
 
 def test_every_alert_is_actionable() -> None:

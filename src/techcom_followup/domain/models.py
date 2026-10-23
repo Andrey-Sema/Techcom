@@ -101,6 +101,7 @@ class Flag(StrEnum):
     INVALID_LAST_UPDATE = "invalid_last_update"
     FUTURE_LAST_UPDATE = "future_last_update"
     AGENT_PLANNED = "agent_planned"
+    NONCANONICAL_PROJECT = "noncanonical_project"
 
 
 @dataclass(frozen=True, slots=True)

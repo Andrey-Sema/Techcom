@@ -4,7 +4,7 @@ import asyncio
 import json
 import signal
 import time
-from collections.abc import AsyncIterator, Callable, Iterator
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from contextlib import asynccontextmanager, contextmanager, suppress
 from dataclasses import dataclass
 from datetime import date
@@ -37,6 +37,7 @@ from techcom_followup.application.process_tasks import ProcessTasks, RunReport
 from techcom_followup.bootstrap import RuntimeBuilder, RuntimeSettings
 from techcom_followup.infrastructure.log_config import configure_logging
 from techcom_followup.infrastructure.otlp import OtlpLogExporter
+from techcom_followup.infrastructure.telemetry import PrometheusTelemetry
 
 MAX_PUBLIC_KEY_BYTES = 65_536
 MAX_SIGNING_KEYS = 16
@@ -245,7 +246,10 @@ async def _run_listeners(
 
 
 def _listeners(
-    app: FastAPI, observer: Observer, api: ApiRuntimeSettings
+    app: FastAPI,
+    observer: Observer,
+    api: ApiRuntimeSettings,
+    refresh: Callable[[], Awaitable[None]] | None = None,
 ) -> list[_Listener]:
     return [
         _Listener(
@@ -261,7 +265,7 @@ def _listeners(
         ),
         _Listener(
             uvicorn.Config(
-                create_metrics_app(observer),
+                create_metrics_app(observer, refresh),
                 host=api.metrics_host,
                 port=api.metrics_port,
                 access_log=False,
@@ -293,10 +297,17 @@ async def serve(runtime: RuntimeSettings, api: ApiRuntimeSettings) -> None:
     clock = ApiClock()
     try:
         await _check_storage(engine)
-        async with RuntimeBuilder(runtime)(
+        telemetry = PrometheusTelemetry()
+        async with RuntimeBuilder(runtime, telemetry=telemetry)(
             CommandOptions(clock.today())
         ) as services:
-            observer = Observer()
+            observer = Observer(telemetry=telemetry)
+
+            async def refresh() -> None:
+                telemetry.set_outbox(
+                    await services.repository.outbox_summary(), clock.now()
+                )
+
             async with _logs(api, observer):
                 settings = ApiSettings(
                     rate_capacity=api.rate_capacity,
@@ -318,7 +329,8 @@ async def serve(runtime: RuntimeSettings, api: ApiRuntimeSettings) -> None:
                     ),
                 )
                 await _run_listeners(
-                    _listeners(app, observer, api), services.stop_claiming
+                    _listeners(app, observer, api, refresh),
+                    services.stop_claiming,
                 )
     finally:
         await engine.dispose()

@@ -32,9 +32,11 @@ the action within limits that code sets and enforces:
    writes or reaches the network. The outbox remains the only executor.
 4. **Guard.** `domain/guard.py` reviews every plan: envelope membership,
    priority only rises, message rules (facts only as placeholders that
-   code renders, no names, dates, digits, links, addresses or phone
-   numbers, no status claims, no instruction-like text, no copying of the
-   note), a bounded rationale and evidence quoted verbatim from the note.
+   code renders; no digits, dates or relative deadlines, names or other
+   proper nouns, links, addresses or phone numbers in any obfuscated
+   form, no unverifiable or status claims, no instruction-like text, no
+   markup, ASCII only, no copying of the note), a bounded rationale and
+   evidence quoted verbatim from the note.
    Violations go back to the model once per step so it can repair.
 5. **Fallback.** Any transport error, invalid JSON, unknown tool, wrong
    final step, breaker or budget refusal, or a plan that never passes the
@@ -45,7 +47,8 @@ the action within limits that code sets and enforces:
    nondeterminism cannot produce a second message for one task state.
 7. **Data minimisation.** The model sees status, dates, missing fields,
    the baseline reason and recipient *kinds*; personal names stay in code.
-   A note that the injection screen flags is withheld entirely.
+   If the note, title or project name trips the injection screen, all of
+   them are withheld.
 8. **Audit.** Each plan stores the baseline next to the chosen decision,
    a bounded rationale, and an `agent.plan` audit event with closed
    fields: tools used, step count, violation codes, outcome and whether

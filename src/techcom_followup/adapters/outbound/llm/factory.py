@@ -3,6 +3,7 @@
 import time
 from collections.abc import Callable
 from datetime import UTC, date, datetime
+from functools import partial
 
 from openai import AsyncOpenAI, DefaultAsyncHttpxClient
 from openai.auth import k8s_service_account_token_provider
@@ -12,10 +13,13 @@ from techcom_followup.adapters.outbound.llm.openai_responses import (
     OpenAIResponsesBackend,
 )
 from techcom_followup.adapters.outbound.llm.router import LLMRouter
+from techcom_followup.application.telemetry import NULL_TELEMETRY
+from techcom_followup.infrastructure.resilience import CircuitBreaker
 from techcom_followup.infrastructure.settings import (
     OpenAIAuthMode,
     OpenAISettings,
 )
+from techcom_followup.infrastructure.telemetry import PrometheusTelemetry
 
 # Default per-client timeout; every request passes its own, shorter one.
 _CLIENT_TIMEOUT_S = 60.0
@@ -67,12 +71,22 @@ def build_router(
     *,
     monotonic: Callable[[], float] = time.monotonic,
     today: Callable[[], date] = _utc_today,
+    telemetry: PrometheusTelemetry | None = None,
 ) -> LLMRouter:
     """Compose the router with the OpenAI Responses backend."""
     backend = OpenAIResponsesBackend(client.responses.create)
-    return LLMRouter(
+    router = LLMRouter(
         config=config,
         backends={"openai": backend},
         monotonic=monotonic,
         today=today,
+        telemetry=NULL_TELEMETRY if telemetry is None else telemetry,
     )
+    if telemetry is not None:
+        for model, breaker in router.breakers.items():
+            telemetry.watch_circuit(f"llm:{model}", partial(_state, breaker))
+    return router
+
+
+def _state(breaker: CircuitBreaker) -> str:
+    return breaker.state.value

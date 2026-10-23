@@ -19,6 +19,7 @@ from techcom_followup.infrastructure.settings import (
     OpenAISettings,
     load_openai_settings,
 )
+from techcom_followup.infrastructure.telemetry import PrometheusTelemetry
 
 if TYPE_CHECKING:
     from openai import AsyncOpenAI
@@ -161,6 +162,23 @@ async def test_build_router_wires_the_responses_api(
     result = await router.generate_json(request_)
     assert result.text == '{"blocker": "x"}'
     assert stub.responses.calls == 1
+
+
+def test_build_router_exports_model_circuit_states(
+    routing_config: RoutingConfig,
+) -> None:
+    telemetry = PrometheusTelemetry()
+    factory.build_router(
+        routing_config, cast("AsyncOpenAI", _Client()), telemetry=telemetry
+    )
+    for model in ("gpt-6.1-sol", "gpt-6-sol", "gpt-5.6-sol"):
+        assert (
+            telemetry.registry.get_sample_value(
+                "followup_circuit_state",
+                {"dependency": f"llm:{model}", "state": "closed"},
+            )
+            == 1
+        )
 
 
 @pytest.mark.parametrize("redirect_status", [307, 308])

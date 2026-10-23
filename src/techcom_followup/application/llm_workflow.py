@@ -17,6 +17,11 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 
 from techcom_followup.application.ports import LLMClient, LLMError, LLMRequest
 from techcom_followup.application.resilience_ports import BreakerPermit
+from techcom_followup.application.telemetry import (
+    NULL_TELEMETRY,
+    CounterName,
+    Telemetry,
+)
 
 MAX_OUTPUT_CHARS = 16_384
 BREAKER_COOLDOWN_S = 30
@@ -43,12 +48,18 @@ class LanguageCall:
         *,
         monotonic: Callable[[], float] = time.monotonic,
         timeout_s: float = 10,
+        telemetry: Telemetry = NULL_TELEMETRY,
     ) -> None:
-        """Inject a language port and a finite total call deadline."""
+        """Inject a language port and a finite total call deadline.
+
+        ``telemetry`` is public so a composition root can attach it to
+        workflows that own their language call.
+        """
         if not isfinite(timeout_s) or timeout_s <= 0:
             message = "language timeout must be finite and positive"
             raise ValueError(message)
         self.client = client
+        self.telemetry = telemetry
         self.failures: Counter[str] = Counter()
         self._monotonic = monotonic
         self._timeout_s = timeout_s
@@ -73,6 +84,7 @@ class LanguageCall:
         self, stage: str, request: LLMRequest, text: str, permit: BreakerPermit
     ) -> None:
         self.failures[stage] += 1
+        self._count(request, "error" if stage == "transport" else "invalid")
         if permit.generation == self._generation:
             self._consecutive += 1
             if self._consecutive >= BREAKER_FAILURE_THRESHOLD:
@@ -95,6 +107,7 @@ class LanguageCall:
         permit = self._admit()
         if self.client is None or permit is None:
             self.failures["unavailable"] += 1
+            self._count(request, "unavailable")
             return None
         text = ""
         try:
@@ -108,11 +121,19 @@ class LanguageCall:
             self._reject("transport", request, "", permit)
         else:
             self._accept(permit)
+            self._count(request, "ok")
             return output
         finally:
             if self._probe is permit:
                 self._probe = None
         return None
+
+    def _count(self, request: LLMRequest, result: str) -> None:
+        self.telemetry.count(
+            CounterName.LLM_REQUESTS,
+            purpose=request.purpose.value,
+            result=result,
+        )
 
     def _accept(self, permit: BreakerPermit) -> None:
         if permit.generation == self._generation:

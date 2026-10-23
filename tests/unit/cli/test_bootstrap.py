@@ -7,13 +7,19 @@ from unittest.mock import AsyncMock, Mock
 import httpx
 import pytest
 from pydantic import SecretStr
+from structlog.testing import capture_logs
 
 from support import AS_OF, ROOT
 from techcom_followup import bootstrap
 from techcom_followup.adapters.outbound.clock import FixedClock, SystemClock
+from techcom_followup.adapters.outbound.in_memory_repository import (
+    InMemoryRepository,
+)
 from techcom_followup.adapters.outbound.llm_stub import ScriptedLLM
+from techcom_followup.adapters.outbound.run_lock import InMemoryRunLock
 from techcom_followup.application.command_ports import CommandOptions
 from techcom_followup.infrastructure.http_client import UpstreamError
+from techcom_followup.infrastructure.telemetry import PrometheusTelemetry
 
 
 @pytest.mark.parametrize("records", [{}, [0] * 10_001])
@@ -171,12 +177,16 @@ async def test_language_cache_namespace_changes_with_route_configuration(
         config_dir=tmp_path, llm_provider="router"
     )
     async with AsyncExitStack() as stack:
-        _, first = bootstrap._language(stack, settings, SystemClock())
+        _, first = bootstrap._language(
+            stack, settings, SystemClock(), PrometheusTelemetry()
+        )
         (tmp_path / "llm.toml").write_text(
             config.replace('daily_budget_usd = "5"', 'daily_budget_usd = "6"'),
             encoding="utf-8",
         )
-        _, second = bootstrap._language(stack, settings, SystemClock())
+        _, second = bootstrap._language(
+            stack, settings, SystemClock(), PrometheusTelemetry()
+        )
     assert first != second
 
 
@@ -207,3 +217,41 @@ async def test_demo_disables_environment_proxies_without_making_network_calls(
     ) as services:
         services.dispatcher()
         constructor.assert_called_once_with(trust_env=False)
+
+
+async def test_command_metrics_are_written_for_the_textfile_collector(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "followup.prom"
+    settings = bootstrap.RuntimeSettings(metrics_file=path)
+    telemetry = PrometheusTelemetry()
+    builder = bootstrap.RuntimeBuilder(settings, telemetry=telemetry)
+    async with builder(
+        CommandOptions(AS_OF, fixture=ROOT / "fixtures" / "tasks.json")
+    ) as services:
+        await services.processor().execute(as_of=AS_OF)
+        services.dispatcher()
+    text = path.read_text()
+    assert 'followup_runs_total{result="completed"} 1.0' in text
+    assert (
+        'followup_circuit_state{dependency="delivery",state="closed"} 1.0'
+        in text
+    )
+
+
+async def test_metric_export_reads_the_shared_outbox_and_never_fails(
+    tmp_path: Path,
+) -> None:
+    telemetry = PrometheusTelemetry()
+    storage = bootstrap._Storage(
+        InMemoryRepository(), InMemoryRunLock(), persistent=True
+    )
+    clock = FixedClock(datetime(2026, 10, 21, tzinfo=UTC))
+    path = tmp_path / "followup.prom"
+    await bootstrap._export_metrics(telemetry, storage, clock, path)
+    assert 'followup_outbox_backlog{status="pending"} 0.0' in path.read_text()
+    with capture_logs() as logs:
+        await bootstrap._export_metrics(
+            telemetry, storage, clock, tmp_path / "missing" / "x.prom"
+        )
+    assert [entry["event"] for entry in logs] == ["metrics.export_failed"]

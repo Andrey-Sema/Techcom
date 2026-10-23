@@ -139,3 +139,25 @@ def test_planned_writes_must_refine_an_actionable_baseline() -> None:
     quiet = replace(baseline, kind=DecisionKind.NO_ACTION, target=None)
     with pytest.raises(ValueError, match="refine an actionable baseline"):
         DecisionWrite(run, quiet, fingerprint, baseline=baseline).validate()
+
+
+async def test_lossy_project_names_are_followed_up_without_authority() -> None:
+    records = [
+        record | {"project": record["project"] + " "}
+        for record in fixture_records()
+        if isinstance(record, dict)
+    ]
+    repository = InMemoryRepository()
+    report = await ProcessTasks(
+        ProcessingDependencies(
+            repository,
+            Source(list(records)),
+            POLICY,
+            FixedClock(NOW),
+            InMemoryRunLock(),
+        )
+    ).execute(as_of=AS_OF)
+    assert report.rejected == ()
+    assert report.enqueued == 7
+    actions = await repository.list_actions()
+    assert {action.source_project for action in actions} == {None}

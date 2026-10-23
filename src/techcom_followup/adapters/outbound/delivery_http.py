@@ -20,6 +20,9 @@ from techcom_followup.infrastructure.http_client import (
 )
 
 _RETRYABLE_CODES = frozenset({409, 429, 500, 502, 503, 504})
+# A failed or timed-out gateway may have committed the write upstream;
+# the outcome is unknown and reconciliation looks it up before a resend.
+_AMBIGUOUS_WRITE_CODES = frozenset({500, 502, 504})
 
 
 class _Receipt(BaseModel):
@@ -67,6 +70,10 @@ class HttpDeliveryGateway:
             )
         except (httpx.HTTPError, UpstreamError, TimeoutError):
             return DeliveryResult(DeliveryKind.UNKNOWN, error="send_unknown")
+        if response.status_code in _AMBIGUOUS_WRITE_CODES:
+            return DeliveryResult(
+                DeliveryKind.UNKNOWN, error=f"http_{response.status_code}"
+            )
         return self._classify(response, action.identity.operation_id)
 
     async def lookup(self, operation_id: UUID) -> DeliveryResult:

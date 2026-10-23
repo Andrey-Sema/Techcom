@@ -87,7 +87,8 @@ test:
 
 # Coverage is enforced by the complete suite; this subset cannot cover PG.
 test-fast:
-	uv run --locked pytest -m "not integration and not live_llm" --no-cov
+	uv run --locked pytest --no-cov \
+	  -m "not integration and not live_llm and not image and not bench"
 
 test-integration:
 	uv run --locked pytest -m integration --no-cov
@@ -140,7 +141,7 @@ db-backup:
 db-restore:
 	@test -n "$(FILE)" || { echo "usage: make db-restore FILE=var/backups/..."; exit 2; }
 	$(DB) pg_restore -U followup --dbname=followup --clean --if-exists \
-	  --exit-on-error --single-transaction < $(FILE)
+	  --exit-on-error --single-transaction < "$(FILE)"
 
 # Observability stack (M10, ADR-0010). Validators run inside the same
 # pinned images as the stack, taken from compose.observability.yaml.
