@@ -238,6 +238,7 @@ class Commands:
                     "decisions": total.decisions,
                     "audit_events": total.audit,
                     "runs": total.runs,
+                    "admission_history": total.admissions,
                 },
                 "complete": complete,
             }

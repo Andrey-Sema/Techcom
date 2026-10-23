@@ -1,0 +1,18 @@
+[
+  {
+    "action_id": "00000000-0000-4000-8000-000000000001",
+    "operation_id": "00000000-0000-5000-8000-000000000002",
+    "task_id": "TC-1002",
+    "decision": "follow_up_owner",
+    "status": "pending",
+    "target": {
+      "kind": "person",
+      "name": "Fixture Owner",
+      "project": "Fixture Project"
+    },
+    "subject": "Task follow-up",
+    "body": "Please confirm the next update for this fixture task.",
+    "attempts": 0,
+    "next_attempt_at": "2026-10-23T09:00:00Z"
+  }
+]

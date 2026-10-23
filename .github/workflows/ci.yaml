@@ -68,6 +68,28 @@ jobs:
           name: sbom-dependencies
           path: var/sbom/techcom-followup.cdx.json
           if-no-files-found: error
+  benchmark:
+    name: 10k task performance
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
+        with:
+          version: "0.12.23"
+          python-version: "3.14"
+          enable-cache: true
+      - run: uv sync --locked --all-packages
+      - run: make bench
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: benchmark-10k
+          path: var/bench/results.json
+          if-no-files-found: warn
+          retention-days: 7
   smoke:
     name: smoke
     runs-on: ubuntu-latest

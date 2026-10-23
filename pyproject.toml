@@ -28,6 +28,7 @@ dependencies = [
 
 [project.scripts]
 followup = "techcom_followup.bootstrap:main"
+followup-api = "techcom_followup.serving:main"
 
 [dependency-groups]
 dev = [
@@ -228,9 +229,8 @@ extend_exclude = ["mocks", "migrations", "scripts", "docs", ".semgrep"]
 
 [tool.deptry.per_rule_ignores]
 # alembic runs the migrations/ scripts; psycopg is the SQLAlchemy
-# driver selected by the "postgresql+psycopg" URL. Uvicorn is the ASGI
-# command used by the local mock and operator deployments.
-DEP002 = ["alembic", "psycopg", "uvicorn"]
+# driver selected by the "postgresql+psycopg" URL.
+DEP002 = ["alembic", "psycopg"]
 
 [tool.codespell]
 # Recorded adversarial inputs are immutable data, not prose to correct.

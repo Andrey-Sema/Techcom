@@ -3,10 +3,12 @@
 import math
 import re
 import sys
+from collections.abc import Callable
 from contextlib import suppress
 from uuid import UUID
 
 import structlog
+from structlog.contextvars import merge_contextvars
 from structlog.typing import EventDict, WrappedLogger
 
 _UUID_TEXT_LENGTH = 36
@@ -21,6 +23,7 @@ _SECURITY_EVENTS = frozenset(
         "security.object_access_denied",
         "security.rate_limited",
         "security.request_rejected",
+        "api.unhandled_error",
     }
 )
 _EVENTS = _SECURITY_EVENTS | frozenset(
@@ -100,7 +103,6 @@ def _request_metadata(event: EventDict, safe: EventDict) -> None:
 
 
 def _security_metadata(event: EventDict, safe: EventDict) -> None:
-    _request_metadata(event, safe)
     status = event.get("status")
     if type(status) is int and _MIN_HTTP_STATUS <= status <= _MAX_HTTP_STATUS:
         safe["status"] = status
@@ -112,7 +114,7 @@ def _security_metadata(event: EventDict, safe: EventDict) -> None:
 def redact_event(
     _logger: WrappedLogger, method: str, event: EventDict
 ) -> EventDict:
-    """Keep a closed event name, generated identity and counters."""
+    """Keep a closed event name, validated identity and counters."""
     name = event.get("event")
     safe: EventDict = {
         "event": name
@@ -124,6 +126,7 @@ def redact_event(
     }
     _counter_metadata(event, safe)
     _run_metadata(event, safe)
+    _request_metadata(event, safe)
     if safe["event"] == "llm.validation_failed":
         _validation_metadata(event, safe)
     if safe["event"] in _SECURITY_EVENTS:
@@ -131,11 +134,18 @@ def redact_event(
     return safe
 
 
-def configure_logging() -> None:
+def configure_logging(
+    capture: Callable[[WrappedLogger, str, EventDict], EventDict]
+    | None = None,
+) -> None:
     """Write one escaped JSON record per event to standard error."""
+    processors = [redact_event]
+    if capture is not None:
+        processors.append(capture)
     structlog.configure(
         processors=[
-            redact_event,
+            merge_contextvars,
+            *processors,
             structlog.processors.JSONRenderer(ensure_ascii=True),
         ],
         logger_factory=structlog.PrintLoggerFactory(file=sys.stderr),

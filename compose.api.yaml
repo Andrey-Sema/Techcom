@@ -1,0 +1,53 @@
+# Combine with compose.yaml and compose.observability.yaml.
+name: techcom
+services:
+  app:
+    build:
+      context: .
+      target: runtime
+    image: techcom-followup:local
+    entrypoint: [followup-api]
+    command: []
+    read_only: true
+    restart: unless-stopped
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: [/tmp]
+    environment:
+      FOLLOWUP_API_ISSUER: ${FOLLOWUP_API_ISSUER:?set the trusted JWT issuer}
+      FOLLOWUP_API_AUDIENCE: ${FOLLOWUP_API_AUDIENCE:?set the API audience}
+      FOLLOWUP_API_PUBLIC_KEYS_FILE: /run/secrets/public_keys.json
+      FOLLOWUP_API_ALL_PROJECT_SUBJECTS: ${FOLLOWUP_API_ALL_PROJECT_SUBJECTS:-[]}
+      FOLLOWUP_API_HOST: 0.0.0.0
+      FOLLOWUP_API_METRICS_HOST: 0.0.0.0
+      FOLLOWUP_API_ALLOW_INTERNAL_HTTP: "true"
+      FOLLOWUP_API_OTLP_ENDPOINT: http://alloy:4318/v1/logs
+      FOLLOWUP_TASK_API_URL: ${FOLLOWUP_TASK_API_URL:?set the task endpoint}
+      FOLLOWUP_DELIVERY_API_URL: ${FOLLOWUP_DELIVERY_API_URL:?set the delivery endpoint}
+      FOLLOWUP_ALLOWED_HOSTS: ${FOLLOWUP_ALLOWED_HOSTS:?set approved endpoint hosts as JSON}
+      FOLLOWUP_ALLOW_LOCAL_HTTP: "false"
+      FOLLOWUP_WRITE_CONCURRENCY: ${FOLLOWUP_WRITE_CONCURRENCY:-8}
+      FOLLOWUP_RECIPIENT_DAILY_LIMIT: ${FOLLOWUP_RECIPIENT_DAILY_LIMIT:-20}
+    secrets:
+      - source: api_database_url
+        target: FOLLOWUP_DATABASE_URL
+      - source: api_public_keys
+        target: public_keys.json
+    networks: [default, observability]
+    ports: ["127.0.0.1:8080:8080"]
+    expose: [9464]
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request as u; u.urlopen('http://127.0.0.1:8080/readyz', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+    depends_on:
+      db:
+        condition: service_healthy
+      alloy:
+        condition: service_started
+secrets:
+  api_database_url:
+    file: ./secrets/api_database_url
+  api_public_keys:
+    file: ./secrets/api_public_keys.json

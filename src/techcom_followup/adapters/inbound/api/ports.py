@@ -68,3 +68,16 @@ class EventSink(Protocol):
     def emit(self, event: SecurityEvent) -> None:
         """Enqueue an event without blocking request processing."""
         ...
+
+
+class RequestLimiter(Protocol):
+    """Admission shared by every API instance in a deployment."""
+
+    @property
+    def retry_after(self) -> str:
+        """A conservative retry interval in seconds."""
+        ...
+
+    async def allow(self, namespace: str, actor_id: str) -> bool:
+        """Atomically reserve a bounded request or failed-auth slot."""
+        ...

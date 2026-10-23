@@ -11,6 +11,7 @@ from uuid import UUID, uuid4
 from pydantic import JsonValue
 
 from techcom_followup.application.repository import (
+    MAX_BATCH_SIZE,
     ActionReadQuery,
     ActionRecord,
     ActionStatus,
@@ -26,6 +27,7 @@ from techcom_followup.application.repository import (
     StoredDecision,
     require_aware,
 )
+from techcom_followup.domain.messages import MessageDraft
 
 _TERMINAL = frozenset({ActionStatus.SENT, ActionStatus.DEAD})
 
@@ -40,6 +42,7 @@ class InMemoryRepository:
         self._decisions: dict[tuple[UUID, str], StoredDecision] = {}
         self._actions: dict[UUID, ActionRecord] = {}
         self._keys: set[str] = set()
+        self._messages: dict[str, MessageDraft] = {}
         self._cache: dict[str, CacheEntry] = {}
         self._audit: list[AuditEvent] = []
 
@@ -106,9 +109,11 @@ class InMemoryRepository:
                     ActionStatus.PENDING,
                     0,
                     now,
+                    source_project=write.source_project,
                 )
                 self._actions[action.id] = action
                 self._keys.add(identity.idempotency_key)
+                self._messages[identity.idempotency_key] = draft
         stored = StoredDecision(decision_id, write, outcome)
         self._decisions[key] = stored
         self._audit.append(
@@ -123,16 +128,53 @@ class InMemoryRepository:
         return stored
 
     async def list_decisions(self, run_id: UUID) -> tuple[StoredDecision, ...]:
-        """Return this run's decisions in insertion order."""
-        return tuple(
+        """Order decisions by source position, preserving legacy ties."""
+        rows = (
             row
             for row in self._decisions.values()
             if row.write.run_id == run_id
+        )
+        return tuple(
+            sorted(
+                rows,
+                key=lambda row: (
+                    row.write.source_position is None,
+                    row.write.source_position or 0,
+                ),
+            )
         )
 
     async def list_actions(self) -> tuple[ActionRecord, ...]:
         """Return immutable outbox snapshots in insertion order."""
         return tuple(self._actions.values())
+
+    async def list_run_actions(self, run_id: UUID) -> tuple[ActionRecord, ...]:
+        """Avoid materializing other runs' payloads for a report."""
+        order = {
+            row.id: index
+            for index, row in enumerate(await self.list_decisions(run_id))
+        }
+        return tuple(
+            sorted(
+                (
+                    row
+                    for row in self._actions.values()
+                    if row.decision_id in order
+                ),
+                key=lambda row: order[row.decision_id],
+            )
+        )
+
+    async def get_action_messages(
+        self, keys: tuple[str, ...]
+    ) -> Mapping[str, MessageDraft | None]:
+        """Return payloads or tombstones without scanning historical actions."""
+        if len(keys) > MAX_BATCH_SIZE:
+            message = "message lookup exceeds the batch bound"
+            raise ValueError(message)
+        return {
+            key: self._messages.get(key) for key in keys if key in self._keys
+        }
 
     async def query_actions(
         self, query: ActionReadQuery
@@ -231,6 +273,7 @@ class InMemoryRepository:
                 sent_at=update.now
                 if update.status == ActionStatus.SENT
                 else None,
+                terminal_at=update.now if update.status in _TERMINAL else None,
             )
             return True
 
@@ -331,11 +374,13 @@ class InMemoryRepository:
             action
             for action in self._actions.values()
             if action.status in _TERMINAL
-            and (action.sent_at or action.next_attempt_at) < cutoff
+            and action.terminal_at is not None
+            and action.terminal_at < cutoff
         ][:limit]
         for action in old:
             del self._actions[action.id]
-            self._keys.discard(action.identity.idempotency_key)
+            self._messages.pop(action.identity.idempotency_key, None)
+            # Identity tombstones intentionally outlive message payloads.
         return len(old)
 
     def _prune_decisions(self, cutoff: datetime, limit: int) -> int:
@@ -343,7 +388,8 @@ class InMemoryRepository:
         old = [
             key
             for key, stored in self._decisions.items()
-            if self._runs[key[0]].started_at < cutoff
+            if (finished := self._runs[key[0]].finished_at) is not None
+            and finished < cutoff
             and stored.id not in referenced
         ][:limit]
         for key in old:
@@ -365,7 +411,9 @@ class InMemoryRepository:
         old = [
             run.id
             for run in self._runs.values()
-            if run.started_at < cutoff and run.id not in used
+            if run.finished_at is not None
+            and run.finished_at < cutoff
+            and run.id not in used
         ][:limit]
         for run_id in old:
             del self._runs[run_id]
@@ -376,8 +424,20 @@ def _visible(action: ActionRecord, query: ActionReadQuery) -> bool:
     target = action.decision.target
     return (
         target is not None
-        and (query.all_projects or target.project in query.projects)
-        and (query.project is None or target.project == query.project)
+        and (
+            query.all_projects
+            or (
+                action.source_project in query.projects
+                and target.project in query.projects
+            )
+        )
+        and (
+            query.project is None
+            or (
+                action.source_project == query.project
+                and target.project == query.project
+            )
+        )
         and (query.task_id is None or action.decision.task_id == query.task_id)
         and (query.status is None or action.status == query.status)
     )
