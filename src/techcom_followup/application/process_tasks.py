@@ -290,12 +290,21 @@ class ProcessTasks:
         )
         draft, final = None, decision
         audit: Mapping[str, JsonValue] | None = None
+        source_project = (
+            None
+            if task.project == UNKNOWN_LABEL
+            or Flag.NONCANONICAL_PROJECT in task.flags
+            else task.project
+        )
         if identity is not None:
             if identity.idempotency_key in existing:
                 # Retained identities need no new model call, even after
                 # the original payload has expired. No action is sent.
                 retained = existing[identity.idempotency_key]
-                if retained is not None:
+                if (
+                    retained is not None
+                    and retained.source_project == source_project
+                ):
                     return replace(
                         retained,
                         run_id=UUID(int=0),
@@ -319,12 +328,7 @@ class ProcessTasks:
             proposal.fingerprint,
             identity,
             draft,
-            source_project=(
-                None
-                if task.project == UNKNOWN_LABEL
-                or Flag.NONCANONICAL_PROJECT in task.flags
-                else task.project
-            ),
+            source_project=source_project,
             baseline=None if final == decision else decision,
             plan_audit=audit,
             source_version=task.source_version,

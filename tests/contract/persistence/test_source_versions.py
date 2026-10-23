@@ -1,5 +1,5 @@
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -12,6 +12,7 @@ from techcom_followup.application.repository import (
     DecisionWrite,
     Repository,
 )
+from techcom_followup.application.retention import PruneData, RetentionPolicy
 from techcom_followup.domain.identity import ActionIdentity
 from techcom_followup.domain.models import DecisionKind, Flag
 from techcom_followup.domain.source_version import SourceVersion
@@ -153,3 +154,37 @@ async def test_replay_keeps_watermark_and_projects_are_isolated(
     assert (
         await repository.record_decision(foreign, NOW)
     ).outcome is DecisionOutcome.ENQUEUED
+
+
+async def test_quiet_watermark_outlives_pruned_history(
+    repository: Repository,
+) -> None:
+    write = await action_write(repository)
+    quiet = replace(
+        write,
+        decision=replace(
+            write.decision, kind=DecisionKind.NO_ACTION, target=None
+        ),
+        identity=None,
+        message=None,
+        source_version=version(21),
+    )
+    await repository.record_decision(quiet, NOW)
+    await repository.finish_run(quiet.run_id, {"status": "completed"}, NOW)
+    await PruneData(
+        repository,
+        RetentionPolicy(
+            version="2026-10-24.1",
+            decision_days=90,
+            action_days=365,
+            audit_days=365,
+            batch_size=100,
+            max_batches=100,
+        ),
+        lambda: NOW + timedelta(days=400),
+    ).execute()
+    assert await repository.get_run(quiet.run_id) is None
+    stale = await next_write(repository, write, version(20), "obsolete")
+    assert (
+        await repository.record_decision(stale, NOW)
+    ).outcome is DecisionOutcome.STALE_SUPPRESSED

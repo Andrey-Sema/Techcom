@@ -1,5 +1,7 @@
 from dataclasses import replace
 
+import pytest
+
 from processing_support import Source, fixture_records, stack
 from support import AS_OF, repo_policy
 from techcom_followup.adapters.outbound.llm_agent_stub import (
@@ -52,3 +54,23 @@ async def test_source_regression_after_done_never_reaches_delivery() -> None:
         fresh = await app.processor.execute(as_of=AS_OF.replace(day=22))
         assert fresh.enqueued == 1
         assert await app.dispatcher.execute() == 1
+
+
+@pytest.mark.parametrize("project", [" SURF Illinois", "SURF ILLINOIS"])
+async def test_reused_identity_does_not_reuse_foreign_project_authority(
+    project: str,
+) -> None:
+    record = fixture_records()[0]
+    assert isinstance(record, dict)
+    source = Source([record])
+    async with stack() as app:
+        app.processor._deps = replace(app.processor._deps, source=source)
+        await app.processor.execute(as_of=AS_OF)
+        source.records = [{**record, "project": project}]
+        rerun = await app.processor.execute(as_of=AS_OF)
+        assert rerun.enqueued == 0
+        expected = None if project.startswith(" ") else project
+        assert rerun.plans[0].source_project == expected
+        target = rerun.decisions[0].target
+        assert target is not None
+        assert target.project == project.strip()
