@@ -93,10 +93,12 @@ def _to_task(record: object, as_of: date) -> Task | RejectedRecord:
     task_id = _task_id(record.get("task_id"))
     if task_id is None:
         return RejectedRecord(0, None, "invalid_task_id")
-    project = _project(record.get("project"))
-    if project is None:
-        return RejectedRecord(0, task_id, "noncanonical_project")
+    project = _label(record.get("project"))
     flags: set[Flag] = set()
+    if not _canonical_project(record.get("project"), project):
+        # Display cleanup must not create project authority, but the
+        # task still needs its follow-up: route it, withhold authority.
+        flags.add(Flag.NONCANONICAL_PROJECT)
     due_date = _date(record.get("due_date"), Flag.INVALID_DUE_DATE, flags)
     last_update = _date(
         record.get("last_update"), Flag.INVALID_LAST_UPDATE, flags
@@ -142,12 +144,9 @@ def _owner(value: object) -> str | None:
     return None if fold(owner) in _NO_OWNER else owner
 
 
-def _project(value: object) -> str | None:
-    """Preserve authority; reject lossy display aliases."""
-    label = _label(value)
-    if isinstance(value, str) and label not in {UNKNOWN_LABEL, value}:
-        return None
-    return label
+def _canonical_project(value: object, label: str) -> bool:
+    """Return whether the cleaned label is exactly the source value."""
+    return not isinstance(value, str) or label in {UNKNOWN_LABEL, value}
 
 
 def _label(value: object, max_chars: int = MAX_NAME_CHARS) -> str:

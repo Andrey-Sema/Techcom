@@ -55,7 +55,7 @@ from techcom_followup.domain.guard import (
     PlanProposal,
     review,
 )
-from techcom_followup.domain.injection import screen
+from techcom_followup.domain.injection import screen_task
 from techcom_followup.domain.messages import (
     BODY_MAX_CHARS,
     BODY_MIN_CHARS,
@@ -155,11 +155,16 @@ class _Session:
     envelope: ActionEnvelope
     task: Task
     as_of: date
-    note_visible: bool
+    withheld: bool
     history: list[JsonValue]
     transcript: list[JsonValue] = field(default_factory=list)
     tools: list[str] = field(default_factory=list)
     violations: tuple[str, ...] = ()
+
+    @property
+    def note_visible(self) -> bool:
+        """Show a note only when nothing in the task was flagged."""
+        return bool(self.task.notes) and not self.withheld
 
     def context(self) -> dict[str, JsonValue]:
         task, baseline = self.task, self.envelope.baseline
@@ -187,10 +192,10 @@ class _Session:
             },
             "envelope": self.envelope.describe(),
             "untrusted": {
-                "title": task.title,
-                "project": task.project,
+                "title": None if self.withheld else task.title,
+                "project": None if self.withheld else task.project,
                 "note": task.notes.value if self.note_visible else None,
-                "note_withheld": not self.note_visible,
+                "withheld": self.withheld,
             },
         }
 
@@ -281,9 +286,8 @@ class FollowUpOrchestrator:
             envelope,
             task,
             as_of,
-            note_visible=bool(task.notes)
-            and Flag.PROMPT_INJECTION_SUSPECTED not in decision.flags
-            and not screen(task.notes).suspicious,
+            withheld=Flag.PROMPT_INJECTION_SUSPECTED in decision.flags
+            or screen_task(task).suspicious,
             history=history,
         )
         planned = await self._converse(session)

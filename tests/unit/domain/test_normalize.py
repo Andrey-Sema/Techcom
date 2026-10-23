@@ -108,10 +108,13 @@ def test_non_object_records_are_rejected() -> None:
     "project",
     [" Project A", "Project A\n", "Project\u200b A", "A" * 80 + "B"],
 )
-def test_project_authority_rejects_lossy_display_aliases(project: str) -> None:
+def test_lossy_project_names_keep_the_task_without_authority(
+    project: str,
+) -> None:
     result = normalize([record(project=project)], AS_OF)
-    assert result.tasks == ()
-    assert [r.reason for r in result.rejected] == ["noncanonical_project"]
+    (task,) = result.tasks
+    assert result.rejected == ()
+    assert Flag.NONCANONICAL_PROJECT in task.flags
 
 
 def test_distinct_long_projects_cannot_share_truncated_authority() -> None:
@@ -122,8 +125,10 @@ def test_distinct_long_projects_cannot_share_truncated_authority() -> None:
         ],
         AS_OF,
     )
-    assert result.tasks == ()
-    assert len(result.rejected) == 2
+    assert result.rejected == ()
+    assert all(
+        Flag.NONCANONICAL_PROJECT in task.flags for task in result.tasks
+    )
 
 
 @pytest.mark.parametrize(

@@ -22,7 +22,7 @@ from techcom_followup.application.ports import (
     LLMPurpose,
     LLMRequest,
 )
-from techcom_followup.domain.injection import screen
+from techcom_followup.domain.injection import screen_task
 from techcom_followup.domain.messages import (
     BODY_MAX_CHARS,
     BODY_MIN_CHARS,
@@ -89,7 +89,7 @@ class MessageDrafter:
         baseline = compose(decision, task, as_of)
         if (
             Flag.PROMPT_INJECTION_SUSPECTED in decision.flags
-            or screen(task.notes).suspicious
+            or screen_task(task).suspicious
         ):
             return baseline
         choices = approved_phrasings(baseline.template_id)

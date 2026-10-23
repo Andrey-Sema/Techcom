@@ -30,10 +30,15 @@ from techcom_followup.application.telemetry import (
     Telemetry,
 )
 from techcom_followup.domain.identity import ActionIdentity, state_fingerprint
-from techcom_followup.domain.injection import screen
+from techcom_followup.domain.injection import screen_task
 from techcom_followup.domain.interpretation import prefilter
 from techcom_followup.domain.messages import MessageDraft, compose
-from techcom_followup.domain.models import Decision, RejectedRecord, Task
+from techcom_followup.domain.models import (
+    Decision,
+    Flag,
+    RejectedRecord,
+    Task,
+)
 from techcom_followup.domain.normalize import UNKNOWN_LABEL, normalize
 from techcom_followup.domain.policy import DecisionPolicy
 
@@ -236,7 +241,7 @@ class ProcessTasks:
         *,
         dry_run: bool,
     ) -> _Proposal:
-        screening = screen(task.notes)
+        screening = screen_task(task)
         if screening.suspicious:
             self._deps.telemetry.count(
                 CounterName.SECURITY_EVENTS, kind="note_flagged"
@@ -299,7 +304,10 @@ class ProcessTasks:
             identity,
             draft,
             source_project=(
-                None if task.project == UNKNOWN_LABEL else task.project
+                None
+                if task.project == UNKNOWN_LABEL
+                or Flag.NONCANONICAL_PROJECT in task.flags
+                else task.project
             ),
             baseline=None if final == decision else decision,
             plan_audit=audit,

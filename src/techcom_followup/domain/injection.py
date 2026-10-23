@@ -11,7 +11,7 @@ import re
 import unicodedata
 from collections.abc import Mapping
 
-from techcom_followup.domain.models import ScreenResult, UntrustedText
+from techcom_followup.domain.models import ScreenResult, Task, UntrustedText
 
 _PATTERNS: Mapping[str, re.Pattern[str]] = {
     name: re.compile(pattern, re.IGNORECASE | re.MULTILINE)
@@ -53,3 +53,13 @@ def screen(note: UntrustedText) -> ScreenResult:
         name for name, pattern in _PATTERNS.items() if pattern.search(text)
     )
     return ScreenResult(suspicious=bool(matched), matched_patterns=matched)
+
+
+def screen_task(task: Task) -> ScreenResult:
+    """Screen every untrusted text field that a model could see.
+
+    The title and project name come from the same tracker as the note;
+    an instruction hidden in any of them flags the whole task.
+    """
+    fields = (task.notes.value, task.title, task.project)
+    return screen(UntrustedText("\n".join(fields)))
