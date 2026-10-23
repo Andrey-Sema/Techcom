@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 
 import httpx
 import pytest
-from hypothesis import given
+from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from techcom_mocks.app import create_app
@@ -372,7 +372,9 @@ async def test_app_loads_operator_fixture_and_journal(
         ]
 
 
+# fsync latency depends on the filesystem, not payload correctness.
 @given(st.text(min_size=20, max_size=800))
+@settings(deadline=None)
 async def test_payload_canonicalization_and_jsonl_escaping(body: str) -> None:
     value = payload(body)
     reversed_keys = dict(reversed(list(value.model_dump(mode="json").items())))

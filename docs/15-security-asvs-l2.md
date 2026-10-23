@@ -40,7 +40,7 @@ the claim "L2" is evidence-backed, not aspirational.
 
 | # | Decision | ASVS driver |
 |---|----------|-------------|
-| D1 | REST API is protected by **short-lived signed service tokens** (JWT, `EdDSA`/Ed25519, `exp ≤ 15 min`, `aud`, `iss`, `typ=at+jwt`, `jti`, `scope`) instead of a static bearer key. Locally `scripts/issue_token.py` (not part of the shipped package) signs with a dev key; in production tokens come from the IdP (OAuth 2.0 client credentials / workload identity federation). | 13.2.1 forbids unchanging credentials such as API keys between backend components; V9 |
+| D1 | REST API is protected by **short-lived signed service tokens** (JWT, `EdDSA`/Ed25519, `exp ≤ 15 min`, `aud`, `iss`, `typ=at+jwt`, `jti`, `scope`) instead of a static bearer key. Tests generate ephemeral signing keys; no issuer CLI is shipped. Production tokens come from the configured IdP (OAuth 2.0 client credentials / workload identity federation). | 13.2.1 forbids unchanging credentials such as API keys between backend components; V9 |
 | D2 | **Deny-by-default authorization**: router-level dependency requires a valid token; each route declares its scope (`runs:trigger`, `runs:read`, `actions:read`). | 8.1.1, 8.2.1, 8.3.1 |
 | D3 | **Two DB roles**: `followup_migrator` (DDL) and `followup_app` (DML only; `audit_events` INSERT/SELECT only). Production: short-lived DB credentials from a secret manager (dynamic secrets) or cloud IAM auth. | 13.2.1, 13.2.2, 16.4.2 |
 | D4 | **Outbound allow-list**: the HTTP client factory accepts only hosts from configuration (task API, delivery API, LLM endpoint); `follow_redirects=False`; certificate verification can't be disabled. | 1.3.6, 13.2.4, 13.2.5, 15.3.2, 12.3.2 |
@@ -149,7 +149,7 @@ the claim "L2" is evidence-backed, not aspirational.
 |----|---|---------|--------------|--------|
 | 6.1.1 | 1 | Auth anti-automation documented: per-source rate limit on 401s, alert `FollowupAuthFailures` | doc + test | Doc/Planned |
 | 6.1.3, 6.3.4 | 2 | One documented authentication pathway (service JWT); no hidden bypass (health/readiness are the only public routes, they return no data) | route inventory test | Planned |
-| 6.3.1 | 1 | Failed-auth rate limiting | API test | Planned |
+| 6.3.1 | 1 | Failed-auth rate limiting | API test | Built |
 | 6.3.2 | 1 | No default accounts: DB superuser password generated; Grafana admin from secret, sign-up and anonymous disabled | config check | Planned |
 | 6.3.3 | 2 | Humans (Grafana, ops) authenticate via company IdP with MFA in prod; services use workload identity | prod config | Prod |
 | 6.8.2 | 2 | Token signatures always verified; unsigned/`none` rejected | unit tests | Planned |
@@ -161,9 +161,9 @@ the claim "L2" is evidence-backed, not aspirational.
 | ID | L | Control | Verification | Status |
 |----|---|---------|--------------|--------|
 | 8.1.1 | 1 | Scope matrix (§5) documents function- and data-level rules | doc | Doc |
-| 8.1.2 | 2 | Field-level rules: response models expose only listed fields; message bodies only with `actions:read` | doc + tests | Planned |
-| 8.2.1 | 1 | Router-level deny-by-default dependency + per-route scope | parametrized test over all routes | Planned |
-| 8.2.2 | 1 | Single-tenant data; object access checks by scope; ids are UUIDv7 (not an access control) | tests | Planned |
+| 8.1.2 | 2 | Field-level rules: response models expose only listed fields; message bodies only with `actions:read` | doc + tests | Built |
+| 8.2.1 | 1 | Router-level deny-by-default dependency + per-route scope | parametrized test over all routes | Built |
+| 8.2.2 | 1 | Signed project memberships restrict object access; incomplete run provenance is denied; UUIDs are not authorization | tests | Built |
 | 8.2.3 | 2 | `response_model` with explicit fields (no ORM objects returned) | tests | Planned |
 | 8.3.1 | 1 | Authorization only server-side | — | Planned |
 | 8.4.1 | 2 | Single tenant | — | N/A |
@@ -172,12 +172,12 @@ the claim "L2" is evidence-backed, not aspirational.
 
 | ID | L | Control | Verification | Status |
 |----|---|---------|--------------|--------|
-| 9.1.1 | 1 | Signature verified before reading claims | unit test (tampered token) | Planned |
-| 9.1.2 | 1 | Algorithm allow-list `["EdDSA"]`; `none`/HS* rejected | unit tests | Planned |
-| 9.1.3 | 1 | Keys only from configured public key/JWKS of the configured issuer; `jku`/`x5u`/`kid` URLs never fetched | unit test | Planned |
-| 9.2.1 | 1 | `exp`/`nbf` required, 30 s leeway | unit tests | Planned |
-| 9.2.2 | 2 | `typ=at+jwt` required (no ID tokens accepted) | unit test | Planned |
-| 9.2.3 | 2 | `aud` must equal `FOLLOWUP_JWT_AUDIENCE` | unit test | Planned |
+| 9.1.1 | 1 | Signature verified before reading claims | unit test (tampered token) | Built |
+| 9.1.2 | 1 | Algorithm allow-list `["EdDSA"]`; `none`/HS* rejected | unit tests | Built |
+| 9.1.3 | 1 | Keys only from the operator-configured public-key map; `jku`/`x5u`/`kid` URLs never fetched | unit test | Built |
+| 9.2.1 | 1 | `exp`/`nbf` required, 30 s leeway | unit tests | Built |
+| 9.2.2 | 2 | `typ=at+jwt` required (no ID tokens accepted) | unit test | Built |
+| 9.2.3 | 2 | `aud` must equal the configured resource-server audience | unit test | Built |
 | 9.2.4 | 2 | Local issuer always sets `aud` | unit test | Planned |
 
 ### V10 OAuth and OIDC (resource-server role, production)
@@ -185,7 +185,7 @@ the claim "L2" is evidence-backed, not aspirational.
 | ID | L | Control | Status |
 |----|---|---------|--------|
 | 10.3.1 | 2 | Audience check (same as 9.2.3) | Planned |
-| 10.3.2 | 2 | Authorization from token `scope` claim only | Planned |
+| 10.3.2 | 2 | Authorization from token `scope` claim only | Built |
 | 10.3.3 | 2 | Identity = `iss` + `sub` | Planned |
 | 10.3.4 | 2 | No authentication-strength requirements | N/A |
 | 10.1–10.2, 10.4–10.7 | 1–2 | Not an OAuth client, AS or OP | N/A |
@@ -255,7 +255,7 @@ the claim "L2" is evidence-backed, not aspirational.
 | 15.1.2 | 2 | CycloneDX SBOM per build (CI artefact + image attestation); packages only from PyPI via `uv.lock` hashes | CI | Planned |
 | 15.1.3 | 2 | Resource-heavy functions documented: full run, LLM calls, dispatch batches | `05`, `09` | Doc |
 | 15.2.1 | 1 | `pip-audit` + Trivy gate in CI | CI | Built |
-| 15.2.2 | 2 | Limits for heavy functions: run concurrency 1, max tasks/run, LLM semaphore + budget, request body cap, timeouts | tests | Planned |
+| 15.2.2 | 2 | Limits for heavy functions: run concurrency 1, max tasks/run, LLM semaphore + budget, request body cap, timeouts | tests | Built |
 | 15.2.3 | 2 | Prod image = product package only (mocks/dev tools excluded) | CI image inspection test | Built |
 | 15.3.1 | 1 | Explicit response models | API tests | Planned |
 | 15.3.2 | 2 | `follow_redirects=False` on all clients | adapter test | Planned |
@@ -279,7 +279,7 @@ the claim "L2" is evidence-backed, not aspirational.
 | 16.3.2 | 2 | Authorization denials logged | Planned |
 | 16.3.3 | 2 | Validation, rate-limit, injection-screen and LLM-output rejections logged | Planned |
 | 16.3.4 | 2 | Unexpected errors and TLS failures logged | Planned |
-| 16.4.1 | 2 | JSON encoding prevents log injection (tested) | Planned |
+| 16.4.1 | 2 | JSON encoding prevents log injection (tested) | Built |
 | 16.4.2 | 2 | App cannot alter shipped logs; audit table append-only | Planned |
 | 16.4.3 | 2 | Logs shipped to a separate system (Loki) | Planned (TLS: Prod) |
 | 16.5.1 | 2 | Generic `problem+json` errors | Planned |

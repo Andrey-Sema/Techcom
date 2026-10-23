@@ -118,3 +118,43 @@ def test_logging_emits_one_json_line_without_note_or_exception(
         "prompt_version": "draft.v2",
         "output_sha256": "b" * 64,
     }
+
+
+@pytest.mark.parametrize("identity", [UUID(int=2), str(UUID(int=2))])
+def test_security_metadata_keeps_only_closed_identity_status_and_hash(
+    identity: UUID | str,
+) -> None:
+    assert redact_event(
+        None,
+        "info",
+        {
+            "event": "security.authn_succeeded",
+            "request_id": identity,
+            "status": 200,
+            "actor_id": "a" * 24,
+            "token": "PRIVATE",
+        },
+    ) == {
+        "event": "security.authn_succeeded",
+        "level": "info",
+        "request_id": str(UUID(int=2)),
+        "status": 200,
+        "actor_id": "a" * 24,
+    }
+
+
+@pytest.mark.parametrize("identity", ["x" * 36, "private", None, 1])
+@pytest.mark.parametrize("status", [True, 99, 600, "200"])
+def test_security_metadata_rejects_raw_values(
+    identity: object, status: object
+) -> None:
+    assert redact_event(
+        None,
+        "info",
+        {
+            "event": "security.authn_failed",
+            "request_id": identity,
+            "status": status,
+            "actor_id": "private",
+        },
+    ) == {"event": "security.authn_failed", "level": "info"}

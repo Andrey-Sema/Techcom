@@ -1,11 +1,10 @@
 # TechCom AI Operations & Follow-up Service
 
-> Status: **M0–M5 and M6a implemented** (M0b full tooling is separate).
-> CLI processing, delivery/reconciliation and a loopback demo are runnable.
-> Production API authorization, full ASVS L2 evidence and operations
-> hardening remain in later batches. Fixture date: 2026-10-21 UTC. See the
-> [tracker](docs/08-implementation-plan.md) and
-> [workflow review](docs/21-workflow-review.md).
+> Status: **M0–M5, M6a, API core M6b and M11a/b are implemented**.
+> Full tooling, containers, observability configuration and operations work
+> from `main` are preserved. ASVS L2 is a design target; remaining deployment
+> and security gaps are explicit in the [tracker](docs/08-implementation-plan.md)
+> and [API/evaluation review](docs/22-api-evaluation-review.md).
 
 A Python service that reads construction project tasks through a mock API,
 decides **deterministically** which ones need attention, uses an **LLM only
@@ -168,5 +167,33 @@ Python 3.13/3.14, but GitHub Actions currently cannot start because the
 private repository's account has exhausted its minutes. Local verification
 and independent review evidence are recorded separately.
 
-Planned commands include `make eval`, `make bench`, `make security` and
-`make up-obs`; they are not implemented by this batch.
+## API and evaluation
+
+The authenticated ASGI factory is
+`techcom_followup.adapters.inbound.api.app.create_app`. It accepts an
+explicit repository, run service, verifier, clock and observer. The real
+processing use case is exercised through this factory in scenario tests.
+`create_metrics_app(observer)` supplies a separate internal ASGI surface;
+its deployment listener and the concrete OTLP exporter require wiring.
+The public service has no `/metrics`, interactive docs or debug endpoint.
+See the [review](docs/22-api-evaluation-review.md) for scopes, signed project
+memberships, limits and fail-closed legacy run visibility.
+
+```sh
+make eval             # synthetic contract replay, no credentials or network
+make eval-test        # evaluator tests, independent 100% branch gate
+make gates            # static/dependency/configuration gates
+make demo-check       # compare a real demo against committed samples
+```
+
+The current evaluation keeps 63 benign notes and 32 injection variants.
+Macro-F1 is 0.990718 on synthetic replay; **real-provider quality remains
+unverified**. Provider-origin claims cannot be authenticated offline.
+Recorded contracts, negative controls and limits are described in
+[the evaluation guide](tests/eval/README.md). Historical reports remain
+unchanged when application code changes.
+
+`make bench`, `make image-test`, `make image-scan`, `make mutation`,
+`make up-obs`, `make obs-check`, `make db-backup` and `make db-restore`
+come from the integrated hardening/operations work. Read the runbook before
+using database restore or changing deployment state.

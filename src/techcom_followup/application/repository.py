@@ -5,6 +5,7 @@ claim makes its outcome unknown: cancellation cannot prove no send took
 place. Only reconciliation can make unknown work dispatchable again.
 """
 
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -22,6 +23,10 @@ from techcom_followup.domain.models import Decision, NoteInterpretation
 MAX_BATCH_SIZE = 1000
 MAX_ERROR_LENGTH = 200
 MAX_EVIDENCE_LENGTH = 200
+MAX_ACTION_READ_LIMIT = 100
+MAX_READ_PROJECTS = 128
+MAX_PROJECT_LENGTH = 200
+_UNSTORABLE_TEXT = re.compile(r"[\x00\ud800-\udfff]")
 
 
 class ActionStatus(StrEnum):
@@ -96,6 +101,64 @@ class ActionRecord:
     last_error: str | None = None
     provider_ref: str | None = None
     sent_at: datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ActionReadQuery:
+    """Filter server-authorized actions before the row bound.
+
+    Projects come only from verified authority, never request filters.
+    Empty projects deny access unless all-project access is explicit.
+    Project, task and status filters can only narrow that authority.
+    """
+
+    projects: frozenset[str] = frozenset()
+    all_projects: bool = False
+    project: str | None = None
+    task_id: str | None = None
+    status: ActionStatus | None = None
+    limit: int = MAX_ACTION_READ_LIMIT
+
+    def validate(self) -> None:
+        """Reject unbounded reads and ambiguous project authority."""
+        if type(self.limit) is not int or not (
+            1 <= self.limit <= MAX_ACTION_READ_LIMIT
+        ):
+            message = "action read limit must be an integer in 1..100"
+            raise ValueError(message)
+        _require_project_authority(self.projects, self.all_projects)
+        for value in (*self.projects, self.project, self.task_id):
+            if value is not None:
+                require_storage_text(value)
+
+
+def _require_project_authority(projects: object, all_projects: object) -> None:
+    if (
+        not isinstance(projects, frozenset)
+        or type(all_projects) is not bool
+        or len(projects) > MAX_READ_PROJECTS
+        or any(
+            not isinstance(value, str)
+            or not value
+            or len(value) > MAX_PROJECT_LENGTH
+            for value in projects
+        )
+        or (all_projects is True and bool(projects))
+    ):
+        message = "action read project authority is invalid"
+        raise ValueError(message)
+
+
+def require_storage_text(value: str) -> str:
+    """Reject text that PostgreSQL cannot represent without alteration.
+
+    Raises:
+        ValueError: A NUL or isolated Unicode surrogate is present.
+    """
+    if _UNSTORABLE_TEXT.search(value):
+        message = "text must be UTF-8 without NUL or isolated surrogates"
+        raise ValueError(message)
+    return value
 
 
 @dataclass(frozen=True, slots=True)
@@ -280,6 +343,12 @@ class Repository(Protocol):
 
     async def list_actions(self) -> tuple[ActionRecord, ...]:
         """Read detached snapshots for reports and reconciliation."""
+        ...
+
+    async def query_actions(
+        self, query: ActionReadQuery
+    ) -> tuple[ActionRecord, ...]:
+        """Filter authority before a stable UUID-ordered row limit."""
         ...
 
     async def claim_actions(

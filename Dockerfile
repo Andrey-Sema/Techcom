@@ -45,6 +45,7 @@ RUN python -m pip uninstall --yes --no-cache-dir pip \
  && install --directory --owner mock --group mock --mode 0700 /var/lib/mock
 COPY --from=mock-builder /opt/venv /opt/venv
 COPY fixtures /app/fixtures
+RUN chmod -R u=rwX,go=rX /app
 ENV PATH="/opt/venv/bin:${PATH}" \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -75,6 +76,9 @@ COPY --from=builder /opt/venv /opt/venv
 COPY alembic.ini /app/alembic.ini
 COPY migrations /app/migrations
 COPY config /app/config
+# Normalize non-secret data permissions even for a restrictive host umask.
+# Root retains ownership; the service can read but cannot change these files.
+RUN chmod -R u=rwX,go=rX /app
 ENV PATH="/opt/venv/bin:${PATH}" \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
