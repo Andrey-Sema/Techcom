@@ -57,7 +57,7 @@ nav:
       - "FastAPI checklist": security/fastapi-security.md
       - "Logging checklist": security/logging-security.md
   - Evaluation evidence:
-      - "Current synthetic replay": eval/interp.v1-draft.v2-hardening.v1.md
+      - "Current synthetic replay": eval/interp.v1-draft.v2-hardening.v2.md
       - "Previous synthetic replay": eval/interp.v1-draft.v2-postfix.v1.md
       - "Expanded baseline": eval/interp.v1-draft.v2-expanded.v1.md
       - "Minimal baseline": eval/interp.v1-draft.v2-minimal.v1.md

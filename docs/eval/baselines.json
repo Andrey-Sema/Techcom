@@ -31,5 +31,12 @@
     "report_sha256": "ebe35e5c101ee99829fe3ce2bf4c325b7749331c899c7b746cbc346a748450d0",
     "bundle": "tests/eval/bundles/postfix.v2",
     "status": "Archived synthetic evidence; superseded by hardening.v1. Labels unchanged."
+  },
+  "hardening.v1": {
+    "pipeline_commit": "73b90f0e3a582cc03cdc5caf88d4478de47be976",
+    "report": "docs/eval/interp.v1-draft.v2-hardening.v1.md",
+    "report_sha256": "bb21a986c28b4d7c06d5e9ed1aa229d7d7a65131540600c809e86d04ad0a8e39",
+    "bundle": "tests/eval/bundles/hardening.v1",
+    "status": "Archived synthetic evidence; superseded by hardening.v2. Labels and recordings unchanged."
   }
 }

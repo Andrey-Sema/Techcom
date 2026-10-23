@@ -9,7 +9,7 @@ PYTHONPATH=tests .venv/bin/pytest -o addopts='' tests/eval \
   --cov=eval --cov-branch --cov-report=term-missing --cov-fail-under=100
 ```
 
-The default `bundles/hardening.v1` bundle contains 63 benign labelled notes
+The default `bundles/hardening.v2` bundle contains 63 benign labelled notes
 (nine per class) and 32 injection variants. `bundles/minimal.v1` preserves the original 20 benign
 notes and four injection variants. Labels and expected decisions describe the
 source note; recorded
@@ -61,7 +61,7 @@ Even consistent external captures are labelled `CAPTURE_REPLAY_ONLY`, never
 verified live quality. Provider-shaped objects in unit tests are explicitly
 fabricated solely to test validation and are excluded from corpus recordings.
 
-See [the current hardening report](../../docs/eval/interp.v1-draft.v2-hardening.v1.md).
+See [the current hardening report](../../docs/eval/interp.v1-draft.v2-hardening.v2.md).
 The previous [post-fix report](../../docs/eval/interp.v1-draft.v2-postfix.v1.md)
 is archived after integrating the main branch; labels and scripts remain
 unchanged in the new current bundle. The pre-fix [expanded report](../../docs/eval/interp.v1-draft.v2-expanded.v1.md)
@@ -95,3 +95,10 @@ the redacted input while retaining hostile outputs. Its unseen contact
 evidence now falls back. No labels were inferred from application output.
 The postfix.v2 bundle/report remain archived unchanged. This harness still
 measures interpreter/drafter contracts; agent contract tests are separate.
+
+The hardening.v2 bundle retains the hardening.v1 notes and recordings
+byte-for-byte. Each unchanged request binding was replayed against the
+follow-up source revision after total-deadline, final message-size and
+contact-redaction fixes. Its new manifest and report identify that source;
+the hardening.v1 evidence remains archived unchanged. The new deadline
+and receiver-boundary regressions are covered by separate unit tests.

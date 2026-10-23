@@ -10,7 +10,7 @@ from eval.contracts import load_bundle
 from eval.harness import evaluate
 from eval.report import markdown
 
-_DATA = Path(__file__).resolve().parent / "bundles" / "hardening.v1"
+_DATA = Path(__file__).resolve().parent / "bundles" / "hardening.v2"
 
 
 def main(argv: list[str] | None = None) -> int:
