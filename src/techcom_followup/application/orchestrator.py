@@ -16,13 +16,14 @@ exceed its step, time and cost budgets. Any failure falls back to the
 baseline decision and its template.
 """
 
+import asyncio
 import json
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from datetime import date
 from functools import partial
-from typing import Annotated, Literal
+from typing import Annotated, Literal, cast
 
 from pydantic import Field, JsonValue
 
@@ -257,6 +258,7 @@ class FollowUpOrchestrator:
         )
         self._repository = repository
         self._policy = policy
+        self._timeout_s = timeout_s
 
     async def plan(
         self, decision: Decision, task: Task, *, as_of: date
@@ -266,13 +268,12 @@ class FollowUpOrchestrator:
         Raises:
             ValueError: The decision is not actionable.
         """
-        history, sent = await self._history(task)
         envelope = build_envelope(
             decision,
             task,
             self._policy.routing,
             as_of=as_of,
-            prior_follow_ups=sent,
+            prior_follow_ups=0,
         )
         if envelope is None:
             message = "only actionable decisions can be planned"
@@ -284,9 +285,26 @@ class FollowUpOrchestrator:
             note_visible=bool(task.notes)
             and Flag.PROMPT_INJECTION_SUSPECTED not in decision.flags
             and not screen_task(task).suspicious,
-            history=history,
+            history=[],
         )
-        return await self._converse(session)
+        try:
+            async with asyncio.timeout(self._timeout_s):
+                history, sent = await self._history(task)
+                session.history = history
+                # The same immutable baseline was already actionable.
+                session.envelope = cast(
+                    "ActionEnvelope",
+                    build_envelope(
+                        decision,
+                        task,
+                        self._policy.routing,
+                        as_of=as_of,
+                        prior_follow_ups=sent,
+                    ),
+                )
+                return await self._converse(session)
+        except TimeoutError:
+            return session.fallback("plan_timeout")
 
     async def _converse(self, session: _Session) -> PlannedAction:
         for step in range(MAX_STEPS):

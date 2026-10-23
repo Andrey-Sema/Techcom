@@ -11,7 +11,7 @@ attribute lookup (format-string injection).
 import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from enum import StrEnum
 
 from techcom_followup.domain.injection import screen
@@ -26,7 +26,7 @@ from techcom_followup.domain.text import clean_line
 SUBJECT_MAX_CHARS = 120
 BODY_MIN_CHARS = 20
 BODY_MAX_CHARS = 800
-MAX_FACT_CHARS = 80  # keeps subjects <= 120 and bodies <= 800
+MAX_FACT_CHARS = 80  # Per-fact bound; final messages have separate limits.
 MIN_NAME_TOKEN_CHARS = 3  # shorter tokens are initials or particles
 
 LLM_PLACEHOLDERS = frozenset(
@@ -64,6 +64,16 @@ _DATE = re.compile(
 )
 _DIGITS = re.compile(r"\d{3,}")
 _PHONE = re.compile(r"\+?\d[\d\s().-]{6,}\d")
+_CALENDAR_VALUE_PATTERN = (
+    r"\d{4}-\d{2}-\d{2}"
+    r"(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,6})?)?"
+    r"(?:Z|[+-]\d{2}:\d{2})?)?"
+)
+_CALENDAR_VALUE = re.compile(rf"\b{_CALENDAR_VALUE_PATTERN}(?!\d)")
+_CALENDAR_RANGE = re.compile(
+    rf"\b{_CALENDAR_VALUE_PATTERN}"
+    rf"(?:\s+-\s+{_CALENDAR_VALUE_PATTERN})*(?!\d)"
+)
 _STATE_CLAIM = re.compile(
     r"\bmarked\s+(?:as\s+)?(?:complete[d]?|done|closed|resolved)\b"
     r"|\bhas\s+been\s+(?:closed|completed|resolved|cancell?ed)\b"
@@ -205,7 +215,13 @@ def facts_for(decision: Decision, task: Task, as_of: date) -> dict[str, str]:
         "owner_name": task.owner or "unassigned",
         "reason_text": decision.reason,
     }
-    return {name: _scrub(value) for name, value in raw.items()}
+    return {
+        name: _scrub(
+            value,
+            include_phone=name not in {"task_id", "due_date", "days_overdue"},
+        )
+        for name, value in raw.items()
+    }
 
 
 def render(text: str, facts: Mapping[str, str]) -> str:
@@ -229,12 +245,34 @@ def compose(decision: Decision, task: Task, as_of: date) -> MessageDraft:
     """Render the template message for an actionable decision."""
     template = template_for(decision)
     facts = facts_for(decision, task, as_of)
-    return MessageDraft(
-        subject=render(template.subject, facts),
-        body=render(template.body, facts),
-        template_id=template.template_id,
-        source=DraftSource.TEMPLATE,
-    )
+    return render_draft(template, facts, source=DraftSource.TEMPLATE)
+
+
+def render_draft(
+    template: MessageTemplate,
+    facts: Mapping[str, str],
+    *,
+    source: DraftSource,
+) -> MessageDraft:
+    """Render every message path within the delivery contract.
+
+    Long subjects use a code-owned compact form; the complete task ID
+    remains in the subject and task details remain in the body.
+
+    Raises:
+        ValueError: Rendered content cannot meet the delivery bounds.
+    """
+    subject = render(template.subject, facts)
+    body = render(template.body, facts)
+    if len(subject) > SUBJECT_MAX_CHARS:
+        subject = f"Task {facts['task_id']}: action required"
+    if (
+        not 1 <= len(subject) <= SUBJECT_MAX_CHARS
+        or not BODY_MIN_CHARS <= len(body) <= BODY_MAX_CHARS
+    ):
+        message = "rendered message exceeds delivery bounds"
+        raise ValueError(message)
+    return MessageDraft(subject, body, template.template_id, source)
 
 
 class MessageValidator:
@@ -305,24 +343,45 @@ def has_contact_or_link(text: str) -> bool:
     return any(pattern.search(text) for pattern in (_URL, _EMAIL, _PHONE))
 
 
-def redact_contacts(text: str) -> str:
+def redact_contacts(text: str, *, include_phone: bool = True) -> str:
     """Minimise contact data before model exposure or rendering."""
     text = _EMAIL.sub("[address removed]", text)
     text = _URL.sub("[link removed]", text)
+    if not include_phone:
+        return text
+    # Only a complete phone candidate inside a valid temporal span is
+    # exempt. A country code or extra phone digits cannot borrow that
+    # exemption merely by containing a date-shaped substring.
+    spans = _calendar_spans(text)
     return _PHONE.sub(
         lambda match: (
             match.group(0)
-            if re.fullmatch(r"\d{4}-\d{2}-\d{2}", match.group(0))
+            if any(
+                start <= match.start() and match.end() <= end
+                for start, end in spans
+            )
             else "[phone removed]"
         ),
         text,
     )
 
 
-def _scrub(value: str) -> str:
+def _calendar_spans(text: str) -> tuple[tuple[int, int], ...]:
+    spans = []
+    for match in _CALENDAR_RANGE.finditer(text):
+        try:
+            for value in _CALENDAR_VALUE.finditer(match.group(0)):
+                datetime.fromisoformat(value.group(0))
+        except ValueError:
+            continue
+        spans.append(match.span())
+    return tuple(spans)
+
+
+def _scrub(value: str, *, include_phone: bool = True) -> str:
     text = clean_line(value, MAX_FACT_CHARS * 4)
     text = text.replace("{", "(").replace("}", ")")
     if screen(UntrustedText.of(text)).suspicious:
         return "[untrusted text withheld]"
-    text = redact_contacts(text)
+    text = redact_contacts(text, include_phone=include_phone)
     return clean_line(text, MAX_FACT_CHARS)

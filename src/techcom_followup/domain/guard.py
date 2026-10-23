@@ -20,11 +20,12 @@ from techcom_followup.domain.messages import (
     LLM_PLACEHOLDERS,
     DraftSource,
     MessageDraft,
+    MessageTemplate,
     MessageValidator,
     facts_for,
     has_contact_or_link,
     redact_contacts,
-    render,
+    render_draft,
 )
 from techcom_followup.domain.models import (
     Decision,
@@ -40,8 +41,6 @@ from techcom_followup.domain.text import clean_line, fold
 AGENT_TEMPLATE_ID = "agent.v2"
 AGENT_PLACEHOLDERS = LLM_PLACEHOLDERS | {"owner_name", "reason_text"}
 MAX_RATIONALE_CHARS = 300
-MAX_RENDERED_SUBJECT = 160
-MAX_RENDERED_BODY = 1_200
 MIN_EVIDENCE_CHARS = 8
 NOTE_ECHO_WORDS = 6
 _WORD = re.compile(r"\w+")
@@ -110,16 +109,15 @@ def review(
         return Review(violations)
     decision = _decision(proposal, envelope)
     facts = facts_for(decision, task, as_of)
-    message = MessageDraft(
-        subject=render(proposal.subject, facts),
-        body=render(proposal.body, facts),
-        template_id=AGENT_TEMPLATE_ID,
-        source=DraftSource.LLM,
-    )
-    if (
-        len(message.subject) > MAX_RENDERED_SUBJECT
-        or len(message.body) > MAX_RENDERED_BODY
-    ):
+    try:
+        message = render_draft(
+            MessageTemplate(
+                AGENT_TEMPLATE_ID, proposal.subject, proposal.body
+            ),
+            facts,
+            source=DraftSource.LLM,
+        )
+    except ValueError:
         return Review(("rendered_length",))
     return Review((), decision, message)
 

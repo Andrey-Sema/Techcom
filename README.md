@@ -194,6 +194,13 @@ from task data; the model only chooses words.
 
 ### Failure handling and budgets
 
+The default planning deadline is 20 seconds for history lookup and the
+entire model conversation together. External cancellation propagates.
+Template, drafter and agent messages share the receiver's final limits:
+120-character subject and 800-character body. Long subjects use a compact
+code-owned form that preserves the full task ID; task details stay in the
+body. Contact minimisation preserves canonical IDs and calendar context.
+
 - At most **four steps** per plan; on the last one the model must submit.
 - Invalid JSON, an unknown tool, a timeout, an open circuit breaker, an
   exhausted daily budget or a plan that never passes the guard all fall

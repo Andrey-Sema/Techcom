@@ -31,10 +31,11 @@ from techcom_followup.domain.messages import (
     TEMPLATES,
     DraftSource,
     MessageDraft,
+    MessageTemplate,
     MessageValidator,
     compose,
     facts_for,
-    render,
+    render_draft,
 )
 from techcom_followup.domain.models import Decision, Flag, Task
 
@@ -100,18 +101,17 @@ class MessageDrafter:
         if output is None:
             return baseline
         facts = facts_for(decision, task, as_of)
-        body = render(output.body, facts)
+        body = output.body
         if "{owner_name}" in TEMPLATES[baseline.template_id].body:
-            body += (
-                f" Owner: {facts['owner_name']}. "
-                f"Context: {facts['reason_text']}"
+            body += " Owner: {owner_name}. Context: {reason_text}"
+        try:
+            return render_draft(
+                MessageTemplate(baseline.template_id, output.subject, body),
+                facts,
+                source=DraftSource.LLM,
             )
-        return MessageDraft(
-            subject=render(output.subject, facts),
-            body=body,
-            template_id=baseline.template_id,
-            source=DraftSource.LLM,
-        )
+        except ValueError:
+            return baseline
 
     def _validate(
         self, text: str, choices: tuple[DraftOutput, ...], task: Task

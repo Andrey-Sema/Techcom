@@ -45,12 +45,22 @@ calling future work overdue.
 
 ## Verification and remaining OWASP LLM risks
 
+Follow-up boundary fixes: one total planning deadline now covers history
+and all model steps, while external cancellation propagates. Quiet tasks
+are rejected before history I/O. All message paths share final receiver
+bounds (subject 120, body 800); overlong subjects use a code-owned compact
+form with the full task ID and retain task details in the body. Canonical
+IDs and authoritative dates are not phone-redacted. A phone candidate
+is preserved only when it falls wholly within a validated calendar span.
+Timestamps and date ranges survive; a phone number cannot borrow a date
+substring to escape redaction.
+
 Regression tests cover fabricated facts/status, unusual TLDs, tracker
 prompt surfaces, contacts, known ETA, Unicode negation, actual gateway
 sends after model recovery and legitimate offline planning. Repository
 contracts cover races, pruning, project separation and real state changes.
 
-The `hardening.v1` interpreter/drafter replay preserves independent labels
+The `hardening.v2` interpreter/drafter replay preserves independent labels
 and documents changed scripts. Historical bundles remain archived.
 Replay and agent contract tests do not measure live provider reasoning:
 provider quality remains UNVERIFIED.
