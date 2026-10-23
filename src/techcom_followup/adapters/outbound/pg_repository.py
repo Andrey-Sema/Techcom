@@ -244,7 +244,7 @@ class PgRepository:
             return tuple(_action(row) for row in result.mappings())
 
     async def list_run_actions(self, run_id: UUID) -> tuple[ActionRecord, ...]:
-        """Join through indexed run/decision keys instead of the full outbox."""
+        """Join indexed run/decision keys, not the whole outbox."""
         statement = _ACTION_QUERY.where(decisions.c.run_id == run_id).order_by(
             decisions.c.source_position.asc().nulls_last(), actions.c.id
         )
@@ -255,7 +255,7 @@ class PgRepository:
     async def get_action_messages(
         self, keys: tuple[str, ...]
     ) -> Mapping[str, MessageDraft | None]:
-        """Look up only requested identities; a tombstone has no payload."""
+        """Look up requested identities; tombstones have no payload."""
         if len(keys) > MAX_BATCH_SIZE:
             message = "message lookup exceeds the batch bound"
             raise ValueError(message)
@@ -566,4 +566,12 @@ class PgRepository:
                 {"before": cutoffs.actions, "bound": limit},
             )
             admission_rows = int(history.scalar_one())
-        return PruneCounts(*deleted, admissions=admission_rows)
+        cache, action_rows, decision_rows, audit, run_rows = deleted
+        return PruneCounts(
+            cache,
+            action_rows,
+            decision_rows,
+            audit,
+            run_rows,
+            admissions=admission_rows,
+        )

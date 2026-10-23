@@ -213,12 +213,12 @@ GRANT EXECUTE ON FUNCTION prune_admission_history(timestamptz,integer)
 
 
 def upgrade() -> None:
-    """Backfill identity atomically and expose narrowly scoped functions."""
+    """Backfill identity atomically; expose narrow functions."""
     op.execute(_DDL)
 
 
 def downgrade() -> None:
-    """Allow empty rollback, refusing loss of identities without payloads."""
+    """Allow empty rollback; refuse to lose payload-less identities."""
     op.execute("""
         DO $$ BEGIN
             IF EXISTS (SELECT FROM action_keys k WHERE NOT EXISTS (

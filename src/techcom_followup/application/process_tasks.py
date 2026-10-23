@@ -256,18 +256,16 @@ class ProcessTasks:
 
         Preparation stays ordered and sequential: language admission and
         caches retain their existing semantics. Only atomic persistence
-        overlaps, with at most sixteen transactions and no task per input.
+        overlaps, with at most sixteen transactions and no task per
+        input.
         """
         try:
-            pending: list[asyncio.Task[None]] = []
             async with asyncio.TaskGroup() as group:
-                for write in writes:
-                    pending.append(
-                        group.create_task(
-                            self._persist(run_id, write, progress)
-                        )
-                    )
-            # TaskGroup treats a child cancellation as normal completion;
+                pending = [
+                    group.create_task(self._persist(run_id, write, progress))
+                    for write in writes
+                ]
+            # TaskGroup treats a cancelled child as normal completion;
             # a run must instead fail if any receipt was never obtained.
             for task in pending:
                 task.result()

@@ -52,5 +52,5 @@ def test_key_file_is_bounded_and_must_contain_a_map(tmp_path: Path) -> None:
     )
     for data in (b"[]", b"{}", b"x" * 65_537):
         path.write_bytes(data)
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="public-key"):
             token_verifier(settings)

@@ -145,7 +145,7 @@ def _owner(value: object) -> str | None:
 def _project(value: object) -> str | None:
     """Preserve authority; reject lossy display aliases."""
     label = _label(value)
-    if isinstance(value, str) and label != UNKNOWN_LABEL and label != value:
+    if isinstance(value, str) and label not in {UNKNOWN_LABEL, value}:
         return None
     return label
 

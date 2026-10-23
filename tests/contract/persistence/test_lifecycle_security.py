@@ -1,4 +1,4 @@
-"""Retention must not remove authority, active work or duplicate identity."""
+"""Retention keeps authority, active work and duplicate identity."""
 
 from dataclasses import replace
 from datetime import timedelta
@@ -16,7 +16,7 @@ from techcom_followup.application.retention import PruneData, RetentionPolicy
 
 OLD = NOW - timedelta(days=400)
 POLICY = RetentionPolicy(
-    version="lifecycle.review.v1",
+    version="2026-10-23.1",
     decision_days=90,
     action_days=365,
     audit_days=365,
@@ -64,7 +64,7 @@ async def test_active_empty_run_and_recently_finished_old_run_survive(
     assert await repository.get_run(recent.id) is not None
 
 
-async def test_old_pending_action_that_dies_today_keeps_full_terminal_retention(
+async def test_old_pending_action_dying_today_keeps_terminal_retention(
     repository: Repository,
 ) -> None:
     write = await action_write(repository)

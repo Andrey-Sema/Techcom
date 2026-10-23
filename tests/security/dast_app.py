@@ -1,5 +1,6 @@
-"""Disposable DAST target: real API/workflow, synthetic data, no provider."""
+"""Disposable DAST target: real API, synthetic data, no provider."""
 
+import asyncio
 import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -28,11 +29,12 @@ from techcom_followup.serving import ApiClock
 
 class Source:
     async def fetch_tasks(self) -> tuple[object, ...]:
-        return tuple(json.loads(Path("/audit/tasks.json").read_bytes()))
+        raw = await asyncio.to_thread(Path("/audit/tasks.json").read_bytes)
+        return tuple(json.loads(raw))
 
 
 def create_target() -> FastAPI:
-    """No database credentials, signing key, live task source or delivery I/O."""
+    """No DB credentials, signing key, live source or delivery I/O."""
     repository = InMemoryRepository()
     clock = ApiClock()
     processor = ProcessTasks(

@@ -1,4 +1,4 @@
-"""Schedule-independent persistence, bounded admission and report order."""
+"""Schedule-independent persistence, admission and report order."""
 
 import asyncio
 from collections.abc import Mapping
@@ -64,7 +64,7 @@ async def test_parallel_writes_preserve_order_and_idempotence(
     count: int,
 ) -> None:
     repository = ScheduledRepository()
-    records: list[object] = list(
+    records: list[object] = [
         {
             "task_id": f"TC-{index}",
             "project": "P",
@@ -76,7 +76,7 @@ async def test_parallel_writes_preserve_order_and_idempotence(
             "notes": "Waiting for materials",
         }
         for index in range(count)
-    )
+    ]
     processor = ProcessTasks(
         ProcessingDependencies(
             repository,
@@ -135,7 +135,7 @@ async def test_failed_or_cancelled_writer_is_joined_before_run_finalization(
             return await super().record_decision(write, now)
 
     repository = FailedRepository()
-    records: list[object] = list(
+    records: list[object] = [
         {
             "task_id": f"TC-{index}",
             "project": "P",
@@ -147,7 +147,7 @@ async def test_failed_or_cancelled_writer_is_joined_before_run_finalization(
             "notes": "Waiting for materials",
         }
         for index in range(4)
-    )
+    ]
     processor = ProcessTasks(
         ProcessingDependencies(
             repository,

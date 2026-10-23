@@ -1,4 +1,4 @@
-"""Create short-lived read-only DAST credentials and an external API schema."""
+"""Create short-lived read-only DAST credentials and API schema."""
 
 import argparse
 import json
@@ -40,7 +40,7 @@ class EmptySource:
 
 
 def main() -> None:
-    """Keep signing material in memory and reports in an owned folder."""
+    """Keep signing material in memory, reports in an owned folder."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check-image", action="store_true")
     arguments = parser.parse_args()
@@ -129,7 +129,8 @@ def main() -> None:
     (DIRECTORY / "openapi.json").write_text(
         json.dumps(schema), encoding="utf-8"
     )
-    # Container UID matches the host UID: credentials remain owner-readable.
+    # Container UID matches the host UID: credentials stay
+    # owner-readable.
     (DIRECTORY / "scan.env").write_text(
         f"DAST_UID={os.getuid()}\nDAST_GID={os.getgid()}\n",
         encoding="ascii",

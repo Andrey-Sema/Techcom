@@ -13,7 +13,7 @@ MAX_RECIPIENT_DAILY_LIMIT = 10_000
 
 
 class PgRequestLimiter:
-    """Bounded, database-clock windows; an unavailable store fails closed."""
+    """Bounded database-clock windows; a down store fails closed."""
 
     def __init__(
         self,
@@ -23,7 +23,7 @@ class PgRequestLimiter:
         period_s: float = 60,
         max_subjects: int = 1024,
     ) -> None:
-        """Share one validated window policy across service instances."""
+        """Share one validated window policy across instances."""
         self._engine = engine
         self._capacity = capacity
         self._period = period_s
@@ -35,7 +35,7 @@ class PgRequestLimiter:
         return str(max(1, ceil(self._period)))
 
     async def allow(self, namespace: str, actor_id: str) -> bool:
-        """Reserve one request without persisting tokens or raw addresses."""
+        """Reserve one request; never persist tokens or raw IPs."""
         async with self._engine.begin() as connection:
             result = await connection.execute(
                 sa.text(
@@ -57,7 +57,7 @@ class PgDeliveryQuota:
     """Reserve one logical delivery per recipient/UTC day before I/O."""
 
     def __init__(self, engine: AsyncEngine, *, daily_limit: int = 20) -> None:
-        """Configure a finite cap; the database owns day and reservations."""
+        """Configure a finite cap; the database owns day and slots."""
         if (
             type(daily_limit) is not int
             or not 1 <= daily_limit <= MAX_RECIPIENT_DAILY_LIMIT
@@ -67,7 +67,7 @@ class PgDeliveryQuota:
         self._engine, self._limit = engine, daily_limit
 
     async def allow(self, action: ActionRecord, now: datetime) -> bool:
-        """Fence stale claims; retries of a reserved operation cost no slot."""
+        """Fence stale claims; retrying a reserved operation is free."""
         require_aware(now)
         if action.lease_token is None:
             return False

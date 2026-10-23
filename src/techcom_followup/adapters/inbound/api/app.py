@@ -360,7 +360,8 @@ def _errors(app: FastAPI, handlers: _Handlers) -> None:
     app.add_exception_handler(RequestValidationError, http_error)
 
 
-def create_app(
+# Keyword-only collaborators; the limiter adds shared windows.
+def create_app(  # noqa: PLR0913
     *,
     repository: Repository,
     runner: RunService,

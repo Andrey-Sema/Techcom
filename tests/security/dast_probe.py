@@ -18,25 +18,27 @@ def main() -> None:
         message = "missing isolated scan credential"
         raise SystemExit(message)
     try:
-        with httpx.Client(
-            timeout=5, follow_redirects=False, trust_env=False
-        ) as client:
-            with client.stream(
+        with (
+            httpx.Client(
+                timeout=5, follow_redirects=False, trust_env=False
+            ) as client,
+            client.stream(
                 "GET",
                 "http://app:8080/v1/actions?limit=1",
                 headers={"Authorization": f"Bearer {tokens[0]}"},
-            ) as response:
-                response.raise_for_status()
-                raw = bytearray()
-                for chunk in response.iter_raw(chunk_size=1024):
-                    raw.extend(chunk)
-                    if len(raw) > 65536:
-                        message = "DAST preflight response exceeded bound"
-                        raise SystemExit(message)
-                payload = json.loads(raw)
-                accepted = response.status_code == 200 and isinstance(
-                    payload, list
-                )
+            ) as response,
+        ):
+            response.raise_for_status()
+            raw = bytearray()
+            for chunk in response.iter_raw(chunk_size=1024):
+                raw.extend(chunk)
+                if len(raw) > 65536:
+                    message = "DAST preflight response exceeded bound"
+                    raise SystemExit(message)
+            payload = json.loads(raw)
+            accepted = response.status_code == 200 and isinstance(
+                payload, list
+            )
     except (httpx.HTTPError, ValueError):
         message = "authenticated DAST preflight failed"
         raise SystemExit(message) from None

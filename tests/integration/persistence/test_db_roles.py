@@ -148,6 +148,8 @@ async def test_maintenance_role_prunes_but_cannot_write(
     await service.record_decision(
         DecisionWrite(run.id, decision, state_fingerprint(task)), old
     )
+    # Retention keeps unfinished runs; only finished history ages out.
+    assert await service.finish_run(run.id, {"status": "completed"}, old)
     maintenance = await login_as(" IN ROLE followup_maintenance")
     total, complete = await PruneData(
         PgRepository(maintenance), RETENTION, lambda: NOW

@@ -1,4 +1,4 @@
-"""Own the public API, private metrics listener and OTLP log lifecycle."""
+"""Own the public API, private metrics and OTLP log lifecycle."""
 
 import asyncio
 import json
@@ -43,7 +43,7 @@ MAX_SIGNING_KEYS = 16
 
 
 class ApiRuntimeSettings(BaseSettings):
-    """No default issuer keys, wildcard subjects or external collectors."""
+    """No default keys, wildcard subjects or external collectors."""
 
     model_config = SettingsConfigDict(
         env_prefix="FOLLOWUP_API_",
@@ -71,9 +71,9 @@ class ApiRuntimeSettings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_listeners(self) -> Self:
-        """Reject ambiguous listeners and unapproved collector destinations."""
+        """Reject ambiguous listeners and unapproved collectors."""
         parsed = urlsplit(self.otlp_endpoint)
-        # Access validates a malformed or out-of-range port before export.
+        # Access validates a malformed or out-of-range port first.
         _port = parsed.port
         checks = (
             self.port != self.metrics_port,
@@ -93,16 +93,16 @@ class ApiRuntimeSettings(BaseSettings):
 
 
 class ApiClock(SystemClock):
-    """Security time combines UTC claims with monotonic local durations."""
+    """Security time: UTC claims plus monotonic local durations."""
 
     @staticmethod
     def monotonic() -> float:
-        """Read process-local duration independently of wall-clock time."""
+        """Read process-local duration independent of wall time."""
         return time.monotonic()
 
 
 def token_verifier(settings: ApiRuntimeSettings) -> TokenVerifier:
-    """Load a bounded map of public PEM keys, never private signing keys."""
+    """Load a bounded map of public PEM keys, never private ones."""
     with settings.public_keys_file.open("rb") as stream:
         raw = stream.read(MAX_PUBLIC_KEY_BYTES + 1)
     if len(raw) > MAX_PUBLIC_KEY_BYTES:
@@ -135,7 +135,7 @@ class _Listener(uvicorn.Server):
     @override
     @contextmanager
     def capture_signals(self) -> Iterator[None]:
-        """Both listeners share the composition root's signal lifecycle."""
+        """Both listeners share the composition root's signals."""
         yield
 
 
@@ -148,12 +148,12 @@ class _Runs:
     async def execute(
         self, *, as_of: date, dry_run: bool = False
     ) -> RunReport:
-        """Construct processing only after authenticated trigger admission."""
+        """Construct processing only after an admitted trigger."""
         return await self.factory().execute(as_of=as_of, dry_run=dry_run)
 
 
 async def _check_storage(engine: AsyncEngine) -> None:
-    """Reject a missing API migration or admission grant before binding ports."""
+    """Reject a missing migration or grant before binding ports."""
     async with engine.connect() as connection:
         await connection.execute(
             text(
@@ -274,7 +274,7 @@ def _listeners(
 
 
 async def serve(runtime: RuntimeSettings, api: ApiRuntimeSettings) -> None:
-    """Share authority/admission while keeping metrics on a private socket."""
+    """Share authority/admission; keep metrics on a private socket."""
     if runtime.database_url is None:
         message = "the API requires persistent PostgreSQL storage"
         raise ValueError(message)
@@ -325,7 +325,7 @@ async def serve(runtime: RuntimeSettings, api: ApiRuntimeSettings) -> None:
 
 
 def main() -> None:
-    """Run one API process; scale processes using the shared database gates."""
+    """Run one API process; scale via the shared database gates."""
     configure_logging()
     secrets = Path("/run/secrets")
     directory = secrets if secrets.is_dir() else None
@@ -336,6 +336,7 @@ def main() -> None:
                 ApiRuntimeSettings(_secrets_dir=directory),
             )
         )
-    except Exception:
+    # Startup errors may embed configuration; report a fixed message.
+    except Exception:  # noqa: BLE001
         message = "API startup or runtime failed"
         raise SystemExit(message) from None

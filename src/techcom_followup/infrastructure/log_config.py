@@ -139,7 +139,9 @@ def configure_logging(
     | None = None,
 ) -> None:
     """Write one escaped JSON record per event to standard error."""
-    processors = [redact_event]
+    processors: list[Callable[[WrappedLogger, str, EventDict], EventDict]] = [
+        redact_event
+    ]
     if capture is not None:
         processors.append(capture)
     structlog.configure(

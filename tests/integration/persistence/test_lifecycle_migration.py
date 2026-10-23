@@ -1,4 +1,4 @@
-"""Upgrade restores surviving identities; rollback cannot erase tombstones."""
+"""Upgrade restores identities; rollback cannot erase tombstones."""
 
 from dataclasses import replace
 

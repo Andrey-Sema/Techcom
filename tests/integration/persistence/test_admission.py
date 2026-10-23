@@ -1,4 +1,4 @@
-"""Shared deployment limits and durable recipient admission under races."""
+"""Shared limits and durable recipient admission under races."""
 
 import asyncio
 from dataclasses import replace
@@ -41,17 +41,21 @@ async def test_null_arguments_do_not_reserve_or_mutate_limits(
 async def test_repeatable_read_admission_fails_closed(
     pg_engine: AsyncEngine,
 ) -> None:
-    with pytest.raises(DBAPIError, match="invalid admission configuration"):
+    async def admit_in_repeatable_read() -> None:
         async with pg_engine.begin() as connection:
             await connection.execute(
                 text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
             )
             await connection.execute(
                 text(
-                    "SELECT public.admit_api_request('requests', :actor, 3, 60, 10)"
+                    "SELECT public.admit_api_request("
+                    "'requests', :actor, 3, 60, 10)"
                 ),
                 {"actor": "a" * 64},
             )
+
+    with pytest.raises(DBAPIError, match="invalid admission configuration"):
+        await admit_in_repeatable_read()
 
 
 async def test_independent_limiters_share_atomic_capacity(
@@ -124,7 +128,8 @@ async def test_service_cannot_erase_tombstones_or_edit_quota_tables(
             for privilege in ("INSERT", "UPDATE", "DELETE", "TRUNCATE"):
                 value = await connection.execute(
                     text(
-                        "SELECT has_table_privilege('followup_app', :table, :privilege)"
+                        "SELECT has_table_privilege("
+                        "'followup_app', :table, :privilege)"
                     ),
                     {"table": table, "privilege": privilege},
                 )
@@ -132,7 +137,8 @@ async def test_service_cannot_erase_tombstones_or_edit_quota_tables(
         assert (
             await connection.execute(
                 text(
-                    "SELECT has_table_privilege('followup_maintenance','action_keys','DELETE')"
+                    "SELECT has_table_privilege('followup_maintenance',"
+                    "'action_keys','DELETE')"
                 )
             )
         ).scalar_one() is False

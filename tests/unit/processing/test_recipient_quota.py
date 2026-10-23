@@ -1,4 +1,4 @@
-"""Rejected delivery admission cannot spend an attempt or reach a provider."""
+"""Rejected admission spends no attempt and reaches no provider."""
 
 from datetime import UTC, datetime
 
@@ -13,6 +13,7 @@ from techcom_followup.application.dispatch import (
     DispatchActions,
 )
 from techcom_followup.application.repository import ActionRecord, ActionStatus
+from techcom_followup.domain.models import TaskId
 
 
 class DeniedQuota:
@@ -60,6 +61,6 @@ async def test_denied_recipient_does_not_starve_other_recipients() -> None:
         action.decision.task_id: action
         for action in await repository.list_actions()
     }
-    assert states["TC-1"].status == ActionStatus.PENDING
-    assert states["TC-1"].attempts == 0
-    assert states["TC-2"].status == ActionStatus.SENT
+    assert states[TaskId("TC-1")].status == ActionStatus.PENDING
+    assert states[TaskId("TC-1")].attempts == 0
+    assert states[TaskId("TC-2")].status == ActionStatus.SENT

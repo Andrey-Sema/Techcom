@@ -376,12 +376,13 @@ class Repository(Protocol):
         """Read at most 1000 identities for trusted global processing.
 
         A present key with no message is a retained identity tombstone.
-        This is not an end-user read port; use authorized action queries.
+        This is not an end-user read port; use authorized action
+        queries.
         """
         ...
 
     async def list_run_actions(self, run_id: UUID) -> tuple[ActionRecord, ...]:
-        """Read only actions created by one run, in stable source order."""
+        """Read actions created by one run, in stable source order."""
         ...
 
     async def list_actions(self) -> tuple[ActionRecord, ...]:

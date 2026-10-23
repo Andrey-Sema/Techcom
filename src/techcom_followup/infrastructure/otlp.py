@@ -1,4 +1,4 @@
-"""Bounded OTLP/HTTP JSON log export without request-path network I/O."""
+"""Bounded OTLP/HTTP JSON log export off the request path."""
 
 import asyncio
 import json
@@ -15,6 +15,10 @@ from techcom_followup.infrastructure.log_config import redact_event
 
 MAX_QUEUE_CAPACITY = 4096
 MAX_BATCH_RECORDS = 64
+# The worker shares a thread-safe queue, so close() polls a bounded
+# drain (4 s) instead of awaiting an asyncio event.
+DRAIN_POLLS = 80
+DRAIN_POLL_S = 0.05
 MAX_ACK_BYTES = 4096
 
 
@@ -23,7 +27,8 @@ class OtlpLogExporter:
 
     OTLP/HTTP accepts JSON representations of ExportLogsServiceRequest.
     The exporter has no retry queue beyond its bounded input queue, uses
-    one request per batch, and never logs collector responses or failures.
+    one request per batch, and never logs collector responses or
+    failures.
     """
 
     def __init__(
@@ -34,7 +39,7 @@ class OtlpLogExporter:
         *,
         capacity: int = 512,
     ) -> None:
-        """Bound queued records and attach counters to the private registry."""
+        """Bound queued records; count them in the private registry."""
         if not 1 <= capacity <= MAX_QUEUE_CAPACITY:
             message = "OTLP queue capacity must be in 1..4096"
             raise ValueError(message)
@@ -57,7 +62,7 @@ class OtlpLogExporter:
     def capture(
         self, _logger: WrappedLogger, _method: str, event: EventDict
     ) -> EventDict:
-        """Run after the closed redaction processor, before JSON rendering."""
+        """Run after closed redaction, before JSON rendering."""
         event = redact_event(_logger, _method, event)
         record: dict[str, object] = {
             "timeUnixNano": str(time.time_ns()),
@@ -88,7 +93,7 @@ class OtlpLogExporter:
         return event
 
     async def run(self) -> None:
-        """Own a single cancellable worker; request deadlines bound shutdown."""
+        """Own one cancellable worker; deadlines bound shutdown."""
         while True:
             try:
                 first = self._queue.get_nowait()
@@ -112,44 +117,23 @@ class OtlpLogExporter:
 
     async def _send(self, batch: list[dict[str, object]]) -> None:
         accepted = False
+        stream = self._client.stream(
+            "POST",
+            self._endpoint,
+            headers={"Accept-Encoding": "identity"},
+            json=_envelope(batch),
+        )
         with suppress(
             httpx.HTTPError, TimeoutError, ValueError, RecursionError
         ):
-            async with asyncio.timeout(3):
-                async with self._client.stream(
-                    "POST",
-                    self._endpoint,
-                    headers={"Accept-Encoding": "identity"},
-                    json={
-                        "resourceLogs": [
-                            {
-                                "resource": {
-                                    "attributes": [
-                                        {
-                                            "key": "service.name",
-                                            "value": {
-                                                "stringValue": "techcom-followup"
-                                            },
-                                        }
-                                    ]
-                                },
-                                "scopeLogs": [
-                                    {
-                                        "scope": {"name": "techcom.safe-logs"},
-                                        "logRecords": batch,
-                                    }
-                                ],
-                            }
-                        ]
-                    },
-                ) as response:
-                    response.raise_for_status()
-                    accepted = await self._acknowledged(response)
+            async with asyncio.timeout(3), stream as response:
+                response.raise_for_status()
+                accepted = await self._acknowledged(response)
         (self._exported if accepted else self._dropped).inc(len(batch))
 
     @staticmethod
     async def _response_body(response: httpx.Response) -> bytes | None:
-        """Bound wire bytes and avoid unrequested response decompression."""
+        """Bound wire bytes; avoid unrequested decompression."""
         if response.is_stream_consumed:
             return (
                 response.content
@@ -178,16 +162,29 @@ class OtlpLogExporter:
         return rejected == "0" or (type(rejected) is int and rejected == 0)
 
     async def close(self) -> None:
-        """Stop admission and bound the drain; never retain logs on disk."""
+        """Stop admission, bound the drain; never keep logs on disk."""
         with self._admission:
             self._accepting = False
-        with suppress(TimeoutError):
-            async with asyncio.timeout(4):
-                while not self._queue.empty() or self._sending:
-                    await asyncio.sleep(0.05)
+        for _ in range(DRAIN_POLLS):
+            if self._queue.empty() and not self._sending:
+                break
+            await asyncio.sleep(DRAIN_POLL_S)
         while True:
             try:
                 self._queue.get_nowait()
             except Empty:
                 break
             self._dropped.inc()
+
+
+def _envelope(batch: list[dict[str, object]]) -> dict[str, object]:
+    resource = {
+        "attributes": [
+            {
+                "key": "service.name",
+                "value": {"stringValue": "techcom-followup"},
+            }
+        ]
+    }
+    scope = {"scope": {"name": "techcom.safe-logs"}, "logRecords": batch}
+    return {"resourceLogs": [{"resource": resource, "scopeLogs": [scope]}]}

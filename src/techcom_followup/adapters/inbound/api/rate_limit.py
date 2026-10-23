@@ -64,12 +64,12 @@ class RateLimiter:
 
 
 class LocalRequestLimiter:
-    """Explicit single-process fallback for tests and local composition."""
+    """Single-process fallback for tests and local composition."""
 
     def __init__(
         self, settings: ApiSettings, monotonic: Callable[[], float]
     ) -> None:
-        """Keep independent, bounded successful and failed request buckets."""
+        """Keep separate bounded success and failure buckets."""
         self._requests = RateLimiter(settings, monotonic)
         self._failures = RateLimiter(settings, monotonic)
 

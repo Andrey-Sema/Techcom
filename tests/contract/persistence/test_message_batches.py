@@ -1,4 +1,4 @@
-"""Bounded duplicate lookups distinguish new work from retained identity."""
+"""Bounded lookups tell new work from retained identity."""
 
 from dataclasses import replace
 from datetime import timedelta
@@ -16,7 +16,7 @@ from techcom_followup.application.repository import (
 from techcom_followup.application.retention import PruneData, RetentionPolicy
 
 
-async def test_lookup_returns_only_requested_identity_and_survives_payload_pruning(
+async def test_lookup_returns_requested_identity_and_survives_pruning(
     repository: Repository,
 ) -> None:
     old = NOW - timedelta(days=400)
@@ -44,7 +44,7 @@ async def test_lookup_returns_only_requested_identity_and_survives_payload_pruni
     await PruneData(
         repository,
         RetentionPolicy(
-            version="test",
+            version="2026-10-23.1",
             decision_days=90,
             action_days=365,
             audit_days=365,

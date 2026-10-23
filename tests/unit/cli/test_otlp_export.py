@@ -2,8 +2,8 @@
 
 import asyncio
 import json
-from contextlib import suppress
 from collections.abc import AsyncIterator
+from contextlib import suppress
 from typing import override
 from uuid import uuid4
 
@@ -93,10 +93,13 @@ async def test_overload_is_bounded_for_arbitrary_untrusted_fields(
         assert marker not in str(exporter._queue.get_nowait())
 
 
-async def test_partial_rejection_and_malformed_collector_json_fail_closed() -> (
-    None
-):
-    for payload in ({"partialSuccess": {"rejectedLogRecords": "1"}}, [], None):
+async def test_partial_rejection_and_malformed_json_fail_closed() -> None:
+    payloads: tuple[object, ...] = (
+        {"partialSuccess": {"rejectedLogRecords": "1"}},
+        [],
+        None,
+    )
+    for payload in payloads:
 
         async def collector(
             _request: httpx.Request, captured: object = payload

@@ -1,20 +1,22 @@
-"""Listener ownership, startup admission and lazy provider availability."""
+"""Listener ownership, startup admission and lazy provider setup."""
 
 import asyncio
 import signal
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import pytest
-from sqlalchemy.ext.asyncio import AsyncEngine
 
 from api_support import Harness
 from support import AS_OF
 from techcom_followup import serving
 from techcom_followup.adapters.inbound.api.app import create_app
 from techcom_followup.application.process_tasks import ProcessTasks
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncEngine
 
 
 @dataclass
@@ -27,7 +29,9 @@ class ListenerProbe:
     async def serve(self) -> None:
         self.started.set()
         try:
-            while not self.should_exit and not self.release.is_set():
+            while True:
+                if self.should_exit or self.release.is_set():
+                    break
                 await asyncio.sleep(0)
         finally:
             self.stopped = True
@@ -42,7 +46,7 @@ async def test_every_listener_is_joined_on_shutdown(
     monkeypatch.setattr(
         loop,
         "add_signal_handler",
-        lambda sig, callback: callbacks.__setitem__(sig, callback),
+        callbacks.__setitem__,
     )
     monkeypatch.setattr(
         loop, "remove_signal_handler", lambda sig: callbacks.pop(sig, None)
@@ -51,7 +55,7 @@ async def test_every_listener_is_joined_on_shutdown(
     stopped: list[bool] = []
     task = asyncio.create_task(
         serving._run_listeners(
-            [cast(serving._Listener, probe) for probe in probes],
+            [cast("serving._Listener", probe) for probe in probes],
             lambda: stopped.append(True),
         )
     )
@@ -101,14 +105,14 @@ async def test_startup_checks_close_the_connection_when_permission_is_missing(
                 closed.append(True)
 
     if allowed:
-        await serving._check_storage(cast(AsyncEngine, Engine()))
+        await serving._check_storage(cast("AsyncEngine", Engine()))
     else:
         with pytest.raises(ValueError, match="admission permission"):
-            await serving._check_storage(cast(AsyncEngine, Engine()))
+            await serving._check_storage(cast("AsyncEngine", Engine()))
     assert closed == [True]
 
 
-async def test_authenticated_reads_do_not_initialize_provider_and_trigger_errors_stay_private() -> (
+async def test_reads_skip_provider_init_and_trigger_errors_stay_private() -> (
     None
 ):
     calls: list[bool] = []

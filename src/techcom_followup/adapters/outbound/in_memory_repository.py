@@ -128,7 +128,7 @@ class InMemoryRepository:
         return stored
 
     async def list_decisions(self, run_id: UUID) -> tuple[StoredDecision, ...]:
-        """Order decisions by source position, preserving legacy ties."""
+        """Order decisions by source position, keeping legacy ties."""
         rows = (
             row
             for row in self._decisions.values()
@@ -168,7 +168,7 @@ class InMemoryRepository:
     async def get_action_messages(
         self, keys: tuple[str, ...]
     ) -> Mapping[str, MessageDraft | None]:
-        """Return payloads or tombstones without scanning historical actions."""
+        """Return payloads or tombstones without a history scan."""
         if len(keys) > MAX_BATCH_SIZE:
             message = "message lookup exceeds the batch bound"
             raise ValueError(message)
@@ -380,7 +380,7 @@ class InMemoryRepository:
         for action in old:
             del self._actions[action.id]
             self._messages.pop(action.identity.idempotency_key, None)
-            # Identity tombstones intentionally outlive message payloads.
+            # Identity tombstones deliberately outlive payloads.
         return len(old)
 
     def _prune_decisions(self, cutoff: datetime, limit: int) -> int:

@@ -60,7 +60,7 @@ async def test_pruned_duplicate_skips_drafting_and_creates_no_new_action() -> (
     await PruneData(
         repository,
         RetentionPolicy(
-            version="test",
+            version="2026-10-23.1",
             decision_days=90,
             action_days=365,
             audit_days=365,
