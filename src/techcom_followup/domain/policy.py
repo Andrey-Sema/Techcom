@@ -334,8 +334,9 @@ class DecisionPolicy:
 
     @staticmethod
     def _r7_follow_up(facts: _Facts) -> _Verdict | None:
-        # A blocked task that reaches R7 has no usable blocker: R5 and
-        # R6 already took materials and dependency blockers.
+        # R5 took materials without an ETA and R6 dependency blockers;
+        # a materials blocker here has a known ETA, so only check
+        # progress once the task is late or blocked.
         if facts.blocker is BlockerCategory.MATERIALS:
             if (
                 facts.delta >= 0

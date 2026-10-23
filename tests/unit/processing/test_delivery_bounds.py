@@ -183,3 +183,52 @@ def test_invalid_date_shaped_contacts_are_still_redacted() -> None:
 )
 def test_phone_cannot_borrow_a_date_substring_exemption(text: str) -> None:
     assert "2026-10-22" not in redact_contacts(text)
+
+
+def _refuse(*_args: object, **_kwargs: object) -> MessageDraft:
+    message = "rendered message exceeds delivery bounds"
+    raise ValueError(message)
+
+
+async def test_drafter_falls_back_when_rendering_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    task = _source_task("TC-1001", "escalation")
+    decision = _decision(task)
+    baseline = compose(decision, task, AS_OF)
+    choice = approved_phrasings(baseline.template_id)[0]
+    monkeypatch.setattr(
+        "techcom_followup.application.drafter.render_draft", _refuse
+    )
+    message = await MessageDrafter(
+        ScriptedLLM([choice.model_dump_json()])
+    ).draft(decision, task, as_of=AS_OF)
+    assert message == baseline
+
+
+def test_agent_plan_is_rejected_when_rendering_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    task = _source_task("TC-1001", "blocked")
+    decision = _decision(task)
+    envelope = build_envelope(
+        decision, task, repo_policy().routing, as_of=AS_OF, prior_follow_ups=0
+    )
+    assert envelope is not None
+    choice = agent_phrasings(decision.kind)[0]
+    monkeypatch.setattr("techcom_followup.domain.guard.render_draft", _refuse)
+    verdict = review(
+        PlanProposal(
+            decision.kind,
+            "owner",
+            decision.priority,
+            choice.subject,
+            choice.body,
+            "Use the baseline.",
+        ),
+        envelope,
+        task,
+        as_of=AS_OF,
+        note_visible=False,
+    )
+    assert verdict.violations == ("rendered_length",)
