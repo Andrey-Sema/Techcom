@@ -197,5 +197,5 @@ tests:
             exp_annotations:
               summary: Prometheus cannot scrape the follow-up service.
               description: >-
-                Expected until the API (M6b) joins the observability network.
+                Start the API with compose.api.yaml on the observability network.
               runbook_url: docs/18-runbook.md#followup-target-down
