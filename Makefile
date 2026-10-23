@@ -3,7 +3,7 @@
         test test-fast test-integration eval eval-test mock demo db-up db-down \
         obs-secrets up-obs down-obs obs-check obs-smoke \
         images dockerfile-lint image-scan image-test mutation sbom \
-        secrets-scan secrets-staged bench demo-check db-backup db-restore
+        secrets-scan secrets-staged secrets-repo-check bench demo-check db-backup db-restore
 
 GATES = uv run --locked --group gates
 # Semgrep conflicts with the project's dependency set, so it runs in an
@@ -172,9 +172,8 @@ obs-smoke: up-obs
 # Container images (M8). Scanners run from images pinned by digest; Trivy
 # releases 0.69.4-0.69.6 were compromised, so never use a floating tag.
 # Behind a TLS-intercepting proxy pass, for example,
-#   DOCKER_BUILD_FLAGS="--network host --build-arg HTTPS_PROXY
-#     --secret id=ca_bundle,src=/path/to/ca.crt"
-#   DOCKER_RUN_FLAGS="--network host -e HTTPS_PROXY -e SSL_CERT_FILE=/ca.crt
+#   DOCKER_BUILD_FLAGS="--secret id=ca_bundle,src=/path/to/ca.crt"
+#   DOCKER_RUN_FLAGS="-e HTTPS_PROXY -e SSL_CERT_FILE=/ca.crt
 #     -v /path/to/ca.crt:/ca.crt:ro"
 IMAGE ?= techcom-followup:dev
 MOCK_IMAGE ?= techcom-mock:dev
@@ -225,11 +224,23 @@ sbom:
 # Secret scanning with gitleaks, pinned by digest: the whole history in
 # CI, staged changes in the pre-commit hook.
 GITLEAKS_IMAGE = zricethezav/gitleaks:v8.30.1@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f
-GITLEAKS = docker run --rm -v $(CURDIR):/repo:ro $(GITLEAKS_IMAGE)
+GIT_COMMON_DIR = $(shell git rev-parse --path-format=absolute --git-common-dir)
+# Worktree .git files point outside the checkout; mount their metadata too.
+GITLEAKS_RUN = docker run --rm -v "$(CURDIR):/repo:ro" \
+	-v "$(GIT_COMMON_DIR):$(GIT_COMMON_DIR):ro" \
+	-e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory \
+	-e GIT_CONFIG_VALUE_0=/repo
+GITLEAKS = $(GITLEAKS_RUN) $(GITLEAKS_IMAGE)
 
-secrets-scan:
+# Gitleaks can return success after Git failed and scanned zero bytes.
+# Require a valid repository independently before accepting that result.
+secrets-repo-check:
+	$(GITLEAKS_RUN) --entrypoint git $(GITLEAKS_IMAGE) \
+	  -C /repo rev-parse --verify HEAD
+
+secrets-scan: secrets-repo-check
 	$(GITLEAKS) git /repo --redact --no-banner --exit-code 1
 
-secrets-staged:
+secrets-staged: secrets-repo-check
 	$(GITLEAKS) git /repo --pre-commit --staged --redact --no-banner \
 	  --exit-code 1

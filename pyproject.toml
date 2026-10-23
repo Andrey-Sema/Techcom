@@ -18,6 +18,9 @@ dependencies = [
     "typer>=0.15",
     "rich>=13.9",
     "fastapi>=0.115",
+    "starlette>=1.9,<2",
+    "pydantic-core>=2.27,<3",
+    "cryptography>=44",
     "uvicorn>=0.32",
     "pyjwt[crypto]>=2.10",
     "prometheus-client>=0.21",
@@ -225,12 +228,15 @@ extend_exclude = ["mocks", "migrations", "scripts", "docs", ".semgrep"]
 
 [tool.deptry.per_rule_ignores]
 # alembic runs the migrations/ scripts; psycopg is the SQLAlchemy
-# driver selected by the "postgresql+psycopg" URL. Neither is imported.
-DEP002 = ["alembic", "psycopg"]
+# driver selected by the "postgresql+psycopg" URL. Uvicorn is the ASGI
+# command used by the local mock and operator deployments.
+DEP002 = ["alembic", "psycopg", "uvicorn"]
 
 [tool.codespell]
+# Recorded adversarial inputs are immutable data, not prose to correct.
 skip = """*.lock,./fixtures/*,./.git/*,./.venv/*,./.*_cache/*,./var/*,\
-./.hypothesis/*,*.svg,./tests/golden/__snapshots__/*"""
+./.hypothesis/*,*.svg,./tests/golden/__snapshots__/*,\
+./tests/eval/*.jsonl,./tests/eval/**/*.jsonl"""
 check-hidden = true
 # "nd" (2nd), "cancell" (regex stem), "caf" (test data), "ot" (OTLP).
 ignore-words-list = "nd,cancell,caf,ot"

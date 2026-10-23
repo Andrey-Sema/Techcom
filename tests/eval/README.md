@@ -9,7 +9,7 @@ PYTHONPATH=tests .venv/bin/pytest -o addopts='' tests/eval \
   --cov=eval --cov-branch --cov-report=term-missing --cov-fail-under=100
 ```
 
-The default `bundles/postfix.v1` bundle contains 63 benign labelled notes
+The default `bundles/postfix.v2` bundle contains 63 benign labelled notes
 (nine per class) and 32 injection variants. `bundles/minimal.v1` preserves the original 20 benign
 notes and four injection variants. Labels and expected decisions describe the
 source note; recorded
@@ -61,8 +61,10 @@ Even consistent external captures are labelled `CAPTURE_REPLAY_ONLY`, never
 verified live quality. Provider-shaped objects in unit tests are explicitly
 fabricated solely to test validation and are excluded from corpus recordings.
 
-See [the current post-fix report](../../docs/eval/interp.v1-draft.v2-postfix.v1.md).
-The pre-fix [expanded report](../../docs/eval/interp.v1-draft.v2-expanded.v1.md)
+See [the current post-fix report](../../docs/eval/interp.v1-draft.v2-postfix.v2.md).
+The previous [post-fix report](../../docs/eval/interp.v1-draft.v2-postfix.v1.md)
+is archived after integrating the main branch; labels and scripts remain
+unchanged in the new current bundle. The pre-fix [expanded report](../../docs/eval/interp.v1-draft.v2-expanded.v1.md)
 and [minimal report](../../docs/eval/interp.v1-draft.v2-minimal.v1.md) are archived
 unchanged, along with the original root-level expanded bundle.
 [The archive index](../../docs/eval/baselines.json) identifies their

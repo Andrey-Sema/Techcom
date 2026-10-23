@@ -161,6 +161,8 @@ class _Handlers:
         """Authenticate business routes before reading their body."""
         path = _relative_path(request)
         if path != "/v1" and not path.startswith("/v1/"):
+            if path not in {"/healthz", "/readyz"}:
+                raise HTTPException(404)
             return
         if request.method not in {method for method, _ in ROUTE_SCOPES}:
             raise HTTPException(405)

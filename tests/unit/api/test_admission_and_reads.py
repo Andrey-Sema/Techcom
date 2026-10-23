@@ -263,3 +263,23 @@ async def test_nul_project_filter_is_rejected_before_database_binding() -> (
         response = await client.get("/v1/actions", params={"project": "A\0"})
     assert response.status_code == 422
     assert "UTF-8" not in response.text
+
+
+@pytest.mark.asvs("8.2.1")
+async def test_new_root_route_cannot_bypass_the_closed_public_surface() -> (
+    None
+):
+    harness = Harness()
+    called = False
+
+    async def accidental_route() -> dict[str, str]:
+        nonlocal called
+        called = True
+        return {"private": "PRIVATE"}
+
+    harness.app.add_api_route("/unexpected-root", accidental_route)
+    async with harness.client() as client:
+        response = await client.get("/unexpected-root")
+    assert response.status_code == 404
+    assert "PRIVATE" not in response.text
+    assert not called

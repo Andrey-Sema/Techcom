@@ -1,7 +1,7 @@
 from fractions import Fraction
 
 import pytest
-from hypothesis import given
+from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from eval.metrics import CaseResult, Gates, score
@@ -26,6 +26,8 @@ def row(
     )
 
 
+# The Fraction oracle checks correctness; scheduler latency is not a gate.
+@settings(deadline=None)
 @given(
     st.lists(
         st.tuples(

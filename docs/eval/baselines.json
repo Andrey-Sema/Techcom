@@ -16,5 +16,13 @@
     "bundle": "tests/eval",
     "status": "Archived synthetic evidence; not replayed against changed pipeline code.",
     "report_artifact_commit": "16d45e9f8de473fc0063d2df8ccf7c11d793dc89"
+  },
+  "postfix.v1": {
+    "pipeline_commit": "9496821150e461d8c78284e7cff1bb5406822058",
+    "evaluation_commit": "3b5bd85",
+    "report": "docs/eval/interp.v1-draft.v2-postfix.v1.md",
+    "report_sha256": "4dbdbc18f325dcb6c1d6159064ba46e36986b8636ca8f93da4ca534109f6d6b7",
+    "bundle": "tests/eval/bundles/postfix.v1",
+    "status": "Archived synthetic evidence; superseded after integration of the main branch."
   }
 }

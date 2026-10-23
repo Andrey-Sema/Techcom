@@ -130,6 +130,9 @@ def test_runtime_migrates_runs_and_dedupes_end_to_end() -> None:
             f"--env=FOLLOWUP_DATABASE_URL={url}",
             "--env=FOLLOWUP_TASK_API_URL=http://mock-api:8081",
             "--env=FOLLOWUP_DELIVERY_API_URL=http://mock-api:8081",
+            # Keep local service traffic on the test bridge.
+            "--env=NO_PROXY=mock-api,db,localhost,127.0.0.1",
+            "--env=no_proxy=mock-api,db,localhost,127.0.0.1",
         )
         docker(
             "run", *common, "--entrypoint=alembic", RUNTIME, "upgrade", "head"
