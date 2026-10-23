@@ -55,11 +55,14 @@ nav:
       - "M0 / M2 / M3 implementation review": 19-foundation-review.md
       - "M4 / M5 / M6a implementation review": 21-workflow-review.md
       - "API and evaluation review": 22-api-evaluation-review.md
+      - "Final integration review": 23-final-integration-review.md
   - "Benchmarks": benchmarks.md
   - Security evidence:
       - "ASVS 5.0 traceability (generated)": asvs-traceability.md
       - "Docker Security checklist": security/docker-security.md
       - "LLM Prompt Injection checklist": security/llm-prompt-injection.md
+      - "FastAPI checklist": security/fastapi-security.md
+      - "Logging checklist": security/logging-security.md
   - Evaluation evidence:
       - "Current synthetic replay": eval/interp.v1-draft.v2-postfix.v2.md
       - "Previous synthetic replay": eval/interp.v1-draft.v2-postfix.v1.md
@@ -81,3 +84,4 @@ nav:
       - "ADR-0012: LLM evaluation harness with recorded responses": adr/0012-llm-evaluation-harness.md
       - "ADR-0013: OpenAI model router (Responses API, Sol generation)": adr/0013-openai-model-router.md
       - "ADR-0014: Owned language calls and budget bounds": adr/0014-owned-language-and-budget-bounds.md
+      - "ADR-0015: Bounded writes and durable admission": adr/0015-bounded-writes-and-durable-admission.md

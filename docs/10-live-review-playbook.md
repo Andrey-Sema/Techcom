@@ -1,5 +1,21 @@
 # 10 — Live Technical Review Playbook (30 minutes)
 
+## Final revision rehearsal boundary
+
+This playbook is prepared for the final integration; no live rehearsal was
+run after the instruction to avoid environment verification. Review the
+[current evidence boundary](23-final-integration-review.md) first.
+
+When execution is authorized on a review host, demonstrate `make demo`,
+compare its ten decisions/seven deliveries/seven duplicate suppressions,
+then run `make bench` and retain its machine metadata and 60/30-second
+acceptance result. Demonstrate scoped API reads including a quiet source
+project, shared request admission across processes, recipient quota deferral
+without a send, and replay after payload retention. Check private metrics,
+collector export/drop counters, and `make zap` against synthetic data.
+Verify an actually published image digest's attestation separately. Until
+those steps run, no rehearsal, DAST, new benchmark or signature is claimed.
+
 ## Part 1 (10 min) — Run the system
 
 ```text

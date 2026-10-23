@@ -105,6 +105,28 @@ def test_non_object_records_are_rejected() -> None:
 
 
 @pytest.mark.parametrize(
+    "project",
+    [" Project A", "Project A\n", "Project\u200b A", "A" * 80 + "B"],
+)
+def test_project_authority_rejects_lossy_display_aliases(project: str) -> None:
+    result = normalize([record(project=project)], AS_OF)
+    assert result.tasks == ()
+    assert [r.reason for r in result.rejected] == ["noncanonical_project"]
+
+
+def test_distinct_long_projects_cannot_share_truncated_authority() -> None:
+    result = normalize(
+        [
+            record(task_id="TC-1", project="A" * 80 + "B"),
+            record(task_id="TC-2", project="A" * 80 + "C"),
+        ],
+        AS_OF,
+    )
+    assert result.tasks == ()
+    assert len(result.rejected) == 2
+
+
+@pytest.mark.parametrize(
     ("raw", "expected"),
     [
         ("2026-10-18", date(2026, 10, 18)),

@@ -1,10 +1,11 @@
 # TechCom AI Operations & Follow-up Service
 
-> Status: **M0–M5, M6a, API core M6b and M11a/b are implemented**.
-> Full tooling, containers, observability configuration and operations work
-> from `main` are preserved. ASVS L2 is a design target; remaining deployment
-> and security gaps are explicit in the [tracker](docs/08-implementation-plan.md)
-> and [API/evaluation review](docs/22-api-evaluation-review.md).
+> Status: the final PR includes bounded parallel processing, persistent
+> admission/retention controls, API OTLP/metrics wiring and M7 documentation.
+> **These final changes have received manual review only.** The 60/30-second
+> benchmark and current execution/coverage gates remain unverified.
+> ASVS L2 is a design target. See the [final review](docs/23-final-integration-review.md)
+> for implemented controls, evidence boundaries and deployment prerequisites.
 
 A Python service that reads construction project tasks through a mock API,
 decides **deterministically** which ones need attention, uses an **LLM only
@@ -23,8 +24,9 @@ throttle, fail or time out after a successful write.
    effectively-once delivery; a timeout means "unknown", never "failed".
 4. **PostgreSQL 18** — `UNIQUE` dedupe, `SKIP LOCKED` claims, `uuidv7()`;
    no Redis/Celery needed.
-5. **100 % branch coverage**, strict PEP 8 (79 cols), `mypy --strict`,
-   property tests with Hypothesis. Mutation testing is planned in M8.
+5. **100 % branch coverage gate**, strict PEP 8 (79 cols), `mypy --strict`,
+   Hypothesis properties and mutation testing. New gates are not asserted
+   to pass without execution.
 6. **OWASP ASVS 5.0 Level 2 design target** with per-requirement traceability,
    OWASP Cheat Sheets and LLM Top 10; observability via Prometheus,
    Grafana, Loki and Alloy provisioned as code.
@@ -67,7 +69,7 @@ throttle, fail or time out after a successful write.
 | [16 Senior audit](docs/16-senior-audit.md) | Strict 30-point audit: proving mechanisms, gaps, fixes, expected score |
 | [17 Tooling & repo hygiene](docs/17-tooling-and-repo-hygiene.md) | Ruff `ALL`, **Bandit**, Semgrep rules, mypy, vulture, xenon, deptry, full `.gitignore`/`.gitattributes`/`.editorconfig`, pre-commit, Makefile, CI |
 | [18 Runbook](docs/18-runbook.md) | Alert playbooks, global levers, diagnostics, backup/restore |
-| [ADRs](docs/adr/) | Architecture decision records 0001–0014 |
+| [ADRs](docs/adr/) | Architecture decision records 0001–0015 |
 
 ## Planned stack
 
@@ -112,9 +114,10 @@ make db-up
 
 Set `FOLLOWUP_DATABASE_URL` through your local secret configuration before
 `uv run alembic upgrade head`; no database URL or password is checked in.
-The Compose database user is for local development. Production database
-roles, JWT authorization, project/object authorization and the complete
-ASVS L2 evidence are pending milestones M6b/M9.
+The Compose database user is for local development. Production uses a
+separately provisioned login in `followup_app`, configured public JWT keys
+and persisted source-project authority. Migrations run separately as the
+schema owner. Full ASVS L2 deployment evidence remains outstanding.
 
 CI requires PostgreSQL tests to run; a missing Docker daemon fails CI.
 Local full-suite runs skip unavailable PostgreSQL tests and consequently
@@ -122,6 +125,13 @@ fail the 100% coverage gate. Use `make test-fast` for an explicit subset.
 Live LLM calls are opt-in and excluded from all default verification.
 
 ## Workflow commands
+
+The persistent runtime defaults to eight concurrent decision writes
+(`FOLLOWUP_WRITE_CONCURRENCY`, 1..16) and a durable daily recipient limit
+of 20 (`FOLLOWUP_RECIPIENT_DAILY_LIMIT`). Reports keep source order, and
+retention preserves duplicate identity after message deletion. Benchmark
+acceptance is below 60 seconds for the first 10,000-task run and below
+30 seconds for its rerun; no new timing is claimed. See [benchmarks](docs/benchmarks.md).
 
 ```sh
 make demo                 # owns a fresh receiver on 127.0.0.1:8081
@@ -131,6 +141,14 @@ uv run --locked followup dispatch --limit 50
 uv run --locked followup reconcile --limit 50
 uv run --locked followup report --run-id <uuid>
 ```
+
+`followup-api` runs the public API and a separate private metrics listener,
+with bounded OTLP export and PostgreSQL request quotas shared by replicas.
+See [configuration and secret mounts](docs/23-final-integration-review.md#runtime-configuration).
+`make zap` prepares and scans a disposable synthetic API. The manual
+main-only `Publish attested runtime` workflow publishes to GHCR and creates
+a digest-bound provenance attestation. Neither operation was run for this
+extension. CI billing and deployment approvals remain operator concerns.
 
 `make demo` requires port 8081 to be free. It starts and stops its own
 receiver, uses a fresh journal, sends seven messages, reconciles unknown

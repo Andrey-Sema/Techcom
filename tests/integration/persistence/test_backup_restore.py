@@ -26,7 +26,11 @@ SELECT (SELECT count(*) FROM runs), (SELECT count(*) FROM decisions),
        (SELECT count(*) FROM actions), (SELECT count(*) FROM audit_events),
        (SELECT version_num FROM alembic_version),
        has_table_privilege('followup_app', 'audit_events', 'UPDATE'),
-       has_table_privilege('followup_app', 'audit_events', 'INSERT')
+       has_table_privilege('followup_app', 'audit_events', 'INSERT'),
+       (SELECT count(*) FROM action_keys),
+       has_table_privilege('followup_app', 'action_keys', 'DELETE'),
+       has_function_privilege('followup_app',
+           'public.admit_delivery(uuid,uuid,timestamptz,integer)', 'EXECUTE')
 """
 
 
@@ -75,4 +79,6 @@ def test_custom_format_dump_restores_rows_version_and_grants() -> None:
     # One run, one decision, one action, one audit row; head revision;
     # the service role still cannot rewrite the audit trail.
     assert before[:4] == (1, 1, 1, 1)
-    assert before[5:] == (False, True)
+    assert before[5:7] == (False, True)
+    assert before[7] == 1  # Duplicate identity survives full backup/restore.
+    assert before[8:] == (False, True)

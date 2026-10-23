@@ -1,5 +1,10 @@
 # M6b / M11a / M11b review and evidence
 
+This is historical evidence for the earlier API/evaluation revision.
+The subsequent performance/security/operations extension is reviewed in
+[document 23](23-final-integration-review.md). Its code has not been executed;
+the counts below must not be attributed to that extension.
+
 This batch integrates the authenticated API and the minimal/expanded offline
 LLM evaluation harness with `main` at `da0f2a0`. Existing container, database
 role, retention, observability and performance work is preserved. It does

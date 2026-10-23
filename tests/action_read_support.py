@@ -20,6 +20,7 @@ async def enqueue_project(
             write,
             decision=decision,
             identity=ActionIdentity.of(decision, write.fingerprint),
+            source_project=project,
         ),
         NOW,
     )

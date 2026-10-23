@@ -56,9 +56,12 @@ class DecisionWrite:
     fingerprint: str
     identity: ActionIdentity | None = None
     message: MessageDraft | None = None
+    source_project: str | None = None
+    source_position: int | None = None
 
     def validate(self) -> None:
         """Reject partial actions or a forged operation identity."""
+        self._validate_source()
         actionable = self.decision.actionable
         if actionable != (
             self.identity is not None and self.message is not None
@@ -72,6 +75,22 @@ class DecisionWrite:
             self.decision, self.fingerprint
         ):
             message = "action identity does not match decision and state"
+            raise ValueError(message)
+
+    def _validate_source(self) -> None:
+        if self.source_project is not None:
+            require_storage_text(self.source_project)
+            if not 1 <= len(self.source_project) <= MAX_PROJECT_LENGTH:
+                message = "invalid source project"
+                raise ValueError(message)
+            target = self.decision.target
+            if target is not None and target.project != self.source_project:
+                message = "recipient project differs from source"
+                raise ValueError(message)
+        if self.source_position is not None and (
+            type(self.source_position) is not int or self.source_position < 0
+        ):
+            message = "invalid source position"
             raise ValueError(message)
 
 
@@ -101,6 +120,8 @@ class ActionRecord:
     last_error: str | None = None
     provider_ref: str | None = None
     sent_at: datetime | None = None
+    terminal_at: datetime | None = None
+    source_project: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -211,6 +232,7 @@ class ActionUpdate:
             "circuit_open",
             "retry_budget",
             "dispatch_stopped",
+            "recipient_limit",
         }:
             message = "unsent deferrals require a closed error code"
             raise ValueError(message)
@@ -286,12 +308,18 @@ class PruneCounts:
     decisions: int = 0
     audit: int = 0
     runs: int = 0
+    admissions: int = 0
 
     @property
     def total(self) -> int:
         """All deleted rows."""
         return (
-            self.cache + self.actions + self.decisions + self.audit + self.runs
+            self.cache
+            + self.actions
+            + self.decisions
+            + self.audit
+            + self.runs
+            + self.admissions
         )
 
     def __add__(self, other: "PruneCounts") -> "PruneCounts":
@@ -302,6 +330,7 @@ class PruneCounts:
             self.decisions + other.decisions,
             self.audit + other.audit,
             self.runs + other.runs,
+            self.admissions + other.admissions,
         )
 
 
@@ -339,6 +368,20 @@ class Repository(Protocol):
 
     async def list_decisions(self, run_id: UUID) -> tuple[StoredDecision, ...]:
         """Read run decisions in stable insertion order."""
+        ...
+
+    async def get_action_messages(
+        self, keys: tuple[str, ...]
+    ) -> Mapping[str, MessageDraft | None]:
+        """Read at most 1000 identities for trusted global processing.
+
+        A present key with no message is a retained identity tombstone.
+        This is not an end-user read port; use authorized action queries.
+        """
+        ...
+
+    async def list_run_actions(self, run_id: UUID) -> tuple[ActionRecord, ...]:
+        """Read only actions created by one run, in stable source order."""
         ...
 
     async def list_actions(self) -> tuple[ActionRecord, ...]:

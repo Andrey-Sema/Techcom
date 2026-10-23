@@ -14,3 +14,9 @@ from `var/demo/` after `make demo`; keep all three artifacts from one
 execution together. The model is an offline stub: these samples do not
 measure real-provider accuracy. Report files contain deliberate fixture
 business facts, distinct from the redacted operational log stream.
+
+The final concurrency/admission revision preserves these historical
+execution artifacts. It has not been run, so the files are not presented
+as outputs of that revision. `api_actions.example.json` is a separately
+labeled, hand-authored API shape example using synthetic facts; it is
+not an execution artifact and is excluded from demo comparison.

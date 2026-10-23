@@ -11,6 +11,7 @@ from sqlalchemy.engine import RowMapping
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from techcom_followup.adapters.outbound.orm import (
+    action_keys,
     actions,
     audit_events,
     decisions,
@@ -18,6 +19,7 @@ from techcom_followup.adapters.outbound.orm import (
     runs,
 )
 from techcom_followup.application.repository import (
+    MAX_BATCH_SIZE,
     ActionReadQuery,
     ActionRecord,
     ActionStatus,
@@ -33,10 +35,12 @@ from techcom_followup.application.repository import (
     StoredDecision,
     require_aware,
 )
+from techcom_followup.domain.messages import MessageDraft
 
 _FOREIGN_KEY_VIOLATION = "23503"
 _TERMINAL = ("sent", "dead")
 _WRITE = TypeAdapter(DecisionWrite)
+_DRAFT = TypeAdapter(MessageDraft)
 _ACTION = TypeAdapter(ActionRecord)
 _RUN = TypeAdapter(RunRecord)
 _CACHE = TypeAdapter(CacheEntry)
@@ -60,6 +64,7 @@ def _action(row: RowMapping) -> ActionRecord:
     data["identity"] = write["identity"]
     data["decision"] = write["decision"]
     data["message"] = write["message"]
+    data["source_project"] = write.get("source_project")
     return _ACTION.validate_python(data)
 
 
@@ -140,6 +145,8 @@ class PgRepository:
                         data=_WRITE.dump_python(write, mode="json"),
                         state_fingerprint=write.fingerprint,
                         outcome="none",
+                        source_project=write.source_project,
+                        source_position=write.source_position,
                     )
                     .on_conflict_do_nothing(
                         index_elements=[
@@ -194,21 +201,25 @@ class PgRepository:
                 if result.scalar_one_or_none() is not None
                 else DecisionOutcome.DUPLICATE_SUPPRESSED
             )
-            # Decisions without an action keep the inserted "none".
-            await connection.execute(
+        statement = audit_events.insert().values(
+            kind=f"decision.{outcome.value}",
+            at=now,
+            run_id=write.run_id,
+            task_id=write.decision.task_id,
+            payload={"decision_id": str(decision_id)},
+        )
+        if identity is not None:
+            # PostgreSQL executes a data-modifying CTE exactly once even
+            # without a reference. The existing decision row is visible
+            # from the preceding statement in this same transaction.
+            statement = statement.add_cte(
                 decisions.update()
                 .where(decisions.c.id == decision_id)
                 .values(outcome=outcome.value)
+                .returning(decisions.c.id)
+                .cte("recorded_outcome")
             )
-        await connection.execute(
-            audit_events.insert().values(
-                kind=f"decision.{outcome.value}",
-                at=now,
-                run_id=write.run_id,
-                task_id=write.decision.task_id,
-                payload={"decision_id": str(decision_id)},
-            )
-        )
+        await connection.execute(statement)
         return outcome
 
     async def list_decisions(self, run_id: UUID) -> tuple[StoredDecision, ...]:
@@ -217,7 +228,10 @@ class PgRepository:
             result = await connection.execute(
                 sa.select(decisions)
                 .where(decisions.c.run_id == run_id)
-                .order_by(decisions.c.id)
+                .order_by(
+                    decisions.c.source_position.asc().nulls_last(),
+                    decisions.c.id,
+                )
             )
             return tuple(_stored(row) for row in result.mappings())
 
@@ -229,6 +243,46 @@ class PgRepository:
             )
             return tuple(_action(row) for row in result.mappings())
 
+    async def list_run_actions(self, run_id: UUID) -> tuple[ActionRecord, ...]:
+        """Join through indexed run/decision keys instead of the full outbox."""
+        statement = _ACTION_QUERY.where(decisions.c.run_id == run_id).order_by(
+            decisions.c.source_position.asc().nulls_last(), actions.c.id
+        )
+        async with self._engine.connect() as connection:
+            result = await connection.execute(statement)
+            return tuple(_action(row) for row in result.mappings())
+
+    async def get_action_messages(
+        self, keys: tuple[str, ...]
+    ) -> Mapping[str, MessageDraft | None]:
+        """Look up only requested identities; a tombstone has no payload."""
+        if len(keys) > MAX_BATCH_SIZE:
+            message = "message lookup exceeds the batch bound"
+            raise ValueError(message)
+        if not keys:
+            return {}
+        statement = (
+            sa.select(
+                action_keys.c.idempotency_key,
+                decisions.c.data["message"].label("message"),
+            )
+            .select_from(
+                action_keys.outerjoin(
+                    actions,
+                    action_keys.c.idempotency_key == actions.c.idempotency_key,
+                ).outerjoin(decisions, actions.c.decision_id == decisions.c.id)
+            )
+            .where(action_keys.c.idempotency_key.in_(keys))
+        )
+        async with self._engine.connect() as connection:
+            result = await connection.execute(statement)
+            return {
+                row["idempotency_key"]: None
+                if row["message"] is None
+                else _DRAFT.validate_python(row["message"])
+                for row in result.mappings()
+            }
+
     async def query_actions(
         self, query: ActionReadQuery
     ) -> tuple[ActionRecord, ...]:
@@ -238,9 +292,15 @@ class PgRepository:
         project = target["project"].as_string()
         statement = _ACTION_QUERY.where(target.astext.is_not(None))
         if not query.all_projects:
-            statement = statement.where(project.in_(sorted(query.projects)))
+            statement = statement.where(
+                decisions.c.source_project.in_(sorted(query.projects)),
+                project.in_(sorted(query.projects)),
+            )
         if query.project is not None:
-            statement = statement.where(project == query.project)
+            statement = statement.where(
+                decisions.c.source_project == query.project,
+                project == query.project,
+            )
         if query.task_id is not None:
             statement = statement.where(decisions.c.task_id == query.task_id)
         if query.status is not None:
@@ -339,6 +399,9 @@ class PgRepository:
                     lease_until=None,
                     sent_at=update.now
                     if update.status == ActionStatus.SENT
+                    else None,
+                    terminal_at=update.now
+                    if update.status.value in _TERMINAL
                     else None,
                 )
                 .returning(actions.c.id)
@@ -457,7 +520,7 @@ class PgRepository:
             actions.c.decision_id == decisions.c.id
         )
         old_runs = sa.select(runs.c.id).where(
-            runs.c.started_at < cutoffs.decisions
+            runs.c.finished_at < cutoffs.decisions
         )
         steps = (
             (
@@ -469,12 +532,7 @@ class PgRepository:
                 actions,
                 actions.c.id,
                 actions.c.status.in_(_TERMINAL)
-                & (
-                    sa.func.coalesce(
-                        actions.c.sent_at, actions.c.next_attempt_at
-                    )
-                    < cutoffs.actions
-                ),
+                & (actions.c.terminal_at < cutoffs.actions),
             ),
             (
                 decisions,
@@ -489,7 +547,7 @@ class PgRepository:
             (
                 runs,
                 runs.c.id,
-                (runs.c.started_at < cutoffs.decisions)
+                (runs.c.finished_at < cutoffs.decisions)
                 & ~sa.exists().where(decisions.c.run_id == runs.c.id),
             ),
         )
@@ -501,4 +559,11 @@ class PgRepository:
                     sa.delete(table).where(key.in_(victims))
                 )
                 deleted.append(result.rowcount)
-        return PruneCounts(*deleted)
+            history = await connection.execute(
+                sa.text(
+                    "SELECT public.prune_admission_history(:before, :bound)"
+                ),
+                {"before": cutoffs.actions, "bound": limit},
+            )
+            admission_rows = int(history.scalar_one())
+        return PruneCounts(*deleted, admissions=admission_rows)

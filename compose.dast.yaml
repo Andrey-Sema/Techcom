@@ -1,0 +1,57 @@
+name: techcom-dast
+services:
+  app:
+    image: ${DAST_APP_IMAGE:-techcom-followup:dev}
+    entrypoint: [uvicorn, dast_app:create_target, --factory, --host, 0.0.0.0, --port, "8080", --no-access-log]
+    command: []
+    working_dir: /app
+    environment:
+      PYTHONPATH: /audit
+    volumes:
+      - ./var/dast/dast_app.py:/audit/dast_app.py:ro
+      - ./var/dast/tasks.json:/audit/tasks.json:ro
+      - ./var/dast/public.pem:/audit/public.pem:ro
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: [/tmp]
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request as u; u.urlopen('http://127.0.0.1:8080/readyz', timeout=2)"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+    networks: [audit]
+  probe:
+    image: ${DAST_APP_IMAGE:-techcom-followup:dev}
+    user: ${DAST_UID:?prepare scan.env}:${DAST_GID:?prepare scan.env}
+    entrypoint: [python, /audit/dast_probe.py]
+    command: []
+    volumes:
+      - ./var/dast/dast_probe.py:/audit/dast_probe.py:ro
+      - ./var/dast/auth.properties:/audit/auth.properties:ro
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks: [audit]
+    depends_on:
+      app:
+        condition: service_healthy
+  zap:
+    image: ${ZAP_IMAGE:?set an approved ZAP image pinned by sha256}
+    user: ${DAST_UID:?prepare scan.env}:${DAST_GID:?prepare scan.env}
+    environment:
+      JAVA_TOOL_OPTIONS: -Duser.home=/tmp
+    command: [zap-api-scan.py, -t, /zap/wrk/openapi.json, -f, openapi, -J, report.json, -r, report.html, -z, "-configfile /zap/wrk/auth.properties"]
+    volumes:
+      - ./var/dast:/zap/wrk:rw
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: [/tmp]
+    networks: [audit]
+    depends_on:
+      probe:
+        condition: service_completed_successfully
+networks:
+  audit:
+    internal: true

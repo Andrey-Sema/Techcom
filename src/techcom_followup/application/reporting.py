@@ -67,16 +67,14 @@ async def run_view(
 ) -> dict[str, JsonValue]:
     """Project a run plus its decisions and delivery status counts."""
     decisions = await repository.list_decisions(run.id)
-    decision_ids = {item.id for item in decisions}
-    actions = [
-        item
-        for item in await repository.list_actions()
-        if item.decision_id in decision_ids
-    ]
+    actions = await repository.list_run_actions(run.id)
     return {
         "run": _RUN.dump_python(run, mode="json"),
         "decisions": [decision_view(item) for item in decisions],
         "actions": [
-            _ACTION.dump_python(item, mode="json") for item in actions
+            _ACTION.dump_python(
+                item, mode="json", exclude={"terminal_at", "source_project"}
+            )
+            for item in actions
         ],
     }

@@ -35,6 +35,7 @@ async def enqueue(repository: Repository, task_id: str, at: datetime) -> None:
     write = await action_write(repository, task_id)
     run = await repository.start_run(AS_OF, "v", at)
     await repository.record_decision(replace(write, run_id=run.id), at)
+    await repository.finish_run(run.id, {"status": "completed"}, at)
 
 
 async def send_all(repository: Repository, at: datetime) -> None:
@@ -59,6 +60,7 @@ async def no_action(repository: Repository, at: datetime) -> None:
     await repository.record_decision(
         DecisionWrite(run.id, decision, state_fingerprint(task)), at
     )
+    await repository.finish_run(run.id, {"status": "completed"}, at)
 
 
 def cache(key: str, expires_at: datetime) -> CacheEntry:

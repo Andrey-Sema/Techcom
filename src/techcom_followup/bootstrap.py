@@ -12,11 +12,12 @@ from pathlib import Path
 from typing import Literal
 
 import httpx
-from pydantic import SecretStr
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from techcom_followup.adapters.inbound.cli import create_cli
+from techcom_followup.adapters.outbound.admission import PgDeliveryQuota
 from techcom_followup.adapters.outbound.clock import FixedClock, SystemClock
 from techcom_followup.adapters.outbound.delivery_http import (
     HttpDeliveryGateway,
@@ -48,6 +49,8 @@ from techcom_followup.application.drafter import MessageDrafter
 from techcom_followup.application.interpreter import NoteInterpreter
 from techcom_followup.application.ports import LLMClient
 from techcom_followup.application.process_tasks import (
+    DEFAULT_WRITE_CONCURRENCY,
+    MAX_WRITE_CONCURRENCY,
     ProcessingDependencies,
     ProcessTasks,
 )
@@ -93,6 +96,10 @@ class RuntimeSettings(BaseSettings):
     config_dir: Path = Path("config")
     llm_provider: Literal["stub", "router"] = "stub"
     dispatch_enabled: bool = True
+    write_concurrency: int = Field(
+        default=DEFAULT_WRITE_CONCURRENCY, ge=1, le=MAX_WRITE_CONCURRENCY
+    )
+    recipient_daily_limit: int = Field(default=20, ge=1, le=10_000)
 
 
 class FixtureTaskSource:
@@ -131,6 +138,7 @@ class _Storage:
     repository: Repository
     lock: RunLock
     persistent: bool
+    quota: PgDeliveryQuota | None = None
 
 
 def _storage(
@@ -141,10 +149,25 @@ def _storage(
             InMemoryRepository(), InMemoryRunLock(), persistent=False
         )
     engine = create_async_engine(
-        settings.database_url.get_secret_value(), pool_pre_ping=True
+        settings.database_url.get_secret_value(),
+        pool_pre_ping=True,
+        pool_size=settings.write_concurrency + 2,
+        max_overflow=0,
+        pool_timeout=5,
+        isolation_level="READ COMMITTED",
+        connect_args={
+            "options": "-c statement_timeout=15000 -c lock_timeout=5000"
+        },
     )
     stack.push_async_callback(engine.dispose)
-    return _Storage(PgRepository(engine), PgRunLock(engine), persistent=True)
+    return _Storage(
+        PgRepository(engine),
+        PgRunLock(engine),
+        persistent=True,
+        quota=PgDeliveryQuota(
+            engine, daily_limit=settings.recipient_daily_limit
+        ),
+    )
 
 
 def _advance(clock: Clock, delta: timedelta) -> None:
@@ -240,6 +263,7 @@ class _RuntimeScope:
                 drafter=MessageDrafter(
                     None if settings.llm_provider == "stub" else language
                 ),
+                write_concurrency=settings.write_concurrency,
             )
         return self._processor
 
@@ -257,6 +281,7 @@ class _RuntimeScope:
         if self._dispatcher is None:
             self._dispatcher = DispatchActions(
                 self._delivery(),
+                quota=self._storage.quota,
                 breaker=CircuitBreaker(
                     failure_threshold=5,
                     cooldown_s=30,
