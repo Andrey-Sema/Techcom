@@ -2,6 +2,8 @@
 name: techcom
 services:
   app:
+    init: true
+    stop_grace_period: 30s
     build:
       context: .
       target: runtime
@@ -26,6 +28,9 @@ services:
       FOLLOWUP_DELIVERY_API_URL: ${FOLLOWUP_DELIVERY_API_URL:?set the delivery endpoint}
       FOLLOWUP_ALLOWED_HOSTS: ${FOLLOWUP_ALLOWED_HOSTS:?set approved endpoint hosts as JSON}
       FOLLOWUP_ALLOW_LOCAL_HTTP: "false"
+      FOLLOWUP_LLM_PROVIDER: ${FOLLOWUP_LLM_PROVIDER:-stub}
+      FOLLOWUP_LLM_PLANNER: ${FOLLOWUP_LLM_PLANNER:-agent}
+      FOLLOWUP_DISPATCH_ENABLED: ${FOLLOWUP_DISPATCH_ENABLED:-true}
       FOLLOWUP_WRITE_CONCURRENCY: ${FOLLOWUP_WRITE_CONCURRENCY:-8}
       FOLLOWUP_RECIPIENT_DAILY_LIMIT: ${FOLLOWUP_RECIPIENT_DAILY_LIMIT:-20}
     secrets:

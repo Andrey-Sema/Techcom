@@ -7,6 +7,7 @@ from dataclasses import replace
 from datetime import date, datetime
 from heapq import nsmallest
 from itertools import islice
+from typing import cast
 from uuid import UUID, uuid4
 
 from pydantic import JsonValue
@@ -32,6 +33,7 @@ from techcom_followup.application.repository import (
     review_event,
 )
 from techcom_followup.domain.messages import MessageDraft
+from techcom_followup.domain.models import DecisionKind, Target
 
 _TERMINAL = frozenset({ActionStatus.SENT, ActionStatus.DEAD})
 
@@ -45,6 +47,8 @@ class InMemoryRepository:
         self._runs: dict[UUID, RunRecord] = {}
         self._decisions: dict[tuple[UUID, str], StoredDecision] = {}
         self._actions: dict[UUID, ActionRecord] = {}
+        self._superseded: set[UUID] = set()
+        self._task_actions: dict[tuple[str, str], dict[UUID, str]] = {}
         self._keys: set[str] = set()
         self._notification_slots: set[tuple[str, str, str, str]] = set()
         self._messages: dict[str, MessageDraft] = {}
@@ -99,6 +103,7 @@ class InMemoryRepository:
         self, write: DecisionWrite, now: datetime, key: tuple[UUID, str]
     ) -> StoredDecision:
         identity, draft = write.identity, write.message
+        self._supersede(write, now)
         outcome = DecisionOutcome.NONE
         decision_id = uuid4()
         if identity is not None and draft is not None:
@@ -121,6 +126,9 @@ class InMemoryRepository:
                     source_project=write.source_project,
                 )
                 self._actions[action.id] = action
+                self._task_actions.setdefault(
+                    write.notification_slot()[:2], {}
+                )[action.id] = write.fingerprint
                 self._keys.add(identity.idempotency_key)
                 self._notification_slots.add(slot)
                 self._messages[identity.idempotency_key] = draft
@@ -140,6 +148,40 @@ class InMemoryRepository:
             )
         )
         return stored
+
+    def _supersede(self, write: DecisionWrite, now: datetime) -> None:
+        scope = write.notification_slot()[:2]
+        for action_id, fingerprint in self._task_actions.get(
+            scope, {}
+        ).items():
+            action = self._actions[action_id]
+            obsolete = (
+                fingerprint != write.fingerprint
+                or write.decision.kind is DecisionKind.NO_ACTION
+            )
+            if obsolete and action.status not in _TERMINAL:
+                self._superseded.add(action.id)
+                if action.status in {ActionStatus.PENDING, ActionStatus.HELD}:
+                    self._actions[action.id] = replace(
+                        action,
+                        status=ActionStatus.DEAD,
+                        last_error="source_state_superseded",
+                        terminal_at=now,
+                    )
+
+    def _fence_retry(
+        self, action_id: UUID, update: ActionUpdate
+    ) -> ActionUpdate:
+        if (
+            action_id in self._superseded
+            and update.status is ActionStatus.PENDING
+        ):
+            return replace(
+                update,
+                status=ActionStatus.DEAD,
+                error="source_state_superseded",
+            )
+        return update
 
     async def list_decisions(self, run_id: UUID) -> tuple[StoredDecision, ...]:
         """Order decisions by source position, keeping legacy ties."""
@@ -315,7 +357,7 @@ class InMemoryRepository:
             self._actions.update((action.id, action) for action in claimed)
             return claimed
 
-    async def apply_outcome(self, update: ActionUpdate) -> bool:
+    async def apply_outcome(self, update: ActionUpdate) -> ActionStatus | None:
         """Fence late workers, terminal rows and expired claims."""
         update.validate()
         async with self._lock:
@@ -323,7 +365,8 @@ class InMemoryRepository:
                 update.action_id, update.lease_token, update.now
             )
             if action is None:
-                return False
+                return None
+            update = self._fence_retry(action.id, update)
             self._actions[action.id] = replace(
                 action,
                 status=update.status,
@@ -337,7 +380,7 @@ class InMemoryRepository:
                 else None,
                 terminal_at=update.now if update.status in _TERMINAL else None,
             )
-            return True
+            return update.status
 
     def _owned(
         self, action_id: UUID, lease_token: UUID, now: datetime
@@ -367,14 +410,16 @@ class InMemoryRepository:
                 or action.attempts < 1
             ):
                 return False
+            update = self._fence_retry(action.id, update)
             self._actions[action.id] = replace(
                 action,
-                status=ActionStatus.PENDING,
+                status=update.status,
                 attempts=action.attempts - 1,
                 next_attempt_at=update.next_attempt_at,
                 last_error=update.error,
                 lease_token=None,
                 lease_until=None,
+                terminal_at=update.now if update.status in _TERMINAL else None,
             )
             return True
 
@@ -382,10 +427,13 @@ class InMemoryRepository:
         self, action_id: UUID, lease_token: UUID, now: datetime
     ) -> bool:
         """Cancellation is ambiguous: release into reconciliation."""
-        return await self.apply_outcome(
-            ActionUpdate(
-                action_id, lease_token, now, ActionStatus.UNKNOWN, now
+        return (
+            await self.apply_outcome(
+                ActionUpdate(
+                    action_id, lease_token, now, ActionStatus.UNKNOWN, now
+                )
             )
+            is not None
         )
 
     async def put_cached_llm(self, entry: CacheEntry) -> None:
@@ -441,6 +489,14 @@ class InMemoryRepository:
         ][:limit]
         for action in old:
             del self._actions[action.id]
+            self._superseded.discard(action.id)
+            scope = (
+                action.decision.task_id,
+                action.source_project
+                or cast("Target", action.decision.target).project
+                or "",
+            )
+            del self._task_actions[scope][action.id]
             self._messages.pop(action.identity.idempotency_key, None)
             # Identity tombstones deliberately outlive payloads.
         return len(old)

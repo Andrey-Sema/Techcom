@@ -30,8 +30,11 @@ _KEYWORDS: tuple[tuple[BlockerCategory, re.Pattern[str]], ...] = tuple(
         (
             BlockerCategory.MATERIALS,
             (
-                r"\b(?:materials?|warehouse|back[- ]?order(?:ed)?"
-                r"|shipments?|awaiting\s+parts)\b"
+                r"\bback[- ]?order(?:ed)?\b"
+                r"|\b(?:awaiting|waiting\s+(?:on|for)|missing|short\s+of)"
+                r"\b.{0,40}?\b(?:materials?|parts|shipments?)\b"
+                r"|\b(?:materials?|parts|shipments?)\b.{0,40}?"
+                r"\b(?:missing|delayed|unavailable)\b"
             ),
         ),
         (
@@ -72,6 +75,8 @@ _AMBIGUOUS_CONTEXT = re.compile(
     r"\b(?:arrived|delivered|received|available)\b"
     r"|\b(?:arrived|delivered|received|available)\b.{0,60}"
     r"\b(?:materials?|parts|shipments?)\b"
+    r"|\b(?:materials?|parts|shipments?)\b.{0,60}"
+    r"\b(?:on\s+site|in\s+stock|inspection\s+passed)\b"
     r"|\bupstream\b.{0,60}\b(?:complete(?:d)?|finished|cleared)\b"
     r"|\b(?:complete(?:d)?|finished|cleared)\b.{0,60}\bupstream\b",
     re.IGNORECASE | re.DOTALL,

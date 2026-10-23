@@ -14,6 +14,7 @@ jobs:
     environment: release
     permissions:
       contents: read
+      actions: read
       packages: write
       id-token: write
       attestations: write
@@ -21,6 +22,14 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
+      - name: Require successful CI for the exact main commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          endpoint="repos/$GITHUB_REPOSITORY/actions/workflows/ci.yaml/runs"
+          gh api "$endpoint?head_sha=$GITHUB_SHA&status=completed&per_page=10" \
+            --jq '.workflow_runs | any(.head_sha == env.GITHUB_SHA and .event == "push" and .conclusion == "success")' \
+            | grep -qx true
       - name: Registry name
         id: image
         env:

@@ -320,6 +320,11 @@ the full run with outbox states is [`samples/run_report.json`](samples/run_repor
 | `FOLLOWUP_METRICS_FILE` | unset | Write command metrics for the node_exporter textfile collector |
 | `FOLLOWUP_OPENAI_API_KEY` | unset | Only for `router`; never committed |
 
+The `.env.example` file documents settings; for CLI runs, export them
+into the shell (the CLI does not implicitly load `.env`). Docker Compose
+reads `.env` for substitution. Real-provider runs also need to expose
+`FOLLOWUP_OPENAI_API_KEY` to the process using your secret manager.
+
 Thresholds, routing and status synonyms live in [`config/`](config/).
 [`.env.example`](.env.example) lists the non-secret settings.
 
@@ -376,6 +381,24 @@ OpenAI and the CLI (`adapters/`), and composition in `bootstrap.py`.
 Details: [docs/08](docs/08-implementation-plan.md).
 
 ---
+
+## Queue freshness and deployment checks
+
+A newer processed task snapshot retires unsent actions from older states;
+a completed task cancels its queued reminders. Held actions are retired
+too. An in-flight or unknown write is still reconciled, because it may
+already have succeeded, but an obsolete action is never released for a
+retry. Already-sent messages cannot be recalled. Freshness is checked
+against snapshots the service has actually ingested, not unseen tracker
+updates. Migration `0009` applies this fence to existing queues too.
+
+`make compose-check` validates every Compose combination with synthetic
+settings. `make db-init` can be rerun without dropping the service role;
+generated database secrets are owner-readable. Docker build inputs are
+allow-listed in `.dockerignore`; extra CA certificates are optional
+build secrets and ordinary builds retain their default CA trust.
+Publishing remains manual and requires successful CI for the exact
+commit being published.
 
 ## What changes for production
 

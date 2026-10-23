@@ -4,6 +4,14 @@ Target guarantee: **effectively-once delivery** = at-least-once dispatch
 (transactional outbox) × idempotent receiver (`Idempotency-Key`) ×
 reconciliation for unknown outcomes. No silent duplicates, no silent losses.
 
+A newer ingested snapshot retires pending and held notifications from
+older task states. `Done` retires all unsent work for that task. Migration
+`0009` enforces this atomically with decision persistence. Unknown and
+in-flight outcomes remain reconcilable, and a persistent superseded bit
+prevents a failed or absent obsolete write from returning to the pending
+queue. This cannot recall a message already sent or observe a tracker
+change that has not yet been ingested.
+
 ## 1. Identity scheme
 
 | Identity | Formula | Purpose |

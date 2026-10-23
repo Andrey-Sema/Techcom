@@ -84,6 +84,9 @@ actions = sa.Table(
     sa.Column("provider_ref", sa.Text),
     sa.Column("sent_at", sa.DateTime(timezone=True)),
     sa.Column("terminal_at", sa.DateTime(timezone=True)),
+    sa.Column(
+        "superseded", sa.Boolean, nullable=False, server_default="false"
+    ),
     sa.CheckConstraint("attempts >= 0", name="actions_attempts_check"),
     sa.CheckConstraint(
         "(lease_until IS NULL) = (lease_token IS NULL)",

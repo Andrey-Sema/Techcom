@@ -1,4 +1,9 @@
-.PHONY: bootstrap quality gates semgrep semgrep-test complexity deadcode \
+SHELL := /bin/sh
+.SHELLFLAGS := -eu -c
+.DEFAULT_GOAL := help
+.DELETE_ON_ERROR:
+
+.PHONY: help db-secrets compose-check bootstrap quality gates semgrep semgrep-test complexity deadcode \
         deps audit spelling yaml workflows pyproject-check docs \
         test test-fast test-integration eval eval-test mock demo db-up db-down db-init \
         obs-secrets up-obs down-obs obs-check obs-smoke \
@@ -13,6 +18,18 @@ export ZAP_IMAGE DAST_APP_IMAGE
 # isolated, version-pinned tool environment.
 SEMGREP = uvx --python 3.13 semgrep@1.182.1
 
+help:
+	@printf '%s\n' \
+	  'make demo-check       Offline workflow and committed sample check' \
+	  'make test-fast        Offline tests; no Docker or API key' \
+	  'make test             Full suite with PostgreSQL and coverage' \
+	  'make quality          Types, lint, security and architecture' \
+	  'make gates            Additional quality and dependency gates' \
+	  'make db-init          Local database, migrations and service role' \
+	  'make image-test       Build and exercise both container images' \
+	  'make obs-smoke        Validate and exercise the monitoring stack' \
+	  'make bootstrap        Install developer tools and Git hooks'
+
 bootstrap:
 	uv sync --locked --all-packages --group gates --group docs
 	uv run --locked pre-commit install
@@ -22,7 +39,8 @@ zap:
 	uv run --locked python scripts/prepare_dast.py --check-image
 	docker pull "$(ZAP_IMAGE)"
 	uv run --locked python scripts/prepare_dast.py
-	@docker compose --env-file var/dast/scan.env -f compose.dast.yaml run --rm zap; result=$$?; docker compose --env-file var/dast/scan.env -f compose.dast.yaml down; chmod 600 var/dast/*; exit $$result
+	@trap 'docker compose --env-file var/dast/scan.env -f compose.dast.yaml down; chmod 600 var/dast/*' EXIT HUP INT TERM; \
+	  docker compose --env-file var/dast/scan.env -f compose.dast.yaml run --rm zap
 
 quality:
 	uv run --locked ruff check .
@@ -122,26 +140,42 @@ demo:
 demo-check: demo
 	uv run --locked python scripts/demo_check.py
 
-# Create secrets/postgres_password locally before starting the database.
-db-up:
+# Only this project's generated secrets; never world-readable.
+db-secrets:
+	mkdir -p secrets
+	chmod 700 secrets
+	umask 077; test -s secrets/postgres_password || $(SECRET) > secrets/postgres_password
+	umask 077; test -s secrets/service_password || $(SECRET) > secrets/service_password
+	chmod 600 secrets/postgres_password secrets/service_password
+
+db-up: db-secrets
 	docker compose up -d --wait db
 
 db-down:
 	docker compose down
 
+# Validate all deployment combinations with synthetic settings only.
+compose-check:
+	docker compose config --quiet
+	FOLLOWUP_API_ISSUER=https://issuer.example.invalid \
+	  FOLLOWUP_API_AUDIENCE=followup \
+	  FOLLOWUP_TASK_API_URL=https://tasks.example.invalid \
+	  FOLLOWUP_DELIVERY_API_URL=https://delivery.example.invalid \
+	  FOLLOWUP_ALLOWED_HOSTS='["tasks.example.invalid","delivery.example.invalid"]' \
+	  docker compose -f compose.yaml -f compose.observability.yaml \
+	    -f compose.api.yaml config --quiet
+	DAST_UID=1000 DAST_GID=1000 docker compose -f compose.dast.yaml config --quiet
+
 # Local PostgreSQL for repeated runs: generated secrets, the schema
 # (as owner) and a least-privilege login role for the service.
 SECRET = uv run --locked python -c "import secrets; print(secrets.token_urlsafe(24), end='')"
-db-init:
-	mkdir -p secrets
-	test -s secrets/postgres_password || $(SECRET) > secrets/postgres_password
-	test -s secrets/service_password || $(SECRET) > secrets/service_password
+db-init: db-secrets
 	docker compose up -d --wait db
 	FOLLOWUP_DATABASE_URL="postgresql+psycopg://followup:$$(cat secrets/postgres_password)@127.0.0.1:5432/followup" \
 	  uv run --locked alembic upgrade head
 	docker compose exec -T db psql -v ON_ERROR_STOP=1 -U followup -d followup \
-	  -c "DROP ROLE IF EXISTS followup_service" \
-	  -c "CREATE ROLE followup_service LOGIN PASSWORD '$$(cat secrets/service_password)' IN ROLE followup_app"
+	  -v "service_password=$$(cat secrets/service_password)" \
+	  < scripts/db_service_role.sql
 
 # Backup and restore of the compose database (docs/18). Dumps contain
 # personal data: owner-only files under var/backups (git-ignored).
@@ -164,7 +198,7 @@ OBS = docker compose -f compose.observability.yaml
 obs-secrets:
 	mkdir -p secrets
 	test -s secrets/grafana_admin_user || printf 'admin' > secrets/grafana_admin_user
-	test -s secrets/grafana_admin_password || \
+	umask 077; test -s secrets/grafana_admin_password || \
 	  uv run --locked python -c "import secrets; print(secrets.token_urlsafe(24), end='')" \
 	  > secrets/grafana_admin_password
 	# The directory keeps other host users out. The files must be readable
@@ -207,10 +241,10 @@ DOCKER_RUN_FLAGS ?=
 HADOLINT_IMAGE = hadolint/hadolint:v2.15.1@sha256:32dac94127fd60b7b7e3fbfc65e1383b9b5e25c9bfd7b8536de7a539fe68a12d
 TRIVY_IMAGE = aquasec/trivy:0.75.0@sha256:af6acf9a6b85dfe389a1941505c0ce9efef52a4719635e1a962f022a3d855daa
 TRIVY = docker run --rm $(DOCKER_RUN_FLAGS) \
-	  -v $(CURDIR)/Dockerfile:/scan/Dockerfile:ro \
-	  -v $(CURDIR)/var/images:/scan/images:ro \
-	  -v $(CURDIR)/var/sbom:/scan/sbom \
-	  -v $(CURDIR)/var/trivy-cache:/root/.cache/trivy $(TRIVY_IMAGE)
+	  -v "$(CURDIR)/Dockerfile:/scan/Dockerfile:ro" \
+	  -v "$(CURDIR)/var/images:/scan/images:ro" \
+	  -v "$(CURDIR)/var/sbom:/scan/sbom" \
+	  -v "$(CURDIR)/var/trivy-cache:/root/.cache/trivy" $(TRIVY_IMAGE)
 TRIVY_IMAGE_SCAN = image --exit-code 1 --severity HIGH,CRITICAL \
 	  --ignore-unfixed --scanners vuln,secret
 
@@ -220,7 +254,7 @@ images:
 
 dockerfile-lint:
 	docker run --rm -i \
-	  -v $(CURDIR)/.hadolint.yaml:/.config/hadolint.yaml:ro \
+	  -v "$(CURDIR)/.hadolint.yaml:/.config/hadolint.yaml:ro" \
 	  $(HADOLINT_IMAGE) hadolint --config /.config/hadolint.yaml - < Dockerfile
 
 image-scan: images

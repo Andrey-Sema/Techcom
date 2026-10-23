@@ -1,6 +1,8 @@
 name: techcom-dast
 services:
   app:
+    init: true
+    stop_grace_period: 30s
     image: ${DAST_APP_IMAGE:-techcom-followup:dev}
     entrypoint: [uvicorn, dast_app:create_target, --factory, --host, 0.0.0.0, --port, "8080", --no-access-log]
     command: []
@@ -22,6 +24,8 @@ services:
       retries: 20
     networks: [audit]
   probe:
+    init: true
+    stop_grace_period: 30s
     image: ${DAST_APP_IMAGE:-techcom-followup:dev}
     user: ${DAST_UID:?prepare scan.env}:${DAST_GID:?prepare scan.env}
     entrypoint: [python, /audit/dast_probe.py]
@@ -37,6 +41,8 @@ services:
       app:
         condition: service_healthy
   zap:
+    init: true
+    stop_grace_period: 30s
     image: ${ZAP_IMAGE:?set an approved ZAP image pinned by sha256}
     user: ${DAST_UID:?prepare scan.env}:${DAST_GID:?prepare scan.env}
     environment:

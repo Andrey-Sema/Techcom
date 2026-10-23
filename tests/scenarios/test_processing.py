@@ -4,7 +4,7 @@ from dataclasses import asdict, replace
 import pytest
 import stamina
 
-from processing_support import fixture_records, stack
+from processing_support import Source, fixture_records, stack
 from support import AS_OF
 from techcom_followup.application.processing_ports import DeliveryKind
 from techcom_followup.application.repository import ActionStatus, ClaimRequest
@@ -237,3 +237,29 @@ async def test_resolved_blockers_do_not_automatically_route_to_other_teams(
         assert result.decisions[0].kind is DecisionKind.FOLLOW_UP_OWNER
         assert result.decisions[0].target is not None
         assert result.decisions[0].target.name == "John Smith"
+
+
+@pytest.mark.parametrize("committed", [False, True])
+async def test_done_during_uncertain_delivery_preserves_receipt_and_audit(
+    committed: bool,
+) -> None:
+    records = fixture_records()[:1]
+    fault = "timeout_after_commit" if committed else "timeout_before_commit"
+    async with stack(records, faults=f"messages:{fault}@1") as app:
+        await app.processor.execute(as_of=AS_OF)
+        await app.dispatcher.execute()
+        assert isinstance(records[0], dict)
+        records[0]["status"] = "Done"
+        app.processor._deps = replace(
+            app.processor._deps, source=Source(records)
+        )
+        await app.processor.execute(as_of=AS_OF)
+        app.advance()
+        await app.reconciler.execute()
+        (action,) = await app.repository.list_actions()
+        expected = ActionStatus.SENT if committed else ActionStatus.DEAD
+        assert action.status is expected
+        assert await app.dispatcher.execute() == 0
+        events = await app.repository.list_audit()
+        assert events[-1].payload["status"] == expected.value
+        assert len(app.store._entries) == int(committed)

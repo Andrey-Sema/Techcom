@@ -24,6 +24,7 @@ jobs:
           enable-cache: true
       - run: uv sync --locked --all-packages
       - run: make quality
+      - run: make compose-check
       - run: uv run --locked pre-commit run --all-files
   test:
     name: test (${{ matrix.python }})
@@ -44,6 +45,12 @@ jobs:
           enable-cache: true
       - run: uv sync --locked --all-packages
       - run: make test
+      - name: Repeated operator database initialization
+        if: matrix.python == '3.14'
+        run: |
+          trap 'make db-down' EXIT
+          make db-init
+          make db-init
       - run: make eval
       - run: make eval-test
       - run: uv build --package techcom-followup --wheel
