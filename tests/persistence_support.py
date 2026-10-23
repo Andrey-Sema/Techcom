@@ -88,7 +88,8 @@ async def migrated_engine(postgres_url: str) -> AsyncIterator[AsyncEngine]:
         await connection.run_sync(upgrade)
         await connection.execute(
             text(
-                "TRUNCATE actions, decisions, runs, "
+                "TRUNCATE action_keys, api_rate_buckets, recipient_days, "
+                "recipient_admissions, actions, decisions, runs, "
                 "llm_cache, audit_events CASCADE"
             )
         )
@@ -120,4 +121,5 @@ async def action_write(
         fingerprint,
         ActionIdentity.of(decision, fingerprint),
         compose(decision, task, AS_OF),
+        source_project=task.project,
     )

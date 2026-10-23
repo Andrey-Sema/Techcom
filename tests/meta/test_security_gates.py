@@ -117,6 +117,7 @@ def test_sboms_are_built_and_kept_as_artefacts() -> None:
     ]
     assert uploads == [
         "var/sbom/techcom-followup.cdx.json",
+        "var/bench/results.json",
         "var/sbom/runtime-image.cdx.json",
     ]
 

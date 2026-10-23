@@ -93,6 +93,9 @@ def _to_task(record: object, as_of: date) -> Task | RejectedRecord:
     task_id = _task_id(record.get("task_id"))
     if task_id is None:
         return RejectedRecord(0, None, "invalid_task_id")
+    project = _project(record.get("project"))
+    if project is None:
+        return RejectedRecord(0, task_id, "noncanonical_project")
     flags: set[Flag] = set()
     due_date = _date(record.get("due_date"), Flag.INVALID_DUE_DATE, flags)
     last_update = _date(
@@ -105,7 +108,7 @@ def _to_task(record: object, as_of: date) -> Task | RejectedRecord:
         flags.add(Flag.NOTE_TRUNCATED)
     return Task(
         task_id=task_id,
-        project=_label(record.get("project")),
+        project=project,
         title=_label(record.get("task"), MAX_TITLE_CHARS),
         owner=_owner(record.get("assigned_to")),
         due_date=due_date,
@@ -137,6 +140,14 @@ def _owner(value: object) -> str | None:
         return None
     owner = clean_line(value, MAX_NAME_CHARS)
     return None if fold(owner) in _NO_OWNER else owner
+
+
+def _project(value: object) -> str | None:
+    """Preserve authority; reject lossy display aliases."""
+    label = _label(value)
+    if isinstance(value, str) and label not in {UNKNOWN_LABEL, value}:
+        return None
+    return label
 
 
 def _label(value: object, max_chars: int = MAX_NAME_CHARS) -> str:

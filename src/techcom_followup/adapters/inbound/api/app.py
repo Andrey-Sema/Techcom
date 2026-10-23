@@ -30,10 +30,13 @@ from techcom_followup.adapters.inbound.api.models import (
 from techcom_followup.adapters.inbound.api.observability import Observer
 from techcom_followup.adapters.inbound.api.ports import (
     Clock,
+    RequestLimiter,
     RunService,
     SecurityEvent,
 )
-from techcom_followup.adapters.inbound.api.rate_limit import RateLimiter
+from techcom_followup.adapters.inbound.api.rate_limit import (
+    LocalRequestLimiter,
+)
 from techcom_followup.adapters.inbound.api.security import (
     AuthenticationError,
     Principal,
@@ -62,6 +65,7 @@ class _Resources:
     clock: Clock
     settings: ApiSettings
     observer: Observer
+    limiter: RequestLimiter
 
 
 def _correlation(request: Request) -> UUID:
@@ -111,12 +115,6 @@ class _Handlers:
 
     def __init__(self, resources: _Resources) -> None:
         self.resources = resources
-        self._requests = RateLimiter(
-            resources.settings, resources.clock.monotonic
-        )
-        self._failures = RateLimiter(
-            resources.settings, resources.clock.monotonic
-        )
         self._trigger_lock = asyncio.Lock()
 
     def event(
@@ -138,19 +136,22 @@ class _Handlers:
             return cached
         headers = request.headers.getlist("authorization")
         if len(headers) != 1 or not headers[0].startswith("Bearer "):
-            self._unauthenticated(request)
+            await self._unauthenticated(request)
         try:
             principal = self.resources.verifier.verify(
                 headers[0][len("Bearer ") :], self.resources.clock.now()
             )
         except AuthenticationError:
-            self._unauthenticated(request)
-        if not self._requests.allow(principal.actor_id):
+            await self._unauthenticated(request)
+        if not await self.resources.limiter.allow(
+            "requests", principal.actor_id
+        ):
             self.event(
                 request, "security.rate_limited", 429, principal.actor_id
             )
             raise HTTPException(
-                429, headers={"Retry-After": self._requests.retry_after}
+                429,
+                headers={"Retry-After": self.resources.limiter.retry_after},
             )
         self.event(
             request, "security.authn_succeeded", 200, principal.actor_id
@@ -170,13 +171,14 @@ class _Handlers:
         self.scope(request, principal, _required_scope(request.method, path))
         request.state.api_principal = principal
 
-    def _unauthenticated(self, request: Request) -> NoReturn:
+    async def _unauthenticated(self, request: Request) -> NoReturn:
         peer = request.client.host if request.client is not None else "unknown"
         key = hashlib.sha256(peer.encode()).hexdigest()
-        if not self._failures.allow(key):
+        if not await self.resources.limiter.allow("failures", key):
             self.event(request, "security.rate_limited", 429)
             raise HTTPException(
-                429, headers={"Retry-After": self._failures.retry_after}
+                429,
+                headers={"Retry-After": self.resources.limiter.retry_after},
             )
         self.event(request, "security.authn_failed", 401)
         raise HTTPException(401, headers={"WWW-Authenticate": "Bearer"})
@@ -245,8 +247,12 @@ class _Handlers:
         if not decisions or stats.get("decisions") != len(decisions):
             return False
         return all(
-            row.write.decision.target is not None
-            and principal.can_access(row.write.decision.target.project)
+            row.write.source_project is not None
+            and principal.can_access(row.write.source_project)
+            and (
+                row.write.decision.target is None
+                or principal.can_access(row.write.decision.target.project)
+            )
             for row in decisions
         )
 
@@ -274,6 +280,7 @@ class _Handlers:
             for action in actions
             if (target := action.decision.target) is not None
             and principal.can_access(target.project)
+            and principal.can_access(action.source_project)
         ]
 
 
@@ -353,7 +360,8 @@ def _errors(app: FastAPI, handlers: _Handlers) -> None:
     app.add_exception_handler(RequestValidationError, http_error)
 
 
-def create_app(
+# Keyword-only collaborators; the limiter adds shared windows.
+def create_app(  # noqa: PLR0913
     *,
     repository: Repository,
     runner: RunService,
@@ -361,6 +369,7 @@ def create_app(
     clock: Clock,
     settings: ApiSettings | None = None,
     observer: Observer | None = None,
+    limiter: RequestLimiter | None = None,
 ) -> FastAPI:
     """Build an API from explicit application dependencies."""
     configured = settings if settings is not None else ApiSettings()
@@ -371,6 +380,9 @@ def create_app(
         clock,
         configured,
         observer if observer is not None else Observer(),
+        limiter
+        if limiter is not None
+        else LocalRequestLimiter(configured, clock.monotonic),
     )
     handlers = _Handlers(resources)
     app = FastAPI(

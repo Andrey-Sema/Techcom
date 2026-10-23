@@ -3,9 +3,8 @@
 The run is composed like ``bootstrap.py`` composes ``followup run``:
 PostgreSQL 18 repository and advisory lock, the note interpreter on the
 offline stub (every model call fails fast, so ambiguous notes take the
-fallback path) and template drafts. The budgets are regression guards
-(first run and rerun < 120 s, peak RSS < 300 MB); the original targets
-of 60 s and 30 s are not met, see ``docs/benchmarks.md``. Results are
+fallback path) and template drafts. The budgets are acceptance gates
+(first run < 60 s, rerun < 30 s, peak RSS < 300 MB). Results are
 written to ``var/bench/results.json``.
 """
 
@@ -32,6 +31,7 @@ from techcom_followup.adapters.outbound.run_lock import PgRunLock
 from techcom_followup.application.drafter import MessageDrafter
 from techcom_followup.application.interpreter import NoteInterpreter
 from techcom_followup.application.process_tasks import (
+    DEFAULT_WRITE_CONCURRENCY,
     ProcessingDependencies,
     ProcessTasks,
     RunReport,
@@ -41,8 +41,9 @@ pytestmark = pytest.mark.bench
 __all__ = ["postgres_url"]
 
 TASKS = 10_000
-FIRST_RUN_BUDGET_S = 120.0
-RERUN_BUDGET_S = 120.0
+WRITERS = DEFAULT_WRITE_CONCURRENCY
+FIRST_RUN_BUDGET_S = 60.0
+RERUN_BUDGET_S = 30.0
 RSS_BUDGET_MB = 300.0
 RESULTS = ROOT / "var" / "bench" / "results.json"
 
@@ -123,6 +124,7 @@ def processor(
             due_soon_days=policy.due_soon_days,
         ),
         drafter=MessageDrafter(None),
+        write_concurrency=WRITERS,
     )
 
 
@@ -131,7 +133,17 @@ async def engine(postgres_url: str) -> AsyncIterator[AsyncEngine]:
     async with migrated_engine(postgres_url):
         pass
     # The pooled engine that bootstrap.py builds for "followup run".
-    pooled = create_async_engine(postgres_url, pool_pre_ping=True)
+    pooled = create_async_engine(
+        postgres_url,
+        pool_pre_ping=True,
+        pool_size=WRITERS + 2,
+        max_overflow=0,
+        pool_timeout=5,
+        isolation_level="READ COMMITTED",
+        connect_args={
+            "options": "-c statement_timeout=15000 -c lock_timeout=5000"
+        },
+    )
     try:
         yield pooled
     finally:
@@ -166,6 +178,7 @@ async def test_ten_thousand_tasks_within_budget(engine: AsyncEngine) -> None:
         "python": platform.python_version(),
         "machine": platform.machine(),
         "cpus": os.cpu_count(),
+        "write_concurrency": WRITERS,
     }
     RESULTS.parent.mkdir(parents=True, exist_ok=True)
     RESULTS.write_text(json.dumps(results, indent=2) + "\n", encoding="utf-8")

@@ -185,7 +185,14 @@ async def seed_run(
             compose(decision, task, AS_OF) if decision.actionable else None
         )
         await harness.repo.record_decision(
-            DecisionWrite(run.id, decision, fingerprint, identity, message),
+            DecisionWrite(
+                run.id,
+                decision,
+                fingerprint,
+                identity,
+                message,
+                source_project=None if quiet else project,
+            ),
             NOW,
         )
     if finish:

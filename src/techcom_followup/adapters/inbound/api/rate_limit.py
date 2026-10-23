@@ -61,3 +61,27 @@ class RateLimiter:
             return False
         bucket.tokens -= 1
         return True
+
+
+class LocalRequestLimiter:
+    """Single-process fallback for tests and local composition."""
+
+    def __init__(
+        self, settings: ApiSettings, monotonic: Callable[[], float]
+    ) -> None:
+        """Keep separate bounded success and failure buckets."""
+        self._requests = RateLimiter(settings, monotonic)
+        self._failures = RateLimiter(settings, monotonic)
+
+    @property
+    def retry_after(self) -> str:
+        """Return the local token refill interval."""
+        return self._requests.retry_after
+
+    async def allow(self, namespace: str, actor_id: str) -> bool:
+        """Keep successful and failed admission in separate buckets."""
+        if namespace not in {"requests", "failures"}:
+            message = "unknown admission namespace"
+            raise ValueError(message)
+        limiter = self._requests if namespace == "requests" else self._failures
+        return limiter.allow(actor_id)

@@ -86,8 +86,8 @@ ENV PATH="/opt/venv/bin:${PATH}" \
     PYTHONBREAKPOINT=0
 WORKDIR /app
 USER 10001:10001
-# The CLI runs one command per container (run, dispatch, reconcile,
-# report); a HEALTHCHECK belongs to the long-running REST API (M6b).
+# The CLI runs one command per container. compose.api.yaml overrides the
+# entrypoint with followup-api and supplies its readiness HEALTHCHECK.
 # Migrations: docker run --rm --entrypoint alembic IMAGE upgrade head
 ENTRYPOINT ["followup"]
 CMD ["--help"]

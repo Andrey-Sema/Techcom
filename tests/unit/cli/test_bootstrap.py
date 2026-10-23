@@ -59,7 +59,15 @@ async def test_database_engine_is_owned_and_closed_even_on_command_failure(
         await fail_command()
     assert settings.database_url is not None
     create_engine.assert_called_once_with(
-        settings.database_url.get_secret_value(), pool_pre_ping=True
+        settings.database_url.get_secret_value(),
+        pool_pre_ping=True,
+        pool_size=settings.write_concurrency + 2,
+        max_overflow=0,
+        pool_timeout=5,
+        isolation_level="READ COMMITTED",
+        connect_args={
+            "options": "-c statement_timeout=15000 -c lock_timeout=5000"
+        },
     )
     engine.dispose.assert_awaited_once()
 

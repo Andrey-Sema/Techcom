@@ -3,7 +3,7 @@
 import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from random import SystemRandom
 from typing import Protocol
 
@@ -61,6 +61,14 @@ class DeliveryBreaker(Protocol):
         ...
 
 
+class DeliveryQuota(Protocol):
+    """Durable admission before delivery, shared across dispatchers."""
+
+    async def allow(self, action: ActionRecord, now: datetime) -> bool:
+        """Reserve an operation once per recipient and UTC day."""
+        ...
+
+
 @dataclass(frozen=True, slots=True)
 class _Admission:
     breaker: DeliveryBreaker
@@ -78,6 +86,7 @@ class DispatchActions:
         retry: RetryPolicy | None = None,
         jitter: Callable[[], float] = _RANDOM.random,
         breaker: DeliveryBreaker | None = None,
+        quota: DeliveryQuota | None = None,
     ) -> None:
         """Inject live kill switch, bounded retry policy and breaker."""
         self._deps = dependencies
@@ -85,6 +94,7 @@ class DispatchActions:
         self._retry = retry if retry is not None else RetryPolicy()
         self._jitter = jitter
         self._breaker = breaker
+        self._quota = quota
         self._stopping = False
 
     def stop(self) -> None:
@@ -111,26 +121,48 @@ class DispatchActions:
             )
             if not claimed:
                 break
-            if not await self._dispatch_claim(claimed[0], admitted):
+            attempted = await self._dispatch_claim(claimed[0], admitted)
+            if attempted is None:
                 break
-            completed += 1
+            completed += int(attempted)
         return completed
 
     async def _dispatch_claim(
         self, action: ActionRecord, budget: RetryBudget
-    ) -> bool:
+    ) -> bool | None:
         if not self._can_claim():
             await self._defer(action, "dispatch_stopped")
-            return False
+            return None
         if action.attempts > 1 and not budget.take():
             await self._defer(action, "retry_budget")
-            return False
+            return None
         allowed, admission = self._admit()
         if not allowed:
             await self._defer(action, "circuit_open")
-            return False
-        await self._deliver(action, admission)
-        return True
+            return None
+        reserved = await self._reserve_quota(action, admission)
+        if reserved:
+            await self._deliver(action, admission)
+        return reserved
+
+    async def _reserve_quota(
+        self, action: ActionRecord, admission: _Admission | None
+    ) -> bool:
+        if self._quota is None:
+            return True
+        try:
+            reserved = await self._quota.allow(action, self._deps.clock.now())
+        except BaseException:
+            if admission is not None:
+                admission.breaker.abandon(admission.permit)
+            await asyncio.shield(self._release(action))
+            raise
+        if reserved:
+            return True
+        if admission is not None:
+            admission.breaker.abandon(admission.permit)
+        await self._defer(action, "recipient_limit")
+        return False
 
     def _admit(self) -> tuple[bool, _Admission | None]:
         if self._breaker is None:
@@ -145,13 +177,17 @@ class DispatchActions:
             message = "repository returned an unfenced action"
             raise ValueError(message)
         now = self._deps.clock.now()
+        next_attempt = now + timedelta(seconds=self._retry.base_seconds)
+        if error == "recipient_limit":
+            tomorrow = now.astimezone(UTC).date() + timedelta(days=1)
+            next_attempt = datetime.combine(tomorrow, datetime.min.time(), UTC)
         await self._deps.repository.defer_claim(
             ActionUpdate(
                 action.id,
                 action.lease_token,
                 now,
                 ActionStatus.PENDING,
-                now + timedelta(seconds=self._retry.base_seconds),
+                next_attempt,
                 error=error,
             )
         )

@@ -3,9 +3,12 @@
         test test-fast test-integration eval eval-test mock demo db-up db-down \
         obs-secrets up-obs down-obs obs-check obs-smoke \
         images dockerfile-lint image-scan image-test mutation sbom \
-        secrets-scan secrets-staged secrets-repo-check bench demo-check db-backup db-restore
+        secrets-scan secrets-staged secrets-repo-check bench demo-check db-backup db-restore zap
 
 GATES = uv run --locked --group gates
+ZAP_IMAGE ?= ghcr.io/zaproxy/zaproxy:stable@sha256:5ccfff9a411743ab2615136a2edd7416bec9ce41572fa94e935df38c14adb2b6
+DAST_APP_IMAGE ?= $(IMAGE)
+export ZAP_IMAGE DAST_APP_IMAGE
 # Semgrep conflicts with the project's dependency set, so it runs in an
 # isolated, version-pinned tool environment.
 SEMGREP = uvx --python 3.13 semgrep@1.182.1
@@ -13,6 +16,13 @@ SEMGREP = uvx --python 3.13 semgrep@1.182.1
 bootstrap:
 	uv sync --locked --all-packages --group gates --group docs
 	uv run --locked pre-commit install
+
+# Opt-in DAST targets only the isolated synthetic service, never production.
+zap:
+	uv run --locked python scripts/prepare_dast.py --check-image
+	docker pull "$(ZAP_IMAGE)"
+	uv run --locked python scripts/prepare_dast.py
+	@docker compose --env-file var/dast/scan.env -f compose.dast.yaml run --rm zap; result=$$?; docker compose --env-file var/dast/scan.env -f compose.dast.yaml down; chmod 600 var/dast/*; exit $$result
 
 quality:
 	uv run --locked ruff check .
