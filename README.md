@@ -125,7 +125,7 @@ See [ADR-0017](docs/adr/0017-llm-output-and-notification-boundaries.md).
 The assignment asks for an LLM that interprets notes and drafts messages
 without inventing facts. This service goes further: the model
 **orchestrates the follow-up** (it chooses the action, the recipient, the
-priority and the wording, and can escalate an unanswered task), while
+priority and the wording, and can escalate an previously notified overdue task), while
 every step is constrained, validated and audited by code.
 
 ### What the model decides, and what code decides
@@ -135,8 +135,8 @@ every step is constrained, validated and audited by code.
 | Whether a task needs attention at all | Which allowed action fits: follow up, request an ETA, clarify, escalate |
 | The envelope of allowed actions and recipients | Which allowed recipient: owner, coordinator, manager, assigned team |
 | Every fact: names, dates, IDs, days overdue | Priority (it may raise it, never lower it) |
-| Deduplication, delivery, retries | The message wording, around placeholders |
-| Final approval of the plan | A rationale and evidence quoted from the note |
+| Deduplication, delivery, retries | One of the reviewed message phrasings |
+| Final approval of the plan | A proposed choice and evidence quoted from the note |
 
 ### The loop
 
@@ -174,7 +174,7 @@ network. The outbox is the only executor.
 | no action | the model is not called |
 
 First contacts therefore always follow the brief's routing; the model's
-extra authority is to chase an unanswered task up the chain.
+extra authority is to chase an previously notified overdue task up the chain.
 
 ### The guard
 
@@ -198,8 +198,8 @@ from task data; the model only chooses words.
 - Invalid JSON, an unknown tool, a timeout, an open circuit breaker, an
   exhausted daily budget or a plan that never passes the guard all fall
   back to the **baseline action and its template** (`llm_fallback` flag).
-- A note flagged by the injection screen is **withheld** from the model.
-- The model never sees personal names; recipients are opaque references.
+- A note is **withheld** if notes, title or project contain screened instructions.
+- Recipients are opaque references; display fields are omitted and contacts in notes are redacted. Notes can still contain personal names.
 - Each plan stores the baseline next to the chosen decision, a bounded
   rationale, and an audit trace with the tools used, step count,
   violation codes and outcome, in the same transaction as the decision.
@@ -263,7 +263,7 @@ A record from [`samples/decisions.json`](samples/decisions.json):
   "rule_id": "R5+agent",
   "baseline": {"decision": "request_eta", "rule_id": "R5"},
   "reason": "Blocked by materials; 3 day(s) overdue; delivery date unknown.",
-  "rationale": "The baseline action fits the facts.",
+  "rationale": "Selected request_eta for assigned_team within the policy envelope.",
   "flags": ["agent_planned"],
   "message": {
     "subject": "Delivery ETA needed for TC-1002: Install handholes",

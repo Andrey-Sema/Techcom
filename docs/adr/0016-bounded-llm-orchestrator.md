@@ -3,6 +3,8 @@
 * Status: Accepted (extends ADR-0004 and ADR-0005)
 * Date: 2026-10-23
 
+Message wording, privacy and dedupe boundaries are narrowed by ADR-0017.
+
 ## Context
 
 ADR-0004 kept the model on a fixed path: classify a note, then pick one

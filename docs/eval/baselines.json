@@ -24,5 +24,12 @@
     "report_sha256": "4dbdbc18f325dcb6c1d6159064ba46e36986b8636ca8f93da4ca534109f6d6b7",
     "bundle": "tests/eval/bundles/postfix.v1",
     "status": "Archived synthetic evidence; superseded after integration of the main branch."
+  },
+  "postfix.v2": {
+    "pipeline_commit": "445e7d70c67189b87f639da06c9938d527455dbb",
+    "report": "docs/eval/interp.v1-draft.v2-postfix.v2.md",
+    "report_sha256": "ebe35e5c101ee99829fe3ce2bf4c325b7749331c899c7b746cbc346a748450d0",
+    "bundle": "tests/eval/bundles/postfix.v2",
+    "status": "Archived synthetic evidence; superseded by hardening.v1. Labels unchanged."
   }
 }

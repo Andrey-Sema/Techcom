@@ -207,7 +207,7 @@ never to a state change.
 
 | Layer | Control |
 |-------|---------|
-| Capability | LLM has no tools; no port can mutate task state (LLM06 Excessive Agency). |
+| Capability | Planning tools are read-only; no port can mutate task state (LLM06 Excessive Agency). |
 | Output | Closed schema, strict validation, grounding, message rules (LLM05 Improper Output Handling). |
 | Input | `UntrustedText` type, tag isolation with escaping, truncation. |
 | Detection | `InjectionScreen` regex/heuristics (`ignore (all\|previous) instructions`, `system prompt`, `you are now`, `mark .* (complete\|done)`, `disregard`, role-tag lookalikes) → flag + audit + no LLM call for that note. Detection is a *signal*, not the defence — the layers above hold even if detection misses. |
@@ -275,3 +275,14 @@ baseline, so reruns never call the model or send twice.
 `outcome ∈ {enqueued, duplicate_suppressed, none}`; a second run over
 unchanged data yields `duplicate_suppressed` for every actionable task and
 **zero** new delivery-log lines.
+
+## Security boundary update (ADR-0017)
+
+The orchestrator now selects exact reviewed message pairs rather than free
+prose. Code renders facts and records the accepted choice in a code-owned
+rationale. Evidence must occur in both original and visible redacted
+notes. Task title/project are omitted from the model context; all tracker
+text surfaces are screened. A materials interpretation with needs_eta=false
+uses a dedicated progress follow-up, not an assertion of unknown ETA.
+Durable source-state slots prevent classification changes from creating
+a second notification. See ADR-0017 for migration prerequisites and risks.
