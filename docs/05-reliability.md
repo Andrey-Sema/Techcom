@@ -12,6 +12,24 @@ prevents a failed or absent obsolete write from returning to the pending
 queue. This cannot recall a message already sent or observe a tracker
 change that has not yet been ingested.
 
+Source ordering is separate from notification identity. Migration `0010`
+keeps a non-prunable `(task_id, project)` watermark, including `no_action`.
+A provably older source version produces a `stale_suppressed` receipt and
+cannot enqueue an action, consume an identity or retire current work.
+Full timestamps compare in UTC; date-only updates cannot establish order
+within that day. Equal and same-day coarse versions retain observation
+order. A precise watermark is never replaced by a coarse same-day value.
+
+Once a version is known, an unversioned observation may replay the same
+fingerprint (including a time-driven policy escalation), but cannot replace
+it with different facts. Until a source supplies a version, arrival order
+is the only available ordering. Legacy receipts did not retain source
+versions: upgrade cannot reconstruct their order, so the first versioned
+observation establishes the watermark. A genuinely newer reopening is
+allowed; existing one-notification-per-state identity semantics still apply.
+Watermarks outlive payload retention; populated watermarks block downgrade
+rather than silently discard this guarantee.
+
 ## 1. Identity scheme
 
 | Identity | Formula | Purpose |
@@ -37,7 +55,7 @@ without changing its state does not re-notify.
 | Per-task persist: decision + action(`pending`) | **one TX per task** (`INSERT … ON CONFLICT (idempotency_key) DO NOTHING RETURNING id`) | Either both rows exist or neither; rerun recreates the same key. |
 | Claim batch | short TX (`FOR UPDATE SKIP LOCKED`, set `in_flight`, lease and fencing token) | Lease expiry or cancellation → `unknown`; lookup before resend. |
 | HTTP send | **outside** any DB TX | Never hold DB locks during network I/O. |
-| Apply outcome | short TX | Lost update → lease expiry → resend with same key → receiver replays. |
+| Apply outcome + result audit | one short TX, only for the current lease token | Both commit or neither; an uncertain operation is reconciled before another send. |
 
 ## 3. Retry policy
 
@@ -157,3 +175,16 @@ Debugging recipe for "a message was sent twice" (live-review drill):
 differ, the fingerprint changed (diff the two `decisions` rows) → if keys are
 equal, the receiver dedupe failed (mock bug) → audit trail shows each
 attempt and outcome in order.
+
+## Review corrections (2026-10-24)
+
+Duplicate reports reuse the saved decision, message, baseline and plan audit
+together. Their source version is taken from the current observation, so a
+retained plan never downgrades the source watermark. Expired payloads remain
+identity-only tombstones and still cannot buy a new delivery.
+
+Delivery and reconciliation commit their effective status and audit receipt
+in the same repository transaction. A superseded retry records `dead`, even
+if the caller proposed `pending`; a lost fence records no success. Audit
+insert failure rolls back the result. Cancellation releases the uncertain
+claim for lookup, not an immediate resend.

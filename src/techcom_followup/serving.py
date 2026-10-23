@@ -158,7 +158,8 @@ async def _check_storage(engine: AsyncEngine) -> None:
     async with engine.connect() as connection:
         await connection.execute(
             text(
-                "SELECT d.source_project,d.source_position,a.terminal_at "
+                "SELECT d.source_project,d.source_position,a.terminal_at,"
+                "a.superseded "
                 "FROM public.decisions d CROSS JOIN public.actions a LIMIT 0"
             )
         )
@@ -167,6 +168,8 @@ async def _check_storage(engine: AsyncEngine) -> None:
                 "SELECT has_function_privilege(current_user, "
                 "'public.admit_api_request(text,text,integer,"
                 "double precision,integer)', 'EXECUTE') "
+                "AND has_function_privilege(current_user, "
+                "'public.accept_source_version()', 'EXECUTE') "
                 "AND NOT has_table_privilege("
                 "current_user,'public.action_keys',"
                 "'INSERT,UPDATE,DELETE,TRUNCATE') "

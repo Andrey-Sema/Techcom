@@ -10,6 +10,7 @@ from datetime import date
 from enum import StrEnum
 from typing import NewType, Self
 
+from techcom_followup.domain.source_version import SourceVersion
 from techcom_followup.domain.text import clean_block
 
 TaskId = NewType("TaskId", str)
@@ -143,6 +144,7 @@ class Task:
     last_update: date | None
     notes: UntrustedText
     flags: frozenset[Flag] = frozenset()
+    source_version: SourceVersion | None = None
 
     def days_until_due(self, as_of: date) -> int | None:
         """Return ``due_date - as_of`` in days (negative = overdue)."""

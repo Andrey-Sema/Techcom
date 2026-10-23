@@ -30,11 +30,12 @@ without reviewing the actual requests and independently labelled notes.
 There is intentionally no automatic relabelling or response regeneration
 command that could silently make expected results match implementation.
 
-The cleanup revision changed the harness docstring, which is included in
-the source digest. All 95 cases and exact request bindings were reviewed
-and replayed before refreshing the current manifest and report. Notes,
-independent labels, recordings and gate thresholds remain unchanged; the
-source reference now identifies that cleanup revision.
+The review correction narrowed confident keyword bypasses for conditional
+and example notes and retained precise source ordering outside policy dates.
+All 95 cases and exact request bindings were replayed before refreshing
+the current manifest and report. Notes, independent labels, recordings and
+gate thresholds remain unchanged. New conditional-note regressions are
+separate tests, not synthetic provider-quality evidence.
 
 Exit codes are 0 for passed contract gates, 1 for failed gates, and 2 for an
 invalid bundle or unmet provider-input requirement. Gates require seven-class

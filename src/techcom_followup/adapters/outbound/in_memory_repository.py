@@ -7,7 +7,7 @@ from dataclasses import replace
 from datetime import date, datetime
 from heapq import nsmallest
 from itertools import islice
-from typing import cast
+from typing import TYPE_CHECKING, cast
 from uuid import UUID, uuid4
 
 from pydantic import JsonValue
@@ -24,16 +24,21 @@ from techcom_followup.application.repository import (
     ClaimRequest,
     DecisionOutcome,
     DecisionWrite,
+    DeliveryAuditKind,
     OutboxStatus,
     PruneCounts,
     RetentionCutoffs,
     RunRecord,
     StoredDecision,
+    outcome_event,
     require_aware,
     review_event,
 )
 from techcom_followup.domain.messages import MessageDraft
 from techcom_followup.domain.models import DecisionKind, Target
+
+if TYPE_CHECKING:
+    from techcom_followup.domain.source_version import SourceVersion
 
 _TERMINAL = frozenset({ActionStatus.SENT, ActionStatus.DEAD})
 
@@ -52,6 +57,10 @@ class InMemoryRepository:
         self._keys: set[str] = set()
         self._notification_slots: set[tuple[str, str, str, str]] = set()
         self._messages: dict[str, MessageDraft] = {}
+        self._plans: dict[str, DecisionWrite] = {}
+        self._versions: dict[
+            tuple[str, str], tuple[SourceVersion | None, str]
+        ] = {}
         self._cache: dict[str, CacheEntry] = {}
         self._audit: list[AuditEvent] = []
 
@@ -103,10 +112,16 @@ class InMemoryRepository:
         self, write: DecisionWrite, now: datetime, key: tuple[UUID, str]
     ) -> StoredDecision:
         identity, draft = write.identity, write.message
-        self._supersede(write, now)
-        outcome = DecisionOutcome.NONE
+        accepted = self._accept_version(write)
+        if accepted:
+            self._supersede(write, now)
+        outcome = (
+            DecisionOutcome.NONE
+            if accepted
+            else DecisionOutcome.STALE_SUPPRESSED
+        )
         decision_id = uuid4()
-        if identity is not None and draft is not None:
+        if identity is not None and draft is not None and accepted:
             outcome = DecisionOutcome.DUPLICATE_SUPPRESSED
             slot = write.notification_slot()
             if (
@@ -132,6 +147,7 @@ class InMemoryRepository:
                 self._keys.add(identity.idempotency_key)
                 self._notification_slots.add(slot)
                 self._messages[identity.idempotency_key] = draft
+                self._plans[identity.idempotency_key] = deepcopy(write)
             else:
                 # Keep aliases as tombstones too: a changed classifier
                 # must not buy another model plan on every later run.
@@ -148,6 +164,25 @@ class InMemoryRepository:
             )
         )
         return stored
+
+    def _accept_version(self, write: DecisionWrite) -> bool:
+        scope = write.notification_slot()[:2]
+        previous, fingerprint = self._versions.get(scope, (None, ""))
+        candidate = write.source_version
+        if candidate is None and previous is None:
+            return True
+        if previous is not None and (
+            (candidate is None and fingerprint != write.fingerprint)
+            or (candidate is not None and candidate.older_than(previous))
+        ):
+            return False
+        version = (
+            candidate
+            if candidate is not None and candidate.advances(previous)
+            else previous
+        )
+        self._versions[scope] = version, write.fingerprint
+        return True
 
     def _supersede(self, write: DecisionWrite, now: datetime) -> None:
         scope = write.notification_slot()[:2]
@@ -231,6 +266,17 @@ class InMemoryRepository:
         return {
             key: self._messages.get(key) for key in keys if key in self._keys
         }
+
+    async def get_action_plans(
+        self, keys: tuple[str, ...]
+    ) -> Mapping[str, DecisionWrite | None]:
+        """Keep the saved decision, message and plan audit together."""
+        if len(keys) > MAX_BATCH_SIZE:
+            message = "plan lookup exceeds the batch bound"
+            raise ValueError(message)
+        return deepcopy(
+            {key: self._plans.get(key) for key in keys if key in self._keys}
+        )
 
     async def query_actions(
         self, query: ActionReadQuery
@@ -357,7 +403,12 @@ class InMemoryRepository:
             self._actions.update((action.id, action) for action in claimed)
             return claimed
 
-    async def apply_outcome(self, update: ActionUpdate) -> ActionStatus | None:
+    async def apply_outcome(
+        self,
+        update: ActionUpdate,
+        *,
+        audit_kind: DeliveryAuditKind | None = None,
+    ) -> ActionStatus | None:
         """Fence late workers, terminal rows and expired claims."""
         update.validate()
         async with self._lock:
@@ -367,6 +418,13 @@ class InMemoryRepository:
             if action is None:
                 return None
             update = self._fence_retry(action.id, update)
+            event = (
+                None
+                if audit_kind is None
+                else outcome_event(
+                    action, update.now, update.status, audit_kind
+                )
+            )
             self._actions[action.id] = replace(
                 action,
                 status=update.status,
@@ -380,6 +438,8 @@ class InMemoryRepository:
                 else None,
                 terminal_at=update.now if update.status in _TERMINAL else None,
             )
+            if event is not None:
+                self._audit.append(event)
             return update.status
 
     def _owned(
@@ -498,6 +558,7 @@ class InMemoryRepository:
             )
             del self._task_actions[scope][action.id]
             self._messages.pop(action.identity.idempotency_key, None)
+            self._plans.pop(action.identity.idempotency_key, None)
             # Identity tombstones deliberately outlive payloads.
         return len(old)
 

@@ -355,8 +355,12 @@ OpenAI and the CLI (`adapters/`), and composition in `bootstrap.py`.
 - **One follow-up per task state.** The dedupe key covers task, action,
   recipient and the decision-relevant state (status, due date, owner,
   notes); touching `last_update` alone does not re-notify.
-- **Strict dates.** Only ISO dates are accepted; anything else counts as
+- **Strict dates.** Only ISO dates/datetimes are accepted; anything else counts as
   missing and triggers a clarification instead of a guess.
+- **Source freshness.** A separate source timestamp watermark rejects older
+  snapshots, including after `Done`; newer versions can reopen work.
+  Date-only and equal versions cannot establish intra-day order
+  ([reliability details](docs/05-reliability.md)).
 - **PostgreSQL instead of a broker.** The outbox, `SKIP LOCKED` claims and
   advisory locks cover the workload without Redis or Celery (ADR-0002).
 - **Intents over prose.** The model chooses what to ask and how firmly;
