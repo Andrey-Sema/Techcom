@@ -58,9 +58,24 @@ class DecisionWrite:
     message: MessageDraft | None = None
     source_project: str | None = None
     source_position: int | None = None
+    baseline: Decision | None = None
+    plan_audit: Mapping[str, JsonValue] | None = None
+
+    def audit_payload(self, decision_id: UUID) -> dict[str, JsonValue]:
+        """Return the decision receipt, with the plan trace if any."""
+        payload: dict[str, JsonValue] = {"decision_id": str(decision_id)}
+        if self.plan_audit is not None:
+            payload["plan"] = dict(self.plan_audit)
+        return payload
 
     def validate(self) -> None:
-        """Reject partial actions or a forged operation identity."""
+        """Reject partial actions or a forged operation identity.
+
+        A planned action keeps the identity of its policy ``baseline``:
+        the slot belongs to the task state, so a model choosing another
+        allowed action on a rerun cannot create a second outbound
+        message for the same state.
+        """
         self._validate_source()
         actionable = self.decision.actionable
         if actionable != (
@@ -71,10 +86,21 @@ class DecisionWrite:
         if not actionable and (self.identity or self.message):
             message = "quiet decisions cannot carry an action"
             raise ValueError(message)
+        self._validate_slot(actionable=actionable)
+
+    def _validate_slot(self, *, actionable: bool) -> None:
+        slot = self.decision if self.baseline is None else self.baseline
         if actionable and self.identity != ActionIdentity.of(
-            self.decision, self.fingerprint
+            slot, self.fingerprint
         ):
             message = "action identity does not match decision and state"
+            raise ValueError(message)
+        if self.baseline is not None and (
+            self.baseline.task_id != self.decision.task_id
+            or not self.baseline.actionable
+            or not actionable
+        ):
+            message = "a planned action must refine an actionable baseline"
             raise ValueError(message)
 
     def _validate_source(self) -> None:

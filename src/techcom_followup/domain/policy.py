@@ -174,6 +174,11 @@ class DecisionPolicy:
         return self._config.version
 
     @property
+    def routing(self) -> RoutingTable:
+        """Share the recipient table with the action envelope."""
+        return self._routing
+
+    @property
     def due_soon_days(self) -> int:
         """Share the decision horizon with note interpretation."""
         return self._config.due_soon_days

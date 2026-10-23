@@ -24,4 +24,4 @@ Checked items describe code inspected manually, not successful executions.
   cardinality in the actual deployment; configure alerts for dropped logs.
 
 Implementation: `infrastructure/log_config.py`, `infrastructure/otlp.py`,
-`serving.py`. [Final integration review](../23-final-integration-review.md).
+`serving.py`. [API and deployment](../19-api-and-deployment.md).

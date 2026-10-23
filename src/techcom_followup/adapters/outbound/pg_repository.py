@@ -206,7 +206,7 @@ class PgRepository:
             at=now,
             run_id=write.run_id,
             task_id=write.decision.task_id,
-            payload={"decision_id": str(decision_id)},
+            payload=write.audit_payload(decision_id),
         )
         if identity is not None:
             # PostgreSQL executes a data-modifying CTE exactly once even

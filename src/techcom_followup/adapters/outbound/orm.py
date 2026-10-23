@@ -48,6 +48,7 @@ decisions = sa.Table(
     ),
 )
 sa.Index("decisions_project_idx", decisions.c.source_project, decisions.c.id)
+sa.Index("decisions_task_idx", decisions.c.task_id, decisions.c.id)
 sa.Index(
     "decisions_run_position_idx",
     decisions.c.run_id,

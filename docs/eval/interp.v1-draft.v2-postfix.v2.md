@@ -1,8 +1,8 @@
 # Interpretation and drafting replay evaluation
 
 Dataset: `postfix.v2`.
-Application pipeline commit: `07fc3b9c96737242243209f77673b1d43acf8a6e`.
-Workflow and judge SHA-256: `4c77888dde8d5cc6832a9eccb7e3ee521a5ad96bebc471c86ac000f045f08942`.
+Application pipeline commit: `445e7d70c67189b87f639da06c9938d527455dbb`.
+Workflow and judge SHA-256: `865da153220c3593e56b13a69954191222b90dcd3af3facd45b52c8114898b6f`.
 Prompts: `interp.v1`, `draft.v2`.
 Provider quality: **UNVERIFIED**.
 Replay models: `synthetic.contract.v1`.

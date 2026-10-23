@@ -47,6 +47,7 @@ from techcom_followup.application.repository import (
     ActionRecord,
     Repository,
     RunRecord,
+    StoredDecision,
 )
 from techcom_followup.domain.models import Target
 
@@ -236,25 +237,14 @@ class _Handlers:
     ) -> bool:
         if principal.all_projects:
             return True
-        stats = run.stats or {}
-        if (
-            run.finished_at is None
-            or stats.get("status") != "completed"
-            or stats.get("rejected") != 0
-        ):
+        if not _complete(run):
             return False
         decisions = await self.resources.repository.list_decisions(run.id)
-        if not decisions or stats.get("decisions") != len(decisions):
+        if not decisions or (run.stats or {}).get("decisions") != len(
+            decisions
+        ):
             return False
-        return all(
-            row.write.source_project is not None
-            and principal.can_access(row.write.source_project)
-            and (
-                row.write.decision.target is None
-                or principal.can_access(row.write.decision.target.project)
-            )
-            for row in decisions
-        )
+        return all(_decision_accessible(row, principal) for row in decisions)
 
     async def read_actions(
         self, request: Request, query: ActionQuery, principal: Principal
@@ -282,6 +272,24 @@ class _Handlers:
             and principal.can_access(target.project)
             and principal.can_access(action.source_project)
         ]
+
+
+def _complete(run: RunRecord) -> bool:
+    stats = run.stats or {}
+    return (
+        run.finished_at is not None
+        and stats.get("status") == "completed"
+        and stats.get("rejected") == 0
+    )
+
+
+def _decision_accessible(row: StoredDecision, principal: Principal) -> bool:
+    source, target = row.write.source_project, row.write.decision.target
+    return (
+        source is not None
+        and principal.can_access(source)
+        and (target is None or principal.can_access(target.project))
+    )
 
 
 def _relative_path(request: Request) -> str:

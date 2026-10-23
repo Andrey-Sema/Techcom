@@ -49,6 +49,26 @@ effort = "low"
 verbosity = "low"
 max_output_tokens = 2048
 
+# The orchestrator plans one action per new task state in at most four
+# steps; it gets more reasoning effort than single-shot purposes.
+[[routes.orchestrate]]
+model = "gpt-6.1-sol"
+effort = "medium"
+verbosity = "low"
+max_output_tokens = 4096
+
+[[routes.orchestrate]]
+model = "gpt-6-sol"
+effort = "medium"
+verbosity = "low"
+max_output_tokens = 4096
+
+[[routes.orchestrate]]
+model = "gpt-5.6-sol"
+effort = "medium"
+verbosity = "low"
+max_output_tokens = 4096
+
 [prices."gpt-6.1-sol"]
 input_per_mtok = "2"
 output_per_mtok = "10"

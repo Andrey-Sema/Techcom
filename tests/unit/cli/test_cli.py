@@ -124,8 +124,16 @@ def test_run_exports_explainable_decisions_and_dispatches_once(
         == saved["decisions"]
     )
     assert (tmp_path / "run_report.json").stat().st_mode & 511 == 384
-    assert saved["decisions"][0]["rule_id"] == "R7"
-    assert saved["decisions"][0]["message"]["source"] == "template"
+    # The offline orchestrator keeps the baseline and words the message.
+    first = saved["decisions"][0]
+    assert first["rule_id"] == "R7+agent"
+    assert first["baseline"] == {
+        "decision": "follow_up_owner",
+        "rule_id": "R7",
+    }
+    assert first["message"]["source"] == "llm"
+    assert "agent_planned" in first["flags"]
+    assert first["rationale"]
 
 
 def test_dry_run_uses_fixture_and_needs_no_network_or_llm_credentials(

@@ -64,11 +64,11 @@ fail, or time out after a successful write.
 | Rubric criterion (points) | Where we earn it |
 |---------------------------|------------------|
 | Python, API & code structure (20) | Hexagonal layout, typed ports, FastAPI + Typer adapters, pydantic-settings config, resilient HTTP client — `02-architecture.md` |
-| AI integration & validation (20) | Gemini structured output, Pydantic strict schemas, grounding checks, placeholder drafting, cache, circuit breaker — `04-decision-policy-and-llm.md` |
+| AI integration & validation (20) | OpenAI Responses structured output, strict local schemas, grounding, bounded tool-using orchestrator with envelope and guard, cache, circuit breaker — `04-decision-policy-and-llm.md`, ADR-0016 |
 | Business logic & automation (20) | Rule table, routing table, dedupe, scenario tests — `04`, `07` |
 | Production reliability (20) | Outbox state machine, idempotency keys, reconciliation, retries, budgets, security — `05-reliability.md` |
 | Tests & documentation (10) | 100 % branch coverage, scenario tests, property tests, golden files, README — `06-test-strategy.md` |
-| Live technical review (10) | Demo script, fault drills, 10k/day talk track — `10-live-review-playbook.md`, `09-operations-at-scale.md` |
+| Live technical review (10) | `make demo`, fault-injection scenarios, 10k/day operations — README, `09-operations-at-scale.md` |
 
 > **Hard gate from the brief:** *"a submission that can silently duplicate or
 > perform unsafe actions will not be considered production-ready regardless of
@@ -115,4 +115,4 @@ Observations a reviewer will look for:
 | A7 | Unknown status values in unseen fixtures | Normalize synonyms (case/whitespace/aliases); truly unknown → `clarify_missing_info` (status) to owner, never guessed. |
 | A8 | Duplicate `task_id` in a fixture | Deterministic resolution: keep the record with the latest `last_update`; others rejected with reason `duplicate_task_id`. |
 | A9 | Done but notes say otherwise | `Done` wins (status is source of truth); note contradiction is logged as a data-quality warning, no outbound message. |
-| A10 | LLM provider availability | Gemini adapter is the real integration; a deterministic stub is default for tests/offline demo; selection by `LLM_PROVIDER`. |
+| A10 | LLM provider availability | The OpenAI router is the real integration; deterministic offline models are the default for tests and the demo; selection by `FOLLOWUP_LLM_PROVIDER`. |

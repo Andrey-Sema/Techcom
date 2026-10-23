@@ -30,7 +30,9 @@ from techcom_followup.adapters.outbound.llm.factory import (
     build_openai_client,
     build_router,
 )
-from techcom_followup.adapters.outbound.llm_stub import ScriptedLLM
+from techcom_followup.adapters.outbound.llm_agent_stub import (
+    OfflineLanguageModel,
+)
 from techcom_followup.adapters.outbound.pg_repository import PgRepository
 from techcom_followup.adapters.outbound.run_lock import (
     InMemoryRunLock,
@@ -47,6 +49,7 @@ from techcom_followup.application.dispatch import (
 )
 from techcom_followup.application.drafter import MessageDrafter
 from techcom_followup.application.interpreter import NoteInterpreter
+from techcom_followup.application.orchestrator import FollowUpOrchestrator
 from techcom_followup.application.ports import LLMClient
 from techcom_followup.application.process_tasks import (
     DEFAULT_WRITE_CONCURRENCY,
@@ -95,6 +98,7 @@ class RuntimeSettings(BaseSettings):
     allow_local_http: bool = True
     config_dir: Path = Path("config")
     llm_provider: Literal["stub", "router"] = "stub"
+    llm_planner: Literal["agent", "templates"] = "agent"
     dispatch_enabled: bool = True
     write_concurrency: int = Field(
         default=DEFAULT_WRITE_CONCURRENCY, ge=1, le=MAX_WRITE_CONCURRENCY
@@ -185,7 +189,7 @@ def _language(
     if disabled:
         return None, "disabled"
     if settings.llm_provider == "stub":
-        return ScriptedLLM(), "stub.v1"
+        return OfflineLanguageModel(), "stub.v1"
     config = load_routing_config(settings.config_dir / "llm.toml")
     client = build_openai_client(load_openai_settings())
     stack.push_async_callback(client.close)
@@ -262,6 +266,11 @@ class _RuntimeScope:
                 ),
                 drafter=MessageDrafter(
                     None if settings.llm_provider == "stub" else language
+                ),
+                planner=None
+                if settings.llm_planner == "templates" or options.dry_run
+                else FollowUpOrchestrator(
+                    language, self._storage.repository, policy
                 ),
                 write_concurrency=settings.write_concurrency,
             )

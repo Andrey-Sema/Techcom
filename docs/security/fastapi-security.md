@@ -24,4 +24,4 @@ These are manual code-review assertions; this patch has not been executed.
   deployment-wide configuration consistency in the actual deployment.
 
 Implementation: `adapters/inbound/api/`, `adapters/outbound/admission.py`,
-`serving.py`, migration `0004`. Evidence and limits: [final review](../23-final-integration-review.md).
+`serving.py`, migration `0004`. Configuration: [API and deployment](../19-api-and-deployment.md).

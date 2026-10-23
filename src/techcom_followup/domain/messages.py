@@ -286,6 +286,11 @@ class MessageValidator:
         return found
 
 
+def has_contact_or_link(text: str) -> bool:
+    """Return whether ``text`` has a link, address or phone number."""
+    return any(pattern.search(text) for pattern in (_URL, _EMAIL, _PHONE))
+
+
 def _scrub(value: str) -> str:
     text = clean_line(value, MAX_FACT_CHARS * 4)
     text = text.replace("{", "(").replace("}", ")")

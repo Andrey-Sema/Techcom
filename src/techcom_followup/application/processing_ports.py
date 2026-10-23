@@ -1,12 +1,14 @@
 """Workflow contracts independent of storage and transport libraries."""
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from datetime import date, datetime
 from enum import StrEnum
 from typing import Protocol
 from uuid import UUID
+
+from pydantic import JsonValue
 
 from techcom_followup.application.repository import ActionRecord
 from techcom_followup.domain.messages import MessageDraft
@@ -55,6 +57,25 @@ class MessageDrafter(Protocol):
         self, decision: Decision, task: Task, *, as_of: date
     ) -> MessageDraft:
         """Return a validated rendered message."""
+        ...
+
+
+@dataclass(frozen=True, slots=True)
+class PlannedAction:
+    """A reviewed action plan and its closed, text-free audit record."""
+
+    decision: Decision
+    message: MessageDraft
+    audit: Mapping[str, JsonValue]
+
+
+class ActionPlanner(Protocol):
+    """Choose and phrase an action inside the policy's envelope."""
+
+    async def plan(
+        self, decision: Decision, task: Task, *, as_of: date
+    ) -> PlannedAction:
+        """Return a guarded plan, or the baseline with its template."""
         ...
 
 
