@@ -27,8 +27,8 @@
         },
         "task_id": "TC-1001"
       },
-      "decision_id": "208f57e7-4f0f-4b5b-b0d2-72abda1db309",
-      "id": "f71e1ec0-49d7-45fe-a74a-6eb5f3881bb1",
+      "decision_id": "032771a7-003e-4372-afb0-39cc6c02b230",
+      "id": "055e575b-0282-4d88-835f-f2597604c6c0",
       "identity": {
         "idempotency_key": "sha256:e12c8d7ba06d08b2d631d4338ebcabf29733b65baf4c9050a7ec8245b2ecb3e7",
         "operation_id": "c5d55398-d208-5869-9331-0a27f2591486"
@@ -42,8 +42,8 @@
         "subject": "Status check: TC-1001 Fiber splicing",
         "template_id": "agent.v3"
       },
-      "next_attempt_at": "2026-10-21T00:00:00.694745Z",
-      "provider_ref": "mock-6",
+      "next_attempt_at": "2026-10-21T00:00:00.109738Z",
+      "provider_ref": "mock-1",
       "sent_at": "2026-10-21T00:00:00Z",
       "status": "sent"
     },
@@ -56,7 +56,7 @@
         "interpretation": {
           "blocker": "materials",
           "confidence": 0.95,
-          "evidence": "materials",
+          "evidence": "Awaiting materials",
           "needs_eta": true,
           "source": "keyword"
         },
@@ -73,8 +73,8 @@
         },
         "task_id": "TC-1002"
       },
-      "decision_id": "669dd9c3-969d-4cf7-809f-b375b9ae1f01",
-      "id": "7b87eb3d-4536-4644-99ac-f3e2506a009a",
+      "decision_id": "5f6a382c-bbc8-45c2-aca5-e3d5efa6019a",
+      "id": "e8e92b95-d380-4eeb-8149-59f19f7f25c4",
       "identity": {
         "idempotency_key": "sha256:21070d2c9edd2406f5f1683af69c64f3b8bdf9efc42007bdaf72fb1d62a1c126",
         "operation_id": "f1a2a370-ea2f-54ef-8fb5-7c74a97b9289"
@@ -88,8 +88,8 @@
         "subject": "Delivery ETA needed: TC-1002 Install handholes",
         "template_id": "agent.v3"
       },
-      "next_attempt_at": "2026-10-21T00:00:00.506177Z",
-      "provider_ref": "mock-4",
+      "next_attempt_at": "2026-10-21T00:00:00.327042Z",
+      "provider_ref": "mock-7",
       "sent_at": "2026-10-21T00:00:00Z",
       "status": "sent"
     },
@@ -113,8 +113,8 @@
         },
         "task_id": "TC-1004"
       },
-      "decision_id": "7be36d2c-7375-44cb-95ff-a5e5de4feff2",
-      "id": "920389a7-3f76-4b97-a94a-967240fe7ab3",
+      "decision_id": "a50b41e0-5d37-4fef-bf61-6b66a6f80560",
+      "id": "4d7538a2-8b18-4b9e-b2eb-178dad74b17e",
       "identity": {
         "idempotency_key": "sha256:69a9ce427dee3f69a8f9f3e58a0bf0137ed28c0d379a3bb26cb4b4064eabb946",
         "operation_id": "c163cdab-dd1e-530f-b8b6-91ba6d3bff9d"
@@ -128,8 +128,8 @@
         "subject": "Details needed: TC-1004 Permit review",
         "template_id": "agent.v3"
       },
-      "next_attempt_at": "2026-10-21T00:00:00.140257Z",
-      "provider_ref": "mock-5",
+      "next_attempt_at": "2026-10-21T00:00:00.540722Z",
+      "provider_ref": "mock-4",
       "sent_at": "2026-10-21T00:00:00Z",
       "status": "sent"
     },
@@ -153,8 +153,8 @@
         },
         "task_id": "TC-1005"
       },
-      "decision_id": "c5cb56d8-ee68-44ef-9d7f-ace17071bf9d",
-      "id": "fa2e6502-17ec-47e6-8b0b-5d214136976f",
+      "decision_id": "7005b535-8b39-4841-b767-f492a843f785",
+      "id": "09a1ab4e-1656-4a43-8da1-a5dcdc82f838",
       "identity": {
         "idempotency_key": "sha256:3f7f4a91565b41425c041c9ee76df9ca78158ff7c068e6cf830d49c05ce5ae84",
         "operation_id": "6e4b7466-e408-5dcb-83e0-07c68bec33c7"
@@ -168,8 +168,8 @@
         "subject": "Details needed: TC-1005 As-built drawings",
         "template_id": "agent.v3"
       },
-      "next_attempt_at": "2026-10-21T00:00:01.680741Z",
-      "provider_ref": "mock-7",
+      "next_attempt_at": "2026-10-21T00:00:00.077693Z",
+      "provider_ref": "mock-2",
       "sent_at": "2026-10-21T00:00:00Z",
       "status": "sent"
     },
@@ -194,8 +194,8 @@
         },
         "task_id": "TC-1006"
       },
-      "decision_id": "d980b12a-ded0-4c40-b4b0-5f2f600afd5c",
-      "id": "11f18b49-54ce-4169-9cdd-4275b69fe9c2",
+      "decision_id": "64dced05-cf88-45e7-8da5-40b0e11ceb14",
+      "id": "5ecddc02-02e4-448f-88f4-08a1717e81a7",
       "identity": {
         "idempotency_key": "sha256:857d18728a1feec73dba0a60a4fc447a0f1729e2f0e6482a6181c4718a7fc24a",
         "operation_id": "cd7a7371-6449-5c6d-96e8-5c6c8fbf917d"
@@ -209,8 +209,8 @@
         "subject": "Status check: TC-1006 Splice verification",
         "template_id": "agent.v3"
       },
-      "next_attempt_at": "2026-10-21T00:00:01.770646Z",
-      "provider_ref": "mock-2",
+      "next_attempt_at": "2026-10-21T00:00:01.135758Z",
+      "provider_ref": "mock-5",
       "sent_at": "2026-10-21T00:00:00Z",
       "status": "sent"
     },
@@ -240,8 +240,8 @@
         },
         "task_id": "TC-1008"
       },
-      "decision_id": "3c3a561d-83d4-48a8-a3bb-f3acb79758da",
-      "id": "348e32ca-6088-48c7-a57e-ffcea4b7256d",
+      "decision_id": "0ce0b54c-1941-4368-9c8f-c547964ed31d",
+      "id": "7f815537-e308-4ada-b3e5-6e1bb75fa933",
       "identity": {
         "idempotency_key": "sha256:d3ef627e390fb6d7d5781003826669a7be43e8c2bda97f12603228646dd9b919",
         "operation_id": "81e9e4d9-1469-5ea5-beca-b74799a8d36f"
@@ -255,8 +255,8 @@
         "subject": "Needs your attention: TC-1008 Test fiber signal",
         "template_id": "agent.v3"
       },
-      "next_attempt_at": "2026-10-21T00:00:00.196404Z",
-      "provider_ref": "mock-3",
+      "next_attempt_at": "2026-10-21T00:00:01.230015Z",
+      "provider_ref": "mock-6",
       "sent_at": "2026-10-21T00:00:00Z",
       "status": "sent"
     },
@@ -269,7 +269,7 @@
         "interpretation": {
           "blocker": "materials",
           "confidence": 0.95,
-          "evidence": "Warehouse",
+          "evidence": "backorder",
           "needs_eta": true,
           "source": "keyword"
         },
@@ -286,8 +286,8 @@
         },
         "task_id": "TC-1009"
       },
-      "decision_id": "8bd68c13-69e3-4804-90c7-ef38c1f47f62",
-      "id": "067881bc-9887-4cb3-bae5-38fdc5f917d4",
+      "decision_id": "cad75ba0-0341-4a29-a49b-3cb079b2a594",
+      "id": "2054a401-62aa-4262-8399-25ada6801182",
       "identity": {
         "idempotency_key": "sha256:c193de851410147c0a1c984001215bbeb3259a15d498eb3a9818b573ab4b921b",
         "operation_id": "e06c021a-216f-5e62-9b92-d716b766833c"
@@ -301,8 +301,8 @@
         "subject": "Delivery ETA needed: TC-1009 Material reconciliation",
         "template_id": "agent.v3"
       },
-      "next_attempt_at": "2026-10-21T00:00:00.352632Z",
-      "provider_ref": "mock-1",
+      "next_attempt_at": "2026-10-21T00:00:01.175739Z",
+      "provider_ref": "mock-3",
       "sent_at": "2026-10-21T00:00:00Z",
       "status": "sent"
     }
@@ -568,7 +568,7 @@
   "run": {
     "as_of": "2026-10-21",
     "finished_at": "2026-10-21T00:00:00Z",
-    "id": "b006cd9a-0dc4-4c99-883d-dd94518c70f3",
+    "id": "ff08f144-560b-4d63-83a1-4476a99d12db",
     "policy_version": "2026-10-21.1",
     "started_at": "2026-10-21T00:00:00Z",
     "stats": {

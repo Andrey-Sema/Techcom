@@ -10,13 +10,12 @@ FROM ${UV_IMAGE} AS uv
 FROM ${PYTHON_IMAGE} AS builder
 COPY --from=uv /uv /uvx /bin/
 # An optional extra CA bundle for TLS-intercepting proxies is mounted as
-# a build secret ("ca_bundle"); it never lands in a layer. uv ignores the
-# variable when the file is absent.
+# a build secret ("ca_bundle"); it never lands in a layer. Only set
+# SSL_CERT_FILE when the mount exists; otherwise keep normal CA trust.
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
     UV_PYTHON_DOWNLOADS=0 \
-    UV_PROJECT_ENVIRONMENT=/opt/venv \
-    SSL_CERT_FILE=/run/secrets/ca_bundle
+    UV_PROJECT_ENVIRONMENT=/opt/venv
 WORKDIR /src
 # Dependencies first: this layer stays cached until uv.lock changes.
 RUN --mount=type=cache,target=/root/.cache/uv \
@@ -24,17 +23,26 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
     --mount=type=bind,source=mocks/pyproject.toml,target=mocks/pyproject.toml \
+    if [ -f /run/secrets/ca_bundle ]; then \
+      export SSL_CERT_FILE=/run/secrets/ca_bundle; \
+    fi; \
     uv sync --locked --no-dev --no-install-workspace
 COPY . .
 # Install only the product package: no mocks, no dev tools.
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=secret,id=ca_bundle,required=false \
+    if [ -f /run/secrets/ca_bundle ]; then \
+      export SSL_CERT_FILE=/run/secrets/ca_bundle; \
+    fi; \
     uv sync --locked --no-dev --no-editable --package techcom-followup
 
 # ---------- mock: demo and test receiver only, never deployed ----------
 FROM builder AS mock-builder
 RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=secret,id=ca_bundle,required=false \
+    if [ -f /run/secrets/ca_bundle ]; then \
+      export SSL_CERT_FILE=/run/secrets/ca_bundle; \
+    fi; \
     uv sync --locked --no-dev --no-editable --package techcom-mocks
 
 FROM ${PYTHON_IMAGE} AS mock

@@ -28,7 +28,6 @@ PROMETHEUS = "http://127.0.0.1:9090"
 LOKI = "http://127.0.0.1:3100"
 ALLOY_OTLP = "http://127.0.0.1:4318"
 GRAFANA = "http://127.0.0.1:3000"
-EXPECTED_RULES = 8
 DEADLINE_S = 120.0
 
 
@@ -90,6 +89,14 @@ def _grafana_auth() -> dict[str, str]:
 
 def check_prometheus() -> None:
     """Every alert rule from the rules file is loaded."""
+    # Read names, not a duplicated count: an added alert must be checked
+    # too, and a missing alert cannot hide behind an unrelated one.
+    rules_file = Path("deploy/prometheus/rules/followup.rules.yml")
+    expected = {
+        line.split("alert:", 1)[1].strip()
+        for line in rules_file.read_text().splitlines()
+        if line.lstrip().startswith("- alert:")
+    }
     _, payload = _request(f"{PROMETHEUS}/api/v1/rules?type=alert")
     rules = [
         rule["name"]
@@ -97,8 +104,8 @@ def check_prometheus() -> None:
         for rule in group["rules"]
     ]
     _check(
-        len(rules) == EXPECTED_RULES,
-        f"Prometheus loaded {len(rules)}/{EXPECTED_RULES} alert rules",
+        bool(expected) and set(rules) == expected,
+        f"Prometheus loaded the configured {len(expected)} alert rules",
     )
 
 

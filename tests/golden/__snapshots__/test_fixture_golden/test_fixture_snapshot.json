@@ -33,7 +33,7 @@
     "decision": "request_eta",
     "evidence": {
       "blocker": "materials",
-      "quote": "materials",
+      "quote": "Awaiting materials",
       "source": "keyword"
     },
     "flags": [],
@@ -193,7 +193,7 @@
     "decision": "request_eta",
     "evidence": {
       "blocker": "materials",
-      "quote": "Warehouse",
+      "quote": "backorder",
       "source": "keyword"
     },
     "flags": [],

@@ -63,6 +63,8 @@ def _stored(row: RowMapping) -> StoredDecision:
 
 def _action(row: RowMapping) -> ActionRecord:
     data = dict(row)
+    # Internal retry fence, enforced by the database transition trigger.
+    data.pop("superseded", None)
     write = data.pop("data")
     data["identity"] = write["identity"]
     data["decision"] = write["decision"]

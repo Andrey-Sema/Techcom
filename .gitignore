@@ -12,11 +12,16 @@ pip-wheel-metadata/
 
 # ---------- Environments & tool caches ----------
 .venv/
+.venv-*/
 venv/
+env/
+ENV/
+__pypackages__/
 .python-version.local
 .direnv/
 .envrc
 .cache/
+.uv-cache/
 .ruff_cache/
 .mypy_cache/
 .pytest_cache/
@@ -48,13 +53,22 @@ var/
 *.log
 *.pid
 *.sqlite
+*.sqlite3
 *.db
+*.db-wal
+*.db-shm
+*.sqlite*-wal
+*.sqlite*-shm
+*.dump
+*.backup
+*.sql.gz
 
 # ---------- Secrets — never commit (ASVS 13.3.1) ----------
 .env
 .env.*
 !.env.example
 secrets/
+config/*.local.toml
 *.pem
 *.key
 *.crt
