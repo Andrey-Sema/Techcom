@@ -66,6 +66,7 @@ class ReasonCode(StrEnum):
     MISSING_OWNER_AND_DUE_DATE = "missing_owner_and_due_date"
     UNKNOWN_STATUS = "unknown_status"
     MATERIALS_ETA_UNKNOWN = "materials_eta_unknown"
+    MATERIALS_ETA_KNOWN = "materials_eta_known"
     BLOCKED_DEPENDENCY = "blocked_dependency"
     OVERDUE_ESCALATION = "overdue_escalation"
     OVERDUE_NO_EXPLANATION = "overdue_no_explanation"

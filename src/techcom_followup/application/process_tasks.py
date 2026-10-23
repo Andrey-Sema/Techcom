@@ -23,7 +23,7 @@ from techcom_followup.application.repository import (
     Repository,
 )
 from techcom_followup.domain.identity import ActionIdentity, state_fingerprint
-from techcom_followup.domain.injection import screen
+from techcom_followup.domain.injection import screen_task
 from techcom_followup.domain.interpretation import prefilter
 from techcom_followup.domain.messages import MessageDraft, compose
 from techcom_followup.domain.models import Decision, RejectedRecord, Task
@@ -205,7 +205,7 @@ class ProcessTasks:
         *,
         dry_run: bool,
     ) -> _Proposal:
-        screening = screen(task.notes)
+        screening = screen_task(task)
         interpretation = (
             None if screening.suspicious else prefilter(task.notes)
         )

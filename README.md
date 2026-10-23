@@ -8,12 +8,12 @@
 
 A Python service that reads project tasks, decides which ones need
 attention, lets an **LLM orchestrate the follow-up inside limits set by
-code**, and delivers the resulting messages **exactly once**, even when
+code**, and delivers the resulting messages **idempotently**, even when
 APIs throttle, fail, or time out after a successful write.
 
 ```text
 rules decide WHETHER to act  →  the LLM plans HOW, inside an envelope
-→  a deterministic guard approves  →  the outbox delivers exactly once
+→  a deterministic guard approves  →  the outbox delivers idempotently
 ```
 
 ---
@@ -108,6 +108,19 @@ flowchart LR
 ---
 
 ## The LLM orchestrator and how it is kept in check
+
+Security boundary: the model selects exact reviewed subject/body pairs
+for its chosen action; arbitrary prose is rejected. Names, dates and
+other facts are rendered by code. Titles and project labels are omitted
+from model context, contact data is redacted from notes, and every
+tracker text surface is screened. This is contact minimisation, not
+guaranteed anonymisation. The code records a bounded, code-owned rationale.
+
+Notification slots additionally enforce one action per source task state,
+independent of interpreter failures or changing model answers. Existing
+operation IDs stay unchanged. PostgreSQL migration 0006 backfills from
+decision receipts and refuses upgrades with unrecoverable old tombstones.
+See [ADR-0017](docs/adr/0017-llm-output-and-notification-boundaries.md).
 
 The assignment asks for an LLM that interprets notes and drafts messages
 without inventing facts. This service goes further: the model

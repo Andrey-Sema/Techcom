@@ -88,7 +88,8 @@ async def migrated_engine(postgres_url: str) -> AsyncIterator[AsyncEngine]:
         await connection.run_sync(upgrade)
         await connection.execute(
             text(
-                "TRUNCATE action_keys, api_rate_buckets, recipient_days, "
+                "TRUNCATE notification_slots, action_keys, "
+                "api_rate_buckets, recipient_days, "
                 "recipient_admissions, actions, decisions, runs, "
                 "llm_cache, audit_events CASCADE"
             )

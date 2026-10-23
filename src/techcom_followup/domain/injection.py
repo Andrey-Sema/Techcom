@@ -11,7 +11,7 @@ import re
 import unicodedata
 from collections.abc import Mapping
 
-from techcom_followup.domain.models import ScreenResult, UntrustedText
+from techcom_followup.domain.models import ScreenResult, Task, UntrustedText
 
 _PATTERNS: Mapping[str, re.Pattern[str]] = {
     name: re.compile(pattern, re.IGNORECASE | re.MULTILINE)
@@ -53,3 +53,19 @@ def screen(note: UntrustedText) -> ScreenResult:
         name for name, pattern in _PATTERNS.items() if pattern.search(text)
     )
     return ScreenResult(suspicious=bool(matched), matched_patterns=matched)
+
+
+def screen_task(task: Task) -> ScreenResult:
+    """Screen every tracker text surface, not only the notes field."""
+    patterns = tuple(
+        dict.fromkeys(
+            pattern
+            for text in (
+                task.notes,
+                UntrustedText.of(task.title),
+                UntrustedText.of(task.project),
+            )
+            for pattern in screen(text).matched_patterns
+        )
+    )
+    return ScreenResult(suspicious=bool(patterns), matched_patterns=patterns)

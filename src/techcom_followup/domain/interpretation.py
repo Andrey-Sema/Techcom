@@ -77,10 +77,33 @@ _AMBIGUOUS_CONTEXT = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
+# Keywords cannot decide whether a dependency is denied or ETA known.
+# Defer negative blockers to a model or the safe UNCLEAR fallback.
+_SEMANTIC_CONTEXT = re.compile(
+    r"\b(?:not|never|neither|without|isn['\u2019]t|aren['\u2019]t|don['\u2019]t"
+    r"|doesn['\u2019]t|cannot|can['\u2019]t)\b"
+    r"|\bno\b(?!\s+(?:eta|site\s+access)\b)"
+    r"|\b(?:eta|delivery\s+date)\b.{0,30}\b(?:known|confirmed|set)\b"
+    r"|\b(?:eta|delivery)\s+(?:is|on|for|by|expected)\s+"
+    r"(?:\d|monday|tuesday|wednesday|thursday|friday|saturday|sunday)"
+    r"|\b(?:confirmed|scheduled)\s+delivery\b",
+    re.IGNORECASE,
+)
+_ETA_REFERENCE = re.compile(r"\beta\b|\bdelivery\s+date\b", re.IGNORECASE)
+_UNKNOWN_ETA = re.compile(
+    r"\bno\s+eta\b|\beta(?:\s+is)?\s+unknown\b"
+    r"|\bdelivery\s+date(?:\s+is)?\s+unknown\b",
+    re.IGNORECASE,
+)
+
 
 def prefilter(note: UntrustedText) -> NoteInterpretation | None:
     """Classify obvious current blockers; defer ambiguous context."""
-    if _AMBIGUOUS_CONTEXT.search(note.value) is not None:
+    if (
+        _AMBIGUOUS_CONTEXT.search(note.value) is not None
+        or _SEMANTIC_CONTEXT.search(note.value) is not None
+        or _ETA_REFERENCE.search(_UNKNOWN_ETA.sub("", note.value)) is not None
+    ):
         return None
     for blocker, pattern in _KEYWORDS:
         match = pattern.search(note.value)

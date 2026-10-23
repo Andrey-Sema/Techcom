@@ -42,6 +42,7 @@ class InMemoryRepository:
         self._decisions: dict[tuple[UUID, str], StoredDecision] = {}
         self._actions: dict[UUID, ActionRecord] = {}
         self._keys: set[str] = set()
+        self._notification_slots: set[tuple[str, str, str]] = set()
         self._messages: dict[str, MessageDraft] = {}
         self._cache: dict[str, CacheEntry] = {}
         self._audit: list[AuditEvent] = []
@@ -98,7 +99,15 @@ class InMemoryRepository:
         decision_id = uuid4()
         if identity is not None and draft is not None:
             outcome = DecisionOutcome.DUPLICATE_SUPPRESSED
-            if identity.idempotency_key not in self._keys:
+            target = write.decision.target
+            project = write.source_project or (
+                target.project if target is not None else None
+            )
+            slot = (write.decision.task_id, project or "", write.fingerprint)
+            if (
+                identity.idempotency_key not in self._keys
+                and slot not in self._notification_slots
+            ):
                 outcome = DecisionOutcome.ENQUEUED
                 action = ActionRecord(
                     uuid4(),
@@ -113,7 +122,12 @@ class InMemoryRepository:
                 )
                 self._actions[action.id] = action
                 self._keys.add(identity.idempotency_key)
+                self._notification_slots.add(slot)
                 self._messages[identity.idempotency_key] = draft
+            else:
+                # Keep aliases as tombstones too: a changed classifier
+                # must not buy another model plan on every later run.
+                self._keys.add(identity.idempotency_key)
         stored = StoredDecision(decision_id, write, outcome)
         self._decisions[key] = stored
         self._audit.append(

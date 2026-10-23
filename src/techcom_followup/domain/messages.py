@@ -14,7 +14,13 @@ from dataclasses import dataclass
 from datetime import date
 from enum import StrEnum
 
-from techcom_followup.domain.models import Decision, ReasonCode, Task
+from techcom_followup.domain.injection import screen
+from techcom_followup.domain.models import (
+    Decision,
+    ReasonCode,
+    Task,
+    UntrustedText,
+)
 from techcom_followup.domain.text import clean_line
 
 SUBJECT_MAX_CHARS = 120
@@ -42,8 +48,8 @@ _BRACED = re.compile(r"\{([^{}]*)\}")
 _URL = re.compile(
     r"\b[a-z][a-z0-9+.-]*://\S*|\b(?:javascript|data|mailto):\S+"
     r"|\bwww\.\S+"
-    r"|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|net|org|io|ru|info|biz"
-    r"|app|dev|xyz|me|co|us)\b(?:/\S*)?",
+    r"|\b[\w-]+(?:\.[\w-]+)*\.(?:[^\W\d_]{2,63}|xn--[a-z0-9-]+)"
+    r"\b(?:/\S*)?",
     re.IGNORECASE,
 )
 _EMAIL = re.compile(r"[^\s@]+@[^\s@]+\.[^\s@]+")
@@ -130,6 +136,13 @@ _TEMPLATE_LIST = (
         "correctly.",
     ),
     MessageTemplate(
+        "follow_up.materials_eta_known.v1",
+        "Materials follow-up: {task_id} {task_title}",
+        "Hello {recipient_name}, {task_id} '{task_title}' ({project}) "
+        "has a materials dependency with an ETA. Could you confirm "
+        "whether the planned delivery and task are still on track?",
+    ),
+    MessageTemplate(
         "escalate.v1",
         "Escalation: {task_id} {task_title}",
         "Hello {recipient_name}, {task_id} '{task_title}' ({project}) "
@@ -147,6 +160,7 @@ _TEMPLATE_BY_REASON: Mapping[ReasonCode, str] = {
     ReasonCode.MISSING_OWNER_AND_DUE_DATE: "clarify.v1",
     ReasonCode.UNKNOWN_STATUS: "clarify.v1",
     ReasonCode.MATERIALS_ETA_UNKNOWN: "request_eta.v1",
+    ReasonCode.MATERIALS_ETA_KNOWN: "follow_up.materials_eta_known.v1",
     ReasonCode.BLOCKED_DEPENDENCY: "escalate.v1",
     ReasonCode.OVERDUE_ESCALATION: "escalate.v1",
     ReasonCode.OVERDUE_NO_EXPLANATION: "follow_up.overdue.v1",
@@ -291,9 +305,24 @@ def has_contact_or_link(text: str) -> bool:
     return any(pattern.search(text) for pattern in (_URL, _EMAIL, _PHONE))
 
 
+def redact_contacts(text: str) -> str:
+    """Minimise contact data before model exposure or rendering."""
+    text = _EMAIL.sub("[address removed]", text)
+    text = _URL.sub("[link removed]", text)
+    return _PHONE.sub(
+        lambda match: (
+            match.group(0)
+            if re.fullmatch(r"\d{4}-\d{2}-\d{2}", match.group(0))
+            else "[phone removed]"
+        ),
+        text,
+    )
+
+
 def _scrub(value: str) -> str:
     text = clean_line(value, MAX_FACT_CHARS * 4)
     text = text.replace("{", "(").replace("}", ")")
-    text = _EMAIL.sub("[address removed]", text)
-    text = _URL.sub("[link removed]", text)
+    if screen(UntrustedText.of(text)).suspicious:
+        return "[untrusted text withheld]"
+    text = redact_contacts(text)
     return clean_line(text, MAX_FACT_CHARS)
