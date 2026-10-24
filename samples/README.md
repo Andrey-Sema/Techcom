@@ -12,8 +12,7 @@ receiver's wall-clock timestamps vary between executions;
 
 The second run proposes seven duplicate actions and sends none. Regenerate
 from `var/demo/` after `make demo`; keep all three artifacts from one
-execution together. The model is an offline stub: these samples do not
-measure real-provider accuracy. Report files contain deliberate fixture
+execution together. Report files contain deliberate fixture
 business facts, distinct from the redacted operational log stream.
 
 Each actionable decision shows the policy `baseline`, the code-owned

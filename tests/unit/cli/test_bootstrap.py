@@ -18,7 +18,12 @@ from techcom_followup.adapters.outbound.in_memory_repository import (
 from techcom_followup.adapters.outbound.llm_stub import ScriptedLLM
 from techcom_followup.adapters.outbound.run_lock import InMemoryRunLock
 from techcom_followup.application.command_ports import CommandOptions
-from techcom_followup.infrastructure.http_client import UpstreamError
+from techcom_followup.infrastructure.http_client import (
+    MAX_RESPONSE_BYTES,
+    MAX_SOURCE_RESPONSE_BYTES,
+    HttpEndpoint,
+    UpstreamError,
+)
 from techcom_followup.infrastructure.telemetry import PrometheusTelemetry
 
 
@@ -36,7 +41,7 @@ async def test_fixture_byte_limit_is_checked_before_json_parsing(
     tmp_path: Path,
 ) -> None:
     path = tmp_path / "fixture.json"
-    path.write_bytes(b" " * 2_000_001)
+    path.write_bytes(b" " * (MAX_SOURCE_RESPONSE_BYTES + 1))
     with pytest.raises(UpstreamError, match="fixture_size"):
         await bootstrap.FixtureTaskSource(path).fetch_tasks()
 
@@ -255,3 +260,19 @@ async def test_metric_export_reads_the_shared_outbox_and_never_fails(
             telemetry, storage, clock, tmp_path / "missing" / "x.prom"
         )
     assert [entry["event"] for entry in logs] == ["metrics.export_failed"]
+
+
+async def test_task_listing_gets_the_source_bound_and_delivery_the_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    endpoint = Mock(wraps=HttpEndpoint)
+    monkeypatch.setattr(bootstrap, "HttpEndpoint", endpoint)
+    async with bootstrap.RuntimeBuilder(bootstrap.RuntimeSettings())(
+        CommandOptions(AS_OF, dry_run=True)
+    ) as services:
+        services.processor()
+        services.dispatcher()
+    bounds = [
+        call.kwargs["max_response_bytes"] for call in endpoint.mock_calls
+    ]
+    assert bounds == [MAX_SOURCE_RESPONSE_BYTES, MAX_RESPONSE_BYTES]

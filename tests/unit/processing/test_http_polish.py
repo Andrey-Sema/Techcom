@@ -16,6 +16,7 @@ from techcom_followup.application.processing_ports import DeliveryKind
 from techcom_followup.infrastructure.http_client import (
     ACCEPT_ENCODING,
     MAX_RESPONSE_BYTES,
+    MAX_SOURCE_RESPONSE_BYTES,
     HttpEndpoint,
     UpstreamError,
     json_body,
@@ -192,3 +193,62 @@ async def test_zlib_deflate_bodies_decode() -> None:
     ) as client:
         result = await _endpoint(client).request("GET", "/v1/tasks")
     assert json_body(result) == [{"task_id": "TC-1"}]
+
+
+def _listing(count: int) -> bytes:
+    return json.dumps(
+        [
+            {
+                "task_id": f"TC-{100_000 + index}",
+                "project": "SURF Illinois",
+                "task": f"Synthetic task {index}",
+                "assigned_to": "John Smith",
+                "due_date": "2026-10-21",
+                "status": "Working on it",
+                "last_update": "2026-10-19T09:30:00Z",
+                "notes": "Waiting on permits from the county office.",
+            }
+            for index in range(count)
+        ]
+    ).encode()
+
+
+@pytest.mark.parametrize(
+    "limit", [MAX_RESPONSE_BYTES, MAX_SOURCE_RESPONSE_BYTES]
+)
+async def test_ten_thousand_tasks_need_the_source_response_bound(
+    limit: int,
+) -> None:
+    wire = _listing(10_000)
+    assert MAX_RESPONSE_BYTES < len(wire) < MAX_SOURCE_RESPONSE_BYTES
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, stream=httpx.ByteStream(wire))
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(respond)
+    ) as client:
+        endpoint = HttpEndpoint(
+            client,
+            "https://mock-api",
+            allowed_hosts=frozenset({"mock-api"}),
+            max_response_bytes=limit,
+        )
+        if limit == MAX_RESPONSE_BYTES:
+            with pytest.raises(UpstreamError, match="response_size"):
+                await endpoint.request("GET", "/v1/tasks")
+        else:
+            body = json_body(await endpoint.request("GET", "/v1/tasks"))
+            assert isinstance(body, list)
+            assert len(body) == 10_000
+
+
+@pytest.mark.parametrize("limit", [0, MAX_SOURCE_RESPONSE_BYTES + 1, True])
+def test_response_bound_is_validated(limit: int) -> None:
+    with pytest.raises(ValueError, match="response bound"):
+        HttpEndpoint(
+            httpx.AsyncClient(),
+            "https://mock-api",
+            allowed_hosts=frozenset({"mock-api"}),
+            max_response_bytes=limit,
+        )

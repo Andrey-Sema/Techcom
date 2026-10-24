@@ -72,6 +72,8 @@ from techcom_followup.application.retention import PruneData
 from techcom_followup.application.retry import RetryBudget
 from techcom_followup.application.review import ReviewHeld
 from techcom_followup.infrastructure.http_client import (
+    MAX_RESPONSE_BYTES,
+    MAX_SOURCE_RESPONSE_BYTES,
     HttpEndpoint,
     UpstreamError,
 )
@@ -87,7 +89,7 @@ from techcom_followup.infrastructure.telemetry import PrometheusTelemetry
 _log = structlog.get_logger(__name__)
 
 _LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", "mock-api"})
-_MAX_FIXTURE_BYTES = 2_000_000
+_MAX_FIXTURE_BYTES = MAX_SOURCE_RESPONSE_BYTES
 _MAX_FIXTURE_RECORDS = 10_000
 
 
@@ -244,7 +246,9 @@ class _RuntimeScope:
         self._dispatcher: DispatchActions | None = None
         self._stopping = False
 
-    def _endpoint(self, url: str) -> HttpEndpoint:
+    def _endpoint(
+        self, url: str, *, max_response_bytes: int = MAX_RESPONSE_BYTES
+    ) -> HttpEndpoint:
         if self._client is None:
             self._client = httpx.AsyncClient(trust_env=not self._options.demo)
             self._stack.push_async_callback(self._client.aclose)
@@ -253,6 +257,7 @@ class _RuntimeScope:
             url,
             allowed_hosts=self._settings.allowed_hosts,
             allow_local_http=self._settings.allow_local_http,
+            max_response_bytes=max_response_bytes,
         )
 
     def processor(self) -> ProcessTasks:
@@ -263,7 +268,10 @@ class _RuntimeScope:
                 FixtureTaskSource(options.fixture)
                 if options.fixture is not None
                 else HttpTaskSource(
-                    self._endpoint(settings.task_api_url),
+                    self._endpoint(
+                        settings.task_api_url,
+                        max_response_bytes=MAX_SOURCE_RESPONSE_BYTES,
+                    ),
                     self._clock,
                     budget=RetryBudget(15),
                 )
