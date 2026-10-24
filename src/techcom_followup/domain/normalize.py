@@ -123,6 +123,20 @@ def _to_task(record: object, as_of: date) -> Task | RejectedRecord:
     )
 
 
+def project_authority(task: Task) -> str | None:
+    """Return the project a task may claim, or ``None`` without one.
+
+    An unknown or display-cleaned project still routes the follow-up but
+    never grants project authority (source scope, API visibility).
+    """
+    if (
+        task.project == UNKNOWN_LABEL
+        or Flag.NONCANONICAL_PROJECT in task.flags
+    ):
+        return None
+    return task.project
+
+
 def _task_id(value: object) -> TaskId | None:
     if not isinstance(value, str):
         return None

@@ -37,12 +37,11 @@ from techcom_followup.domain.interpretation import prefilter
 from techcom_followup.domain.messages import MessageDraft, compose
 from techcom_followup.domain.models import (
     Decision,
-    Flag,
     ReasonCode,
     RejectedRecord,
     Task,
 )
-from techcom_followup.domain.normalize import UNKNOWN_LABEL, normalize
+from techcom_followup.domain.normalize import normalize, project_authority
 from techcom_followup.domain.policy import DecisionPolicy
 
 DEFAULT_WRITE_CONCURRENCY = 8
@@ -300,12 +299,7 @@ class ProcessTasks:
         )
         draft, final = None, decision
         audit: Mapping[str, JsonValue] | None = None
-        source_project = (
-            None
-            if task.project == UNKNOWN_LABEL
-            or Flag.NONCANONICAL_PROJECT in task.flags
-            else task.project
-        )
+        source_project = project_authority(task)
         if identity is not None:
             if identity.idempotency_key in existing:
                 # Retained identities need no new model call, even after
