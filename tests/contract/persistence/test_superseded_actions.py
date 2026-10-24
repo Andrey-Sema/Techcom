@@ -144,3 +144,35 @@ async def test_same_id_in_another_project_does_not_cancel_work(
     await close_task(repository, replace(write, source_project="Indiana OSP"))
     (action,) = await repository.list_actions()
     assert action.status is ActionStatus.PENDING
+
+
+@pytest.mark.parametrize("label", [None, "Indiana OSP"])
+async def test_done_without_project_authority_cancels_its_own_work(
+    repository: Repository, label: str | None
+) -> None:
+    # Unknown or noncanonical projects carry no source authority; their
+    # recipient-less Done decision is scoped by the task label instead.
+    write = await action_write(repository)
+    write = replace(write, source_project=None)
+    target = write.decision.target
+    assert target is not None
+    await repository.record_decision(write, NOW)
+    run = await repository.start_run(AS_OF, "closed", NOW)
+    await repository.record_decision(
+        DecisionWrite(
+            run.id,
+            replace(
+                write.decision,
+                kind=DecisionKind.NO_ACTION,
+                target=None,
+                reason_code=ReasonCode.COMPLETED,
+                reason="Task is done.",
+            ),
+            "closed-state",
+            task_project=label or target.project,
+        ),
+        NOW,
+    )
+    (action,) = await repository.list_actions()
+    expected = ActionStatus.PENDING if label else ActionStatus.DEAD
+    assert action.status is expected

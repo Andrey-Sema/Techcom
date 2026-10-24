@@ -19,6 +19,11 @@ cannot enqueue an action, consume an identity or retire current work.
 Full timestamps compare in UTC; date-only updates cannot establish order
 within that day. Equal and same-day coarse versions retain observation
 order. A precise watermark is never replaced by a coarse same-day value.
+A version after the evaluation date is capped to a coarse version of that
+date, so one future-dated record cannot fence every real update until then.
+Decisions without a recipient (`no_action`) on tasks without project
+authority share the task label's scope (migration `0011`), so Done still
+retires their pending work.
 
 Once a version is known, an unversioned observation may replay the same
 fingerprint (including a time-driven policy escalation), but cannot replace

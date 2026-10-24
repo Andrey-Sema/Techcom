@@ -75,6 +75,8 @@ class DecisionWrite:
     baseline: Decision | None = None
     plan_audit: Mapping[str, JsonValue] | None = None
     source_version: SourceVersion | None = None
+    # Display label; scopes decisions that have no recipient project.
+    task_project: str | None = None
 
     def audit_payload(self, decision_id: UUID) -> dict[str, JsonValue]:
         """Return the decision receipt, with the plan trace if any."""
@@ -99,8 +101,10 @@ class DecisionWrite:
         policy baseline decides the stage, not the model.
         """
         target = self.decision.target
-        project = self.source_project or (
-            target.project if target is not None else None
+        project = (
+            self.source_project
+            or (target.project if target is not None else None)
+            or self.task_project
         )
         slot = self.decision if self.baseline is None else self.baseline
         stage = "escalate" if slot.kind is DecisionKind.ESCALATE else "notify"
@@ -142,6 +146,13 @@ class DecisionWrite:
             raise ValueError(message)
 
     def _validate_source(self) -> None:
+        if self.task_project is not None and (
+            not 1
+            <= len(require_storage_text(self.task_project))
+            <= MAX_PROJECT_LENGTH
+        ):
+            message = "invalid task project"
+            raise ValueError(message)
         if self.source_project is not None:
             require_storage_text(self.source_project)
             if not 1 <= len(self.source_project) <= MAX_PROJECT_LENGTH:

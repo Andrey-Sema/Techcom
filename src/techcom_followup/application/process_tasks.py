@@ -309,6 +309,7 @@ class ProcessTasks:
                         retained,
                         run_id=UUID(int=0),
                         source_version=task.source_version,
+                        task_project=task.project,
                     )
                 draft = compose(decision, task, as_of)
             elif self._planner is not None and not dry_run:
@@ -332,6 +333,7 @@ class ProcessTasks:
             baseline=None if final == decision else decision,
             plan_audit=audit,
             source_version=task.source_version,
+            task_project=task.project,
         )
 
     async def _persist_batch(

@@ -8,7 +8,10 @@ from techcom_followup.adapters.outbound.llm_agent_stub import (
     OfflineLanguageModel,
 )
 from techcom_followup.application.orchestrator import FollowUpOrchestrator
-from techcom_followup.application.repository import DecisionOutcome
+from techcom_followup.application.repository import (
+    ActionStatus,
+    DecisionOutcome,
+)
 from techcom_followup.domain.models import DecisionKind
 
 
@@ -74,3 +77,40 @@ async def test_reused_identity_does_not_reuse_foreign_project_authority(
         target = rerun.decisions[0].target
         assert target is not None
         assert target.project == project.strip()
+
+
+async def test_future_dated_snapshot_cannot_fence_later_updates() -> None:
+    record = fixture_records()[0]
+    assert isinstance(record, dict)
+    source = Source(
+        [{**record, "status": "Blocked", "last_update": "2099-01-01"}]
+    )
+    async with stack() as app:
+        app.processor._deps = replace(app.processor._deps, source=source)
+        assert (await app.processor.execute(as_of=AS_OF)).enqueued == 1
+        source.records = [
+            {**record, "status": "Done", "last_update": "2026-10-21T15:00:00Z"}
+        ]
+        done = await app.processor.execute(as_of=AS_OF)
+        assert done.run_id is not None
+        (receipt,) = await app.repository.list_decisions(done.run_id)
+        assert receipt.outcome is DecisionOutcome.NONE
+        (action,) = await app.repository.list_actions()
+        assert action.status is ActionStatus.DEAD
+        assert await app.dispatcher.execute() == 0
+
+
+async def test_done_task_without_project_retires_its_reminder() -> None:
+    record = fixture_records()[0]
+    assert isinstance(record, dict)
+    base = {key: value for key, value in record.items() if key != "project"}
+    source = Source([{**base, "status": "Blocked"}])
+    async with stack() as app:
+        app.processor._deps = replace(app.processor._deps, source=source)
+        assert (await app.processor.execute(as_of=AS_OF)).enqueued == 1
+        source.records = [{**base, "status": "Done"}]
+        await app.processor.execute(as_of=AS_OF)
+        (action,) = await app.repository.list_actions()
+        assert action.status is ActionStatus.DEAD
+        assert action.last_error == "source_state_superseded"
+        assert await app.dispatcher.execute() == 0

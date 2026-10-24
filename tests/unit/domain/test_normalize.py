@@ -88,7 +88,9 @@ def test_task_id_is_canonical(raw: str) -> None:
     assert one(task_id=raw).task_id == "TC-1001"
 
 
-@pytest.mark.parametrize("raw", [None, "", "1001", "TC1001", "T-1", 1001])
+@pytest.mark.parametrize(
+    "raw", [None, "", "1001", "TC1001", "T-1", 1001, "TC-\u0661\u0662"]
+)
 @pytest.mark.asvs("2.2.1")
 def test_invalid_task_id_is_rejected(raw: object) -> None:
     result = normalize([record(task_id=raw)], AS_OF)

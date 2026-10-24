@@ -75,3 +75,17 @@ def test_source_versions_require_aware_instants() -> None:
         SourceVersion(datetime(2026, 10, 21, tzinfo=UTC)).updated_at.tzinfo
         is UTC
     )
+
+
+def test_future_source_version_is_capped_at_the_evaluation_date() -> None:
+    as_of = date(2026, 10, 21)
+    (future, real) = (
+        normalize([{"task_id": "TC-1", "last_update": value}], as_of)
+        .tasks[0]
+        .source_version
+        for value in ("2099-01-01T00:00:00Z", "2026-10-21T15:00:00Z")
+    )
+    assert future == SourceVersion(datetime(2026, 10, 21, tzinfo=UTC), True)
+    assert real is not None
+    assert not real.older_than(future)
+    assert not future.advances(real)
