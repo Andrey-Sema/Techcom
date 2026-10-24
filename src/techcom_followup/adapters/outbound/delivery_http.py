@@ -47,6 +47,16 @@ class _Receipt(BaseModel):
     status: Literal["sent"]
 
 
+class _Absence(BaseModel):
+    """A lookup 404 that names the operation, unlike a routing 404."""
+
+    model_config = ConfigDict(
+        strict=True, extra="forbid", hide_input_in_errors=True
+    )
+    operation_id: UUID
+    status: Literal["not_found"]
+
+
 class HttpDeliveryGateway:
     """Lost acknowledgements need lookup before another POST."""
 
@@ -90,7 +100,11 @@ class HttpDeliveryGateway:
         return self._classify(response, action.identity.operation_id)
 
     async def lookup(self, operation_id: UUID) -> DeliveryResult:
-        """Allow absence only after an authoritative lookup 404."""
+        """Allow absence only after an authoritative lookup 404.
+
+        A proxy, a wrong path or a missing route also answers 404; only a
+        body that echoes this operation proves the receiver looked it up.
+        """
         try:
             response = await self._endpoint.request(
                 "GET", f"/v1/messages/{operation_id}"
@@ -98,7 +112,7 @@ class HttpDeliveryGateway:
         except (httpx.HTTPError, UpstreamError, TimeoutError):
             return DeliveryResult(DeliveryKind.UNKNOWN, error="lookup_unknown")
         if response.status_code == httpx.codes.NOT_FOUND:
-            return DeliveryResult(DeliveryKind.ABSENT)
+            return _absence(response, operation_id)
         return self._classify(response, operation_id)
 
     def _classify(
@@ -132,3 +146,13 @@ class HttpDeliveryGateway:
                 DeliveryKind.UNKNOWN, error="receipt_identity"
             )
         return DeliveryResult(DeliveryKind.ACCEPTED, receipt.provider_ref)
+
+
+def _absence(response: httpx.Response, operation_id: UUID) -> DeliveryResult:
+    try:
+        absence = _Absence.model_validate_json(response.content)
+    except ValidationError:
+        return DeliveryResult(DeliveryKind.UNKNOWN, error="unverified_absence")
+    if absence.operation_id != operation_id:
+        return DeliveryResult(DeliveryKind.UNKNOWN, error="unverified_absence")
+    return DeliveryResult(DeliveryKind.ABSENT)

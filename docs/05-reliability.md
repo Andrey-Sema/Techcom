@@ -149,7 +149,7 @@ key while the first request is still in progress → **409**; keys retained
 | F7 | Prompt injection in note | screen + structure | mass "complete" | no capability + flag | `test_s8_prompt_injection_is_data` |
 | F8 | Duplicate run / concurrent runs | `UNIQUE` conflict | duplicate messages | `ON CONFLICT DO NOTHING` | `test_s4_second_run_no_duplicates`, `test_concurrent_runs_single_action` |
 | F9 | Delivery timeout after commit | read timeout | duplicate message | `unknown` → reconcile; key replay | `test_s6_timeout_after_commit_no_duplicate` |
-| F10 | Delivery timeout before commit | read timeout + lookup 404 | lost message | reconcile 404 → `pending` → resend same key | `test_timeout_before_commit_is_resent_once` |
+| F10 | Delivery timeout before commit | read timeout + lookup 404 echoing the operation | lost message | reconcile verified 404 → `pending` → resend same key; any other 404 stays `unknown` | `test_timeout_before_commit_is_resent_once` |
 | F11 | Dispatcher crash after send, before DB update | lease expiry | duplicate | lease expiry → `unknown` → lookup before any resend | `test_crash_after_send_replayed` |
 | F12 | Two dispatchers | `SKIP LOCKED` | double send | row-level claim | `test_parallel_dispatchers_disjoint` |
 | F13 | Permanent 4xx | status code | infinite retry | `dead` + audit + metric | `test_permanent_error_goes_dead` |

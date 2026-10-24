@@ -66,7 +66,13 @@ async def test_tasks_and_missing_lookup() -> None:
         assert (await client.get("/v1/tasks")).json() == [
             {"task_id": "TC-1002"}
         ]
-        assert (await client.get(f"/v1/messages/{uuid4()}")).status_code == 404
+        missing = uuid4()
+        response = await client.get(f"/v1/messages/{missing}")
+        assert response.status_code == 404
+        assert response.json() == {
+            "operation_id": str(missing),
+            "status": "not_found",
+        }
 
 
 async def test_replay_conflict_and_recovery(tmp_path: Path) -> None:

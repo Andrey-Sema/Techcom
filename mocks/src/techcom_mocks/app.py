@@ -17,7 +17,12 @@ from fastapi.responses import JSONResponse, Response
 
 from techcom_mocks.faults import Fault, FaultPlan, response_for
 from techcom_mocks.limits import BodyLimitMiddleware
-from techcom_mocks.models import DeliveryPayload, ErrorBody, Receipt
+from techcom_mocks.models import (
+    Absence,
+    DeliveryPayload,
+    ErrorBody,
+    Receipt,
+)
 from techcom_mocks.store import (
     DeliveryStore,
     InProgressError,
@@ -133,7 +138,9 @@ class Receiver:
                 409, "operation in progress", headers={"Retry-After": "1"}
             ) from exc
         if receipt is None:
-            raise HTTPException(404, "operation not found")
+            # Echo the operation: a routing 404 cannot prove absence.
+            absence = Absence(operation_id=operation_id, status="not_found")
+            return JSONResponse(absence.model_dump(mode="json"), 404)
         return JSONResponse(receipt.model_dump(mode="json"))
 
 
@@ -191,8 +198,7 @@ def create_app(
         receiver.lookup,
         methods=["GET"],
         response_model=Receipt,
-        responses=_errors(
-            {404: "Unknown operation", 409: _IN_PROGRESS, 422: _INVALID}
-        ),
+        responses=_errors({409: _IN_PROGRESS, 422: _INVALID})
+        | {404: {"model": Absence, "description": "Unknown operation"}},
     )
     return app

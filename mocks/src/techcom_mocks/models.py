@@ -52,6 +52,13 @@ class ErrorBody(StrictModel):
     detail: str
 
 
+class Absence(StrictModel):
+    """Lookup 404 naming the operation, so routing errors cannot pass."""
+
+    operation_id: UUID
+    status: Literal["not_found"]
+
+
 class DeliveryEntry(StrictModel):
     """One committed JSONL record, including its payload digest."""
 

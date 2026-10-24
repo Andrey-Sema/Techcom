@@ -479,3 +479,49 @@ async def test_slow_stream_cannot_extend_total_request_deadline(
                 )
                 with pytest.raises(UpstreamError, match="source_transient"):
                     await source.fetch_tasks()
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        b"",
+        b"<html>Not Found</html>",
+        b'{"detail":"Not Found"}',
+        b'{"operation_id":"%s","status":"not_found"}',
+        b'{"operation_id":"%s","status":"sent"}',
+    ],
+)
+async def test_lookup_404_proves_absence_only_for_this_operation(
+    body: bytes,
+) -> None:
+    operation_id = uuid4()
+    other = str(uuid4()).encode()
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(404, content=body.replace(b"%s", other))
+        )
+    ) as client:
+        result = await HttpDeliveryGateway(
+            endpoint(client), FixedClock(NOW)
+        ).lookup(operation_id)
+    assert result.kind is DeliveryKind.UNKNOWN
+    assert result.error == "unverified_absence"
+
+
+async def test_echoed_lookup_404_proves_absence() -> None:
+    operation_id = uuid4()
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(
+            lambda _: httpx.Response(
+                404,
+                json={
+                    "operation_id": str(operation_id),
+                    "status": "not_found",
+                },
+            )
+        )
+    ) as client:
+        result = await HttpDeliveryGateway(
+            endpoint(client), FixedClock(NOW)
+        ).lookup(operation_id)
+    assert result.kind is DeliveryKind.ABSENT
