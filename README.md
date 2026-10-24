@@ -378,7 +378,6 @@ OpenAI and the CLI (`adapters/`), and composition in `bootstrap.py`.
 | Real task tracker and e-mail/SMS provider | The brief asks for a mock API and forbids real messages; both sit behind ports |
 | Re-reminders on an unchanged task | Needs a product decision on cadence and quiet hours |
 | A review UI and API endpoint | Held actions are reviewed with `followup review`; a UI with role-based approval is product work |
-| Measured quality on a real LLM provider | No labelled real notes; the evaluation harness and an opt-in live test are ready |
 | Real identity provider, internal TLS | Tokens are verified with configured keys; TLS is a deployment concern |
 | 60 s / 30 s targets for 10,000 tasks | Would need batched multi-row writes; current speed is 1,000× the stated volume |
 
