@@ -39,24 +39,9 @@ class HttpEndpoint:
         ``max_response_bytes`` bounds every decoded body; a task listing
         needs more room than an acknowledgement.
         """
-        url = httpx.URL(base_url)
-        local_http = allow_local_http and url.host in {
-            "mock-api",
-            "localhost",
-            "127.0.0.1",
-            "::1",
-        }
-        if (
-            url.host not in allowed_hosts
-            or url.scheme
-            not in ({"https", "http"} if local_http else {"https"})
-            or url.userinfo
-            or url.query
-            or url.fragment
-            or url.path not in {"", "/"}
-        ):
-            message = "outbound origin is not allowed"
-            raise ValueError(message)
+        url = _allowed_origin(
+            base_url, allowed_hosts, allow_local_http=allow_local_http
+        )
         if (
             type(max_response_bytes) is not int
             or not 1 <= max_response_bytes <= MAX_SOURCE_RESPONSE_BYTES
@@ -115,6 +100,29 @@ class HttpEndpoint:
                 headers=decoded_headers,
                 content=content,
             )
+
+
+def _allowed_origin(
+    base_url: str, allowed_hosts: frozenset[str], *, allow_local_http: bool
+) -> httpx.URL:
+    url = httpx.URL(base_url)
+    local_http = allow_local_http and url.host in {
+        "mock-api",
+        "localhost",
+        "127.0.0.1",
+        "::1",
+    }
+    if (
+        url.host not in allowed_hosts
+        or url.scheme not in ({"https", "http"} if local_http else {"https"})
+        or url.userinfo
+        or url.query
+        or url.fragment
+        or url.path not in {"", "/"}
+    ):
+        message = "outbound origin is not allowed"
+        raise ValueError(message)
+    return url
 
 
 async def _read_bounded(response: httpx.Response, limit: int) -> bytes:

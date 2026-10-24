@@ -21,6 +21,7 @@ from techcom_followup.application.command_ports import CommandOptions
 from techcom_followup.infrastructure.http_client import (
     MAX_RESPONSE_BYTES,
     MAX_SOURCE_RESPONSE_BYTES,
+    HttpEndpoint,
     UpstreamError,
 )
 from techcom_followup.infrastructure.telemetry import PrometheusTelemetry
@@ -264,7 +265,7 @@ async def test_metric_export_reads_the_shared_outbox_and_never_fails(
 async def test_task_listing_gets_the_source_bound_and_delivery_the_default(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    endpoint = Mock(wraps=bootstrap.HttpEndpoint)
+    endpoint = Mock(wraps=HttpEndpoint)
     monkeypatch.setattr(bootstrap, "HttpEndpoint", endpoint)
     async with bootstrap.RuntimeBuilder(bootstrap.RuntimeSettings())(
         CommandOptions(AS_OF, dry_run=True)
