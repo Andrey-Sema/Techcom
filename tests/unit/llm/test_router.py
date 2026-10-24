@@ -621,3 +621,31 @@ async def test_queue_only_attempts_release_both_budgets_and_keep_model_healthy(
     assert (await router.generate_json(request_)).model == "gpt-6.1-sol"
     assert backend.calls == ["gpt-6.1-sol"]
     assert ledger.spent == Decimal("0.004000")
+
+
+async def test_entered_provider_timeout_keeps_unknown_bill_and_opens_breaker(
+    routing_config: RoutingConfig, request_: LLMRequest, clock: FakeClock
+) -> None:
+    config = one_route(
+        routing_config, request_timeout_s=0.001, breaker_failure_threshold=1
+    )
+    _, bound = bounded(config, request_)
+    ledger = SharedLedger(bound * 2)
+    backend = BlockingBackend()
+    router = LLMRouter(
+        config=config,
+        backends={"openai": backend},
+        monotonic=clock.monotonic,
+        today=lambda: date(2026, 10, 21),
+        ledger=ledger,
+    )
+    with pytest.raises(LLMUnavailableError) as caught:
+        await router.generate_json(request_)
+    assert backend.calls == 1
+    assert caught.value.attempts[0].outcome == "timeout"
+    assert router.budget.spent_usd == bound
+    assert router.budget.reserved_usd == 0
+    assert ledger.spent == bound
+    assert ledger.settled == [bound]
+    assert ledger.reserved == {}
+    assert router.breakers["gpt-6.1-sol"].state == "open"
