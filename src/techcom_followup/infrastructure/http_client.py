@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import zlib
 from datetime import datetime
 from email.utils import parsedate_to_datetime
 from math import isfinite
@@ -10,6 +11,9 @@ import httpx
 
 MAX_RESPONSE_BYTES = 2_000_000
 REQUEST_DEADLINE_SECONDS = 10
+# Only encodings this module can decode under its own output bound.
+ACCEPT_ENCODING = "gzip, deflate"
+_ZLIB_OR_GZIP = zlib.MAX_WBITS | 32
 
 
 class UpstreamError(Exception):
@@ -71,9 +75,9 @@ class HttpEndpoint:
         payload: object,
         operation_id: str | None,
     ) -> httpx.Response:
-        headers = (
-            {} if operation_id is None else {"Idempotency-Key": operation_id}
-        )
+        headers = {"Accept-Encoding": ACCEPT_ENCODING}
+        if operation_id is not None:
+            headers["Idempotency-Key"] = operation_id
         async with self._client.stream(
             method,
             self._base + path,
@@ -82,15 +86,10 @@ class HttpEndpoint:
             follow_redirects=False,
             timeout=httpx.Timeout(5, connect=2),
         ) as response:
-            content = bytearray()
-            async for chunk in response.aiter_bytes():
-                if len(content) + len(chunk) > MAX_RESPONSE_BYTES:
-                    msg = "response_size"
-                    raise UpstreamError(msg)
-                content.extend(chunk)
+            content = await _read_bounded(response)
             decoded_headers = response.headers.copy()
-            # Drop wire metadata: aiter_bytes already decoded the body.
-            # Avoid decoding again or retaining the compressed length.
+            # Drop wire metadata: the body is already decoded. Avoid
+            # decoding again or retaining the compressed length.
             for name in (
                 "Content-Encoding",
                 "Content-Length",
@@ -100,8 +99,69 @@ class HttpEndpoint:
             return httpx.Response(
                 response.status_code,
                 headers=decoded_headers,
-                content=bytes(content),
+                content=content,
             )
+
+
+async def _read_bounded(response: httpx.Response) -> bytes:
+    if response.is_stream_consumed:
+        # An in-process transport already read and decoded the body.
+        body = _BoundedBody(None)
+        body.feed(response.content)
+        return body.finish()
+    body = _BoundedBody(response.headers.get("Content-Encoding"))
+    try:
+        async for chunk in response.aiter_raw():
+            body.feed(chunk)
+        return body.finish()
+    except zlib.error as error:
+        msg = "response_encoding"
+        raise UpstreamError(msg) from error
+
+
+class _BoundedBody:
+    """Decode a response body without ever exceeding the byte bound.
+
+    A decoder asked for a whole compressed chunk at once could expand a
+    small chunk a thousandfold before any size check; here every
+    decompression step is capped at the remaining allowance.
+    """
+
+    def __init__(self, encoding: str | None) -> None:
+        name = (encoding or "identity").strip().lower()
+        self._decoder: zlib._Decompress | None = None
+        if name in {"gzip", "x-gzip", "deflate"}:
+            self._decoder = zlib.decompressobj(_ZLIB_OR_GZIP)
+        elif name not in {"", "identity"}:
+            msg = "response_encoding"
+            raise UpstreamError(msg)
+        self._content = bytearray()
+
+    def feed(self, chunk: bytes) -> None:
+        """Append one wire chunk, decoded under the remaining bound."""
+        if self._decoder is None:
+            self._append(chunk)
+            return
+        pending = chunk
+        while pending:
+            self._append(self._decoder.decompress(pending, self._room()))
+            pending = self._decoder.unconsumed_tail
+
+    def finish(self) -> bytes:
+        """Return the decoded body after the last wire chunk."""
+        if self._decoder is not None:
+            self._append(self._decoder.flush())
+        return bytes(self._content)
+
+    def _room(self) -> int:
+        # One byte beyond the bound detects an oversized body.
+        return MAX_RESPONSE_BYTES - len(self._content) + 1
+
+    def _append(self, data: bytes) -> None:
+        if len(self._content) + len(data) > MAX_RESPONSE_BYTES:
+            msg = "response_size"
+            raise UpstreamError(msg)
+        self._content.extend(data)
 
 
 def json_body(response: httpx.Response) -> object:

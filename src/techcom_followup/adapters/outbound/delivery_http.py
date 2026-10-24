@@ -102,8 +102,8 @@ class HttpDeliveryGateway:
     async def lookup(self, operation_id: UUID) -> DeliveryResult:
         """Allow absence only after an authoritative lookup 404.
 
-        A proxy, a wrong path or a missing route also answers 404; only a
-        body that echoes this operation proves the receiver looked it up.
+        A proxy, a wrong path or a missing route also answers 404; only
+        a body echoing this operation proves the receiver looked it up.
         """
         try:
             response = await self._endpoint.request(

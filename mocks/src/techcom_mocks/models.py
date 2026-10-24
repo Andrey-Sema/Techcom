@@ -53,7 +53,7 @@ class ErrorBody(StrictModel):
 
 
 class Absence(StrictModel):
-    """Lookup 404 naming the operation, so routing errors cannot pass."""
+    """A lookup 404 naming the operation; a routing 404 cannot."""
 
     operation_id: UUID
     status: Literal["not_found"]

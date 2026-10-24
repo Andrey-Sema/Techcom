@@ -213,8 +213,11 @@ unknown billing still charges the full reserved bound. This distinguishes
 local saturation from an unavailable provider without weakening the shared
 spending cap.
 
-The HTTP adapter consumes decoded bytes, removes original wire-encoding,
-transfer and length headers, and supplies the decoded length on its returned
-response. Other headers, including Retry-After, remain available. Delivery
+The HTTP adapter offers only `gzip, deflate` and decodes the raw stream
+itself, capping every decompression step at the remaining 2 MB allowance,
+so a compression bomb fails with `response_size` without materializing
+its expansion; other encodings fail closed with `response_encoding`. It
+removes original wire-encoding, transfer and length headers, and supplies
+the decoded length on its returned response. Other headers, including Retry-After, remain available. Delivery
 receipt references must be representable by PostgreSQL text before they
 can authorize a sent outcome; invalid references remain uncertain receipts.
