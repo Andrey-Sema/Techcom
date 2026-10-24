@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from datetime import UTC
 from typing import Annotated, Literal, NoReturn
 from uuid import UUID
 
@@ -43,6 +44,7 @@ from techcom_followup.adapters.inbound.api.security import (
     Principal,
     TokenVerifier,
 )
+from techcom_followup.application.process_tasks import require_current
 from techcom_followup.application.repository import (
     ActionReadQuery,
     ActionRecord,
@@ -202,6 +204,14 @@ class _Handlers:
     ) -> TriggerView:
         """Allow global processing only to all-project services."""
         self.scope(request, principal, "runs:trigger")
+        if not payload.dry_run:
+            try:
+                require_current(
+                    payload.as_of,
+                    self.resources.clock.now().astimezone(UTC).date(),
+                )
+            except ValueError:
+                raise HTTPException(422) from None
         if self._trigger_lock.locked():
             raise HTTPException(409)
         async with self._trigger_lock:
@@ -214,6 +224,7 @@ class _Handlers:
                 "status": result.status,
                 "enqueued": result.enqueued,
                 "duplicates": result.duplicates,
+                "stale": result.stale,
             }
         )
 

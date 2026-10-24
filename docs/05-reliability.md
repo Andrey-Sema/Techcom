@@ -27,7 +27,11 @@ retires their pending work.
 
 Once a version is known, an unversioned observation may replay the same
 fingerprint (including a time-driven policy escalation), but cannot replace
-it with different facts. Until a source supplies a version, arrival order
+it with different facts that ask for an action. An unversioned `no_action`
+observation (for example Done without `last_update`) is accepted
+(migration `0012`): it retires unsent work and records its fingerprint
+without advancing the version, because fencing it could only keep an
+obsolete message deliverable. Until a source supplies a version, arrival order
 is the only available ordering. Legacy receipts did not retain source
 versions: upgrade cannot reconstruct their order, so the first versioned
 observation establishes the watermark. A genuinely newer reopening is
@@ -173,7 +177,8 @@ key while the first request is still in progress → **409**; keys retained
   `followup_retries_total{dependency}`, `followup_llm_requests_total{result}`,
   `followup_llm_tokens_total{direction}`, `followup_llm_cost_usd_total`,
   `followup_circuit_state{dependency}`, `followup_outbox_backlog{status}`.
-* **Run report** (JSON): counts per decision, duplicates suppressed, LLM
+* **Run report** (JSON): counts per decision, duplicates suppressed,
+  stale snapshots fenced (`stale`, with a per-decision `outcome`), LLM
   calls/fallbacks/tokens/estimated cost, rejected records with reasons,
   durations.
 

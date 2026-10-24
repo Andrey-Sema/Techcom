@@ -172,7 +172,11 @@ class InMemoryRepository:
         if candidate is None and previous is None:
             return True
         if previous is not None and (
-            (candidate is None and fingerprint != write.fingerprint)
+            (
+                candidate is None
+                and fingerprint != write.fingerprint
+                and write.decision.actionable
+            )
             or (candidate is not None and candidate.older_than(previous))
         ):
             return False

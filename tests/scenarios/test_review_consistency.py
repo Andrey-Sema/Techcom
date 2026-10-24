@@ -52,6 +52,11 @@ async def test_source_regression_after_done_never_reaches_delivery() -> None:
         (receipt,) = await app.repository.list_decisions(stale.run_id)
         assert receipt.outcome is DecisionOutcome.STALE_SUPPRESSED
         assert stale.enqueued == 0
+        assert stale.stale == 1
+        saved = await app.repository.get_run(stale.run_id)
+        assert saved is not None
+        assert saved.stats is not None
+        assert saved.stats["stale"] == 1
         assert await app.dispatcher.execute() == 0
         source.records = [{**record, "last_update": "2026-10-22T09:00:00Z"}]
         fresh = await app.processor.execute(as_of=AS_OF.replace(day=22))

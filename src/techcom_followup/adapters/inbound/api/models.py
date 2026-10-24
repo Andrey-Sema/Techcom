@@ -52,6 +52,7 @@ class TriggerView(ApiModel):
     status: Literal["completed", "dry_run", "skipped_locked"]
     enqueued: int = Field(ge=0)
     duplicates: int = Field(ge=0)
+    stale: int = Field(ge=0)
 
 
 class RunCounts(ApiModel):
@@ -61,6 +62,7 @@ class RunCounts(ApiModel):
     rejected: int = Field(default=0, ge=0, strict=True)
     enqueued: int = Field(default=0, ge=0, strict=True)
     duplicates: int = Field(default=0, ge=0, strict=True)
+    stale: int = Field(default=0, ge=0, strict=True)
 
 
 class RunView(ApiModel):

@@ -29,6 +29,11 @@ class RunResult(Protocol):
         """Existing actions suppressed by deduplication."""
         ...
 
+    @property
+    def stale(self) -> int:
+        """Snapshots fenced as older than the source watermark."""
+        ...
+
 
 class RunService(Protocol):
     """Execute global processing behind a structural port."""
