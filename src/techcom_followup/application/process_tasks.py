@@ -30,6 +30,7 @@ from techcom_followup.application.telemetry import (
     HistogramName,
     Telemetry,
 )
+from techcom_followup.domain.envelope import priority_rank
 from techcom_followup.domain.identity import ActionIdentity, state_fingerprint
 from techcom_followup.domain.injection import screen_task
 from techcom_followup.domain.interpretation import prefilter
@@ -37,6 +38,7 @@ from techcom_followup.domain.messages import MessageDraft, compose
 from techcom_followup.domain.models import (
     Decision,
     Flag,
+    ReasonCode,
     RejectedRecord,
     Task,
 )
@@ -314,7 +316,7 @@ class ProcessTasks:
                     and retained.source_project == source_project
                 ):
                     return replace(
-                        retained,
+                        _refreshed(retained, decision),
                         run_id=UUID(int=0),
                         source_version=task.source_version,
                         task_project=task.project,
@@ -401,6 +403,35 @@ class ProcessTasks:
                     record.task_id,
                 )
             )
+
+
+def _refreshed(retained: DecisionWrite, current: Decision) -> DecisionWrite:
+    """Keep a retained plan's choices with today's policy facts.
+
+    The identity matched, so ``current`` is the same policy stage for
+    the same state; only its timing (reason, rule, priority) moved since
+    the plan was saved. The saved message is reused, never sent again.
+    """
+    if retained.baseline is None:
+        return replace(retained, decision=current)
+    planned, before = retained.decision, retained.baseline
+    return replace(
+        retained,
+        baseline=current,
+        decision=replace(
+            planned,
+            rule_id=f"{current.rule_id}+agent",
+            reason_code=planned.reason_code
+            if planned.reason_code is ReasonCode.AGENT_JUDGEMENT
+            else current.reason_code,
+            reason=current.reason,
+            priority=max(
+                planned.priority, current.priority, key=priority_rank
+            ),
+            flags=current.flags | (planned.flags - before.flags),
+            interpretation=current.interpretation,
+        ),
+    )
 
 
 def require_current(as_of: date, today: date) -> None:

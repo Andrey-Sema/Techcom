@@ -190,8 +190,11 @@ attempt and outcome in order.
 
 ## Review corrections (2026-10-24)
 
-Duplicate reports reuse the saved decision, message, baseline and plan audit
-together within the same authorized source-project scope. A changed or
+Duplicate reports reuse the saved message, the planner's choices and plan
+audit together within the same authorized source-project scope. The policy
+facts (baseline, rule, reason, minimum priority) come from today's
+evaluation, so a report never shows yesterday's "due today" for a task
+that is now overdue. A changed or
 noncanonical scope gets a coherent current template projection without
 reusing the old scope authority. Their source version is taken from the
 current observation, so a
