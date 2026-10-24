@@ -653,9 +653,9 @@ class PgRepository:
         unreferenced = ~sa.exists().where(
             actions.c.decision_id == decisions.c.id
         )
-        old_runs = sa.select(runs.c.id).where(
-            runs.c.finished_at < cutoffs.decisions
-        )
+        # A run that never finished (its process died) ages from start.
+        run_age = sa.func.coalesce(runs.c.finished_at, runs.c.started_at)
+        old_runs = sa.select(runs.c.id).where(run_age < cutoffs.decisions)
         steps = (
             (
                 llm_cache,
@@ -681,7 +681,7 @@ class PgRepository:
             (
                 runs,
                 runs.c.id,
-                (runs.c.finished_at < cutoffs.decisions)
+                (run_age < cutoffs.decisions)
                 & ~sa.exists().where(decisions.c.run_id == runs.c.id),
             ),
         )

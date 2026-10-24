@@ -2,7 +2,8 @@
 
 Retention never touches work in progress: pending, held, in-flight and
 unknown actions stay, and a decision stays while an action refers to
-it. Identity tombstones, slots and source watermarks outlive payload
+it. A run whose process died before finishing ages from its start.
+Identity tombstones, slots and source watermarks outlive payload
 expiry. Pruning never authorizes another delivery of the same logical
 action or erases the source ordering guarantee.
 """

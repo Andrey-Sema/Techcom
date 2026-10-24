@@ -571,8 +571,7 @@ class InMemoryRepository:
         old = [
             key
             for key, stored in self._decisions.items()
-            if (finished := self._runs[key[0]].finished_at) is not None
-            and finished < cutoff
+            if _run_age(self._runs[key[0]]) < cutoff
             and stored.id not in referenced
         ][:limit]
         for key in old:
@@ -594,13 +593,16 @@ class InMemoryRepository:
         old = [
             run.id
             for run in self._runs.values()
-            if run.finished_at is not None
-            and run.finished_at < cutoff
-            and run.id not in used
+            if _run_age(run) < cutoff and run.id not in used
         ][:limit]
         for run_id in old:
             del self._runs[run_id]
         return len(old)
+
+
+def _run_age(run: RunRecord) -> datetime:
+    # A run that never finished (its process died) ages from its start.
+    return run.started_at if run.finished_at is None else run.finished_at
 
 
 def _visible(action: ActionRecord, query: ActionReadQuery) -> bool:
