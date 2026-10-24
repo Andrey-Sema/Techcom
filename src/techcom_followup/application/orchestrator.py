@@ -45,6 +45,7 @@ from techcom_followup.application.processing_ports import PlannedAction
 from techcom_followup.application.repository import (
     MAX_ACTION_READ_LIMIT,
     ActionReadQuery,
+    ActionRecord,
     ActionStatus,
     Repository,
 )
@@ -441,19 +442,11 @@ class FollowUpOrchestrator:
                 newest_first=True,
             )
         )
-        # Without project authority the history is this task's own
-        # authority-free actions under the same label, never another
-        # project's actions for a reused task id.
-        actions = [
-            action
-            for action in found
+        actions = (
+            found
             if authority is not None
-            or (
-                action.source_project is None
-                and action.decision.target is not None
-                and action.decision.target.project == task.project
-            )
-        ][:MAX_HISTORY]
+            else _authority_free(found, task.project)[:MAX_HISTORY]
+        )
         sent = sum(action.status is ActionStatus.SENT for action in actions)
         return [
             {
@@ -469,3 +462,20 @@ class FollowUpOrchestrator:
             }
             for action in actions
         ], sent
+
+
+def _authority_free(
+    actions: tuple[ActionRecord, ...], label: str
+) -> list[ActionRecord]:
+    """Return the actions a task without project authority may own.
+
+    Those are its authority-free actions under the same label, never
+    another project's actions for a reused task id.
+    """
+    return [
+        action
+        for action in actions
+        if action.source_project is None
+        and action.decision.target is not None
+        and action.decision.target.project == label
+    ]

@@ -14,8 +14,8 @@ depends_on = None
 _DDL = """
 SET LOCAL lock_timeout = '5s';
 ALTER TABLE decisions DROP CONSTRAINT decisions_outcome_check;
--- Existing rows satisfy the narrower old check, so skip the full-table
--- scan under ACCESS EXCLUSIVE; new and updated rows are still checked.
+-- Keep the ACCESS EXCLUSIVE lock brief: revision 0013 validates existing
+-- rows in its own transaction; new and updated rows are checked at once.
 ALTER TABLE decisions ADD CONSTRAINT decisions_outcome_check
     CHECK (outcome IN (
         'none','enqueued','duplicate_suppressed','stale_suppressed'))
