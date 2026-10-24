@@ -220,7 +220,8 @@ local saturation from an unavailable provider without weakening the shared
 spending cap.
 
 The HTTP adapter offers only `gzip, deflate` and decodes the raw stream
-itself, capping every decompression step at the remaining 2 MB allowance,
+itself, capping every decompression step at the remaining allowance (2 MB
+for acknowledgements, 32 MB for a task listing of up to 10,000 records),
 so a compression bomb fails with `response_size` without materializing
 its expansion; other encodings fail closed with `response_encoding`. It
 removes original wire-encoding, transfer and length headers, and supplies

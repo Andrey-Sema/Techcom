@@ -259,3 +259,17 @@ def test_command_failure_names_the_error_class() -> None:
         "level": "error",
         "error_type": "OperationalError",
     }
+
+
+def test_run_counters_survive_redaction() -> None:
+    safe = redact_event(
+        None,
+        "info",
+        {
+            "event": "run.completed",
+            "enqueued": 1,
+            "duplicates": 2,
+            "stale": 3,
+        },
+    )
+    assert (safe["enqueued"], safe["duplicates"], safe["stale"]) == (1, 2, 3)

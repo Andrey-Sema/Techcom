@@ -10,6 +10,8 @@ from math import isfinite
 import httpx
 
 MAX_RESPONSE_BYTES = 2_000_000
+# Ten thousand task records with full notes; never for acknowledgements.
+MAX_SOURCE_RESPONSE_BYTES = 32_000_000
 REQUEST_DEADLINE_SECONDS = 10
 # Only encodings this module can decode under its own output bound.
 ACCEPT_ENCODING = "gzip, deflate"
@@ -30,8 +32,13 @@ class HttpEndpoint:
         *,
         allowed_hosts: frozenset[str],
         allow_local_http: bool = False,
+        max_response_bytes: int = MAX_RESPONSE_BYTES,
     ) -> None:
-        """Reject credentials, paths and unapproved origins."""
+        """Reject credentials, paths and unapproved origins.
+
+        ``max_response_bytes`` bounds every decoded body; a task listing
+        needs more room than an acknowledgement.
+        """
         url = httpx.URL(base_url)
         local_http = allow_local_http and url.host in {
             "mock-api",
@@ -50,8 +57,15 @@ class HttpEndpoint:
         ):
             message = "outbound origin is not allowed"
             raise ValueError(message)
+        if (
+            type(max_response_bytes) is not int
+            or not 1 <= max_response_bytes <= MAX_SOURCE_RESPONSE_BYTES
+        ):
+            message = "response bound must be in 1..32000000 bytes"
+            raise ValueError(message)
         self._client = client
         self._base = str(url).rstrip("/")
+        self._limit = max_response_bytes
 
     async def request(
         self,
@@ -86,7 +100,7 @@ class HttpEndpoint:
             follow_redirects=False,
             timeout=httpx.Timeout(5, connect=2),
         ) as response:
-            content = await _read_bounded(response)
+            content = await _read_bounded(response, self._limit)
             decoded_headers = response.headers.copy()
             # Drop wire metadata: the body is already decoded. Avoid
             # decoding again or retaining the compressed length.
@@ -103,13 +117,13 @@ class HttpEndpoint:
             )
 
 
-async def _read_bounded(response: httpx.Response) -> bytes:
+async def _read_bounded(response: httpx.Response, limit: int) -> bytes:
     if response.is_stream_consumed:
         # An in-process transport already read and decoded the body.
-        body = _BoundedBody(None)
+        body = _BoundedBody(None, limit)
         body.feed(response.content)
         return body.finish()
-    body = _BoundedBody(response.headers.get("Content-Encoding"))
+    body = _BoundedBody(response.headers.get("Content-Encoding"), limit)
     try:
         async for chunk in response.aiter_raw():
             body.feed(chunk)
@@ -127,8 +141,9 @@ class _BoundedBody:
     decompression step is capped at the remaining allowance.
     """
 
-    def __init__(self, encoding: str | None) -> None:
+    def __init__(self, encoding: str | None, limit: int) -> None:
         name = (encoding or "identity").strip().lower()
+        self._limit = limit
         self._decoder: zlib._Decompress | None = None
         if name in {"gzip", "x-gzip", "deflate"}:
             self._decoder = zlib.decompressobj(_ZLIB_OR_GZIP)
@@ -155,10 +170,10 @@ class _BoundedBody:
 
     def _room(self) -> int:
         # One byte beyond the bound detects an oversized body.
-        return MAX_RESPONSE_BYTES - len(self._content) + 1
+        return self._limit - len(self._content) + 1
 
     def _append(self, data: bytes) -> None:
-        if len(self._content) + len(data) > MAX_RESPONSE_BYTES:
+        if len(self._content) + len(data) > self._limit:
             msg = "response_size"
             raise UpstreamError(msg)
         self._content.extend(data)

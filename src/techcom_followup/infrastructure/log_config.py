@@ -60,6 +60,7 @@ _COUNTERS = frozenset(
         "attempt_count",
         "enqueued",
         "duplicates",
+        "stale",
         "delivered",
         "decisions",
         "rejected",
