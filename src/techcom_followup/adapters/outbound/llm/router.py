@@ -55,13 +55,14 @@ from techcom_followup.infrastructure.resilience import (
 _log = structlog.get_logger(__name__)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class _Admission:
-    """Both budget admissions of one provider attempt."""
+    """Both budgets and the provider-start boundary of one attempt."""
 
     bound: Decimal
     reservation: SpendReservation
     ticket: UUID | None
+    started: bool = False
 
 
 class LLMBackend(Protocol):
@@ -179,13 +180,18 @@ class LLMRouter:
         try:
             async with timeout(self._config.request_timeout_s):
                 result = await self._reserved_route(
-                    request, route, attempts, permit
+                    request, route, attempts, permit, admission
                 )
             if result is not None:
                 cost = result.cost_usd
         except TimeoutError:
-            breaker.record_failure(permit)
-            attempts.append(_attempt(route, "timeout"))
+            if admission.started:
+                breaker.record_failure(permit)
+            attempts.append(
+                _attempt(
+                    route, "timeout" if admission.started else "queue_timeout"
+                )
+            )
             return None
         except LLMBilledError as exc:
             if exc.usage is not None:
@@ -195,7 +201,9 @@ class LLMRouter:
             return result
         finally:
             breaker.abandon(permit)
-            await self._release(admission, cost, request)
+            await self._release(
+                admission, cost if admission.started else Decimal(0), request
+            )
 
     async def _admit(
         self,
@@ -281,12 +289,14 @@ class LLMRouter:
         route: RouteConfig,
         attempts: list[RouteAttempt],
         permit: BreakerPermit,
+        admission: _Admission,
     ) -> LLMResult | None:
         breaker = self._breakers[route.model]
         started = self._monotonic()
         backend = self._backends[route.provider]
         try:
             async with self._semaphore:
+                admission.started = True
                 reply = await backend.complete(
                     request,
                     route,

@@ -262,7 +262,8 @@ class DispatchActions:
                 now + timedelta(seconds=delay),
                 error=result.error,
                 provider_ref=result.provider_ref,
-            )
+            ),
+            audit_kind="delivery",
         )
         if applied is not None:
             status = applied
@@ -270,13 +271,6 @@ class DispatchActions:
                 self._deps.telemetry.count(
                     CounterName.ACTIONS, outcome=status.value
                 )
-            await audit_delivery(
-                self._deps.repository,
-                action,
-                now,
-                f"delivery.{status.value}",
-                status,
-            )
 
 
 def delivery_status(

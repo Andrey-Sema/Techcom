@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from enum import StrEnum
 from math import isfinite
-from typing import Protocol
+from typing import Literal, Protocol
 from uuid import UUID
 
 from pydantic import JsonValue
@@ -24,6 +24,7 @@ from techcom_followup.domain.models import (
     Flag,
     NoteInterpretation,
 )
+from techcom_followup.domain.source_version import SourceVersion
 
 MAX_BATCH_SIZE = 1000
 MAX_ERROR_LENGTH = 200
@@ -57,6 +58,7 @@ class DecisionOutcome(StrEnum):
     NONE = "none"
     ENQUEUED = "enqueued"
     DUPLICATE_SUPPRESSED = "duplicate_suppressed"
+    STALE_SUPPRESSED = "stale_suppressed"
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,6 +74,9 @@ class DecisionWrite:
     source_position: int | None = None
     baseline: Decision | None = None
     plan_audit: Mapping[str, JsonValue] | None = None
+    source_version: SourceVersion | None = None
+    # Display label; scopes decisions that have no recipient project.
+    task_project: str | None = None
 
     def audit_payload(self, decision_id: UUID) -> dict[str, JsonValue]:
         """Return the decision receipt, with the plan trace if any."""
@@ -96,8 +101,10 @@ class DecisionWrite:
         policy baseline decides the stage, not the model.
         """
         target = self.decision.target
-        project = self.source_project or (
-            target.project if target is not None else None
+        project = (
+            self.source_project
+            or (target.project if target is not None else None)
+            or self.task_project
         )
         slot = self.decision if self.baseline is None else self.baseline
         stage = "escalate" if slot.kind is DecisionKind.ESCALATE else "notify"
@@ -139,6 +146,13 @@ class DecisionWrite:
             raise ValueError(message)
 
     def _validate_source(self) -> None:
+        if self.task_project is not None and (
+            not 1
+            <= len(require_storage_text(self.task_project))
+            <= MAX_PROJECT_LENGTH
+        ):
+            message = "invalid task project"
+            raise ValueError(message)
         if self.source_project is not None:
             require_storage_text(self.source_project)
             if not 1 <= len(self.source_project) <= MAX_PROJECT_LENGTH:
@@ -332,6 +346,36 @@ class AuditEvent:
     task_id: str | None = None
 
 
+type DeliveryAuditKind = Literal["delivery", "reconciliation"]
+
+
+def outcome_event(
+    action: ActionRecord,
+    now: datetime,
+    status: ActionStatus,
+    kind: DeliveryAuditKind,
+) -> AuditEvent:
+    """Build the receipt from the effective fenced storage outcome."""
+    name = (
+        f"delivery.{status.value}"
+        if kind == "delivery"
+        else "delivery.reconciled"
+        if status is ActionStatus.SENT
+        else "delivery.reconciliation"
+    )
+    return AuditEvent(
+        name,
+        now,
+        {
+            "action_id": str(action.id),
+            "operation_id": str(action.identity.operation_id),
+            "attempt": action.attempts,
+            "status": status.value,
+        },
+        task_id=action.decision.task_id,
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class CacheEntry:
     """A validated interpretation with explicit expiry."""
@@ -507,8 +551,19 @@ class Repository(Protocol):
         """Fence unknown rows for lookup without counting attempts."""
         ...
 
-    async def apply_outcome(self, update: ActionUpdate) -> ActionStatus | None:
-        """Return the durable status, or None after lost ownership."""
+    async def apply_outcome(
+        self,
+        update: ActionUpdate,
+        *,
+        audit_kind: DeliveryAuditKind | None = None,
+    ) -> ActionStatus | None:
+        """Commit the fenced status and optional receipt atomically."""
+        ...
+
+    async def get_action_plans(
+        self, keys: tuple[str, ...]
+    ) -> Mapping[str, DecisionWrite | None]:
+        """Read complete retained plans or identity-only tombstones."""
         ...
 
     async def defer_claim(self, update: ActionUpdate) -> bool:

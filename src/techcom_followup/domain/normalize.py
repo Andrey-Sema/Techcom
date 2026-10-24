@@ -18,13 +18,14 @@ from techcom_followup.domain.models import (
     TaskStatus,
     UntrustedText,
 )
+from techcom_followup.domain.source_version import SourceVersion
 from techcom_followup.domain.text import clean_line, fold
 
 MAX_NAME_CHARS = 80
 MAX_TITLE_CHARS = 80
 UNKNOWN_LABEL = "(unknown)"
 
-_TASK_ID = re.compile(r"[A-Z]{2,5}-\d{1,9}")
+_TASK_ID = re.compile(r"[A-Z]{2,5}-[0-9]{1,9}")
 _ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 _ISO_DATETIME = re.compile(r"\d{4}-\d{2}-\d{2}[T ]\S+")
 _STATUS_SEPARATORS = re.compile(r"[\s_\-]+")
@@ -118,6 +119,7 @@ def _to_task(record: object, as_of: date) -> Task | RejectedRecord:
         last_update=last_update,
         notes=notes,
         flags=frozenset(flags),
+        source_version=_source_version(record.get("last_update"), as_of),
     )
 
 
@@ -180,11 +182,30 @@ def _parse_date(value: str) -> date | None:
 
 
 def _is_newer(candidate: Task, current: Task) -> bool:
-    if candidate.last_update is None:
+    if candidate.source_version is None:
         return False
-    if current.last_update is None:
+    if current.source_version is None:
         return True
-    return candidate.last_update > current.last_update
+    return current.source_version.older_than(candidate.source_version)
+
+
+def _source_version(value: object, as_of: date) -> SourceVersion | None:
+    if not isinstance(value, str) or _parse_date(value) is None:
+        return None
+    text = value.strip()
+    moment = datetime.fromisoformat(text)
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=UTC)
+    moment = moment.astimezone(UTC)
+    if moment.date() > as_of:
+        # A future claim would fence every real update until that day.
+        # Cap it at the evaluation date, without intra-day authority.
+        return SourceVersion(
+            datetime.combine(as_of, datetime.min.time(), UTC), date_only=True
+        )
+    return SourceVersion(
+        moment, date_only=_ISO_DATE.fullmatch(text) is not None
+    )
 
 
 def _with_index(record: RejectedRecord, index: int) -> RejectedRecord:

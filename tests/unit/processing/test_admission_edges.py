@@ -122,6 +122,9 @@ async def test_decision_write_rejects_inconsistent_provenance() -> None:
         ({"source_project": "x" * 201}, "invalid source project"),
         ({"source_project": "Other"}, "recipient project differs"),
         ({"source_position": -1}, "invalid source position"),
+        ({"task_project": ""}, "invalid task project"),
+        ({"task_project": "x" * 201}, "invalid task project"),
+        ({"task_project": "a\x00b"}, "without NUL"),
     ):
         with pytest.raises(ValueError, match=message):
             replace(write, **changed).validate()

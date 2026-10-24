@@ -221,7 +221,7 @@ class ProcessTasks:
             existing = (
                 {}
                 if dry_run
-                else await self._deps.repository.get_action_messages(keys)
+                else await self._deps.repository.get_action_plans(keys)
             )
             # Planning is independent per task and dominated by model
             # latency, so a batch plans concurrently, in source order.
@@ -280,7 +280,7 @@ class ProcessTasks:
         proposal: _Proposal,
         as_of: date,
         *,
-        existing: Mapping[str, MessageDraft | None],
+        existing: Mapping[str, DecisionWrite | None],
         dry_run: bool,
     ) -> DecisionWrite:
         identity, task, decision = (
@@ -290,13 +290,28 @@ class ProcessTasks:
         )
         draft, final = None, decision
         audit: Mapping[str, JsonValue] | None = None
+        source_project = (
+            None
+            if task.project == UNKNOWN_LABEL
+            or Flag.NONCANONICAL_PROJECT in task.flags
+            else task.project
+        )
         if identity is not None:
             if identity.idempotency_key in existing:
                 # Retained identities need no new model call, even after
                 # the original payload has expired. No action is sent.
-                draft = existing[identity.idempotency_key] or compose(
-                    decision, task, as_of
-                )
+                retained = existing[identity.idempotency_key]
+                if (
+                    retained is not None
+                    and retained.source_project == source_project
+                ):
+                    return replace(
+                        retained,
+                        run_id=UUID(int=0),
+                        source_version=task.source_version,
+                        task_project=task.project,
+                    )
+                draft = compose(decision, task, as_of)
             elif self._planner is not None and not dry_run:
                 planned = await self._planner.plan(decision, task, as_of=as_of)
                 final, draft, audit = (
@@ -314,14 +329,11 @@ class ProcessTasks:
             proposal.fingerprint,
             identity,
             draft,
-            source_project=(
-                None
-                if task.project == UNKNOWN_LABEL
-                or Flag.NONCANONICAL_PROJECT in task.flags
-                else task.project
-            ),
+            source_project=source_project,
             baseline=None if final == decision else decision,
             plan_audit=audit,
+            source_version=task.source_version,
+            task_project=task.project,
         )
 
     async def _persist_batch(

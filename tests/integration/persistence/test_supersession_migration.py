@@ -51,6 +51,10 @@ async def test_upgrade_retires_an_already_stale_queue(
 async def test_downgrade_cannot_discard_an_uncertain_superseded_fence(
     pg_engine: AsyncEngine,
 ) -> None:
+    async with pg_engine.begin() as connection:
+        await connection.run_sync(
+            lambda sync: revision(sync, "0009", upgrade=False)
+        )
     repository = PgRepository(pg_engine)
     await repository.record_decision(await action_write(repository), NOW)
     async with pg_engine.begin() as connection:

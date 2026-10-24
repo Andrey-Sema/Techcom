@@ -13,10 +13,10 @@ inserted by code.
 | `task_id` | `strip().upper()`, must match `^[A-Z]{2,5}-\d{1,9}$` | Missing/invalid → `RejectedRecord(reason="invalid_task_id")` |
 | `status` | `casefold()`, collapse whitespace, map synonyms (`"in progress"`, `"working"` → `WORKING_ON_IT`; `"complete"`, `"completed"`, `"closed"` → `DONE`; `"stuck"` → `BLOCKED`; `"todo"`, `"not started"` → `NOT_STARTED`) | Unmapped → `UNKNOWN` (kept, clarified later) |
 | `assigned_to` | strip, collapse spaces; `""`, `"n/a"`, `"tbd"`, `"unassigned"`, `"none"` → `None` | — |
-| `due_date`, `last_update` | ISO `YYYY-MM-DD`; also accept ISO datetime (converted to UTC date) | Unparsable → `None` + data-quality warning (`due_date` then triggers clarification) |
+| `due_date`, `last_update` | ISO date/datetime; UTC date for policy, full timestamp retained separately for source ordering | Unparsable → `None` + data-quality warning (`due_date` then triggers clarification) |
 | `notes` | Wrapped in `UntrustedText`: strip control chars (except `\n`), NFKC normalize, cap at 2,000 chars (`truncated=True`) | `None` → empty |
 | `project`, `task` | strip; empty → `"(unknown)"` | — |
-| duplicate `task_id` | keep latest `last_update` (tie → first occurrence) | others rejected `duplicate_task_id` |
+| duplicate `task_id` | keep latest comparable source timestamp; dates have day precision (tie or same-day coarse ambiguity → first occurrence) | others rejected `duplicate_task_id` |
 | `last_update` in the future | kept, flag `future_last_update` | — |
 | Unknown extra fields | ignored (schema is open for forward compatibility) | — |
 
@@ -284,7 +284,7 @@ model or send twice. Each call has a 20 s timeout; the whole plan has a
 }
 ```
 
-`outcome ∈ {enqueued, duplicate_suppressed, none}`; a second run over
+`outcome ∈ {enqueued, duplicate_suppressed, stale_suppressed, none}`; a second run over
 unchanged data yields `duplicate_suppressed` for every actionable task and
 **zero** new delivery-log lines.
 

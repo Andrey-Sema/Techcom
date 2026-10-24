@@ -111,6 +111,8 @@ async def test_service_role_runs_the_whole_repository(
         "UPDATE llm_spend_days SET spent_usd = 0",
         "DELETE FROM llm_spend_reservations",
         "SELECT * FROM notification_slots",
+        "SELECT * FROM source_versions",
+        "DELETE FROM source_versions",
         "DROP TABLE runs",
         "ALTER TABLE actions DROP COLUMN last_error",
         "CREATE TABLE intruder (id integer)",

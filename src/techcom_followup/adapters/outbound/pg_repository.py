@@ -30,11 +30,13 @@ from techcom_followup.application.repository import (
     ClaimRequest,
     DecisionOutcome,
     DecisionWrite,
+    DeliveryAuditKind,
     OutboxStatus,
     PruneCounts,
     RetentionCutoffs,
     RunRecord,
     StoredDecision,
+    outcome_event,
     require_aware,
     review_event,
 )
@@ -159,7 +161,7 @@ class PgRepository:
                             decisions.c.task_id,
                         ]
                     )
-                    .returning(decisions.c.id)
+                    .returning(decisions.c.id, decisions.c.outcome)
                 )
             except sa.exc.IntegrityError as error:
                 sqlstate = getattr(error.orig, "sqlstate", None)
@@ -167,8 +169,8 @@ class PgRepository:
                     message = "run does not exist"
                     raise ValueError(message) from error
                 raise
-            decision_id = inserted.scalar_one_or_none()
-            if decision_id is None:
+            row = inserted.mappings().one_or_none()
+            if row is None:
                 # The same run already decided this task: replay it.
                 result = await connection.execute(
                     sa.select(decisions).where(
@@ -177,7 +179,14 @@ class PgRepository:
                     )
                 )
                 return _stored(result.mappings().one())
-            outcome = await self._enqueue(connection, write, decision_id, now)
+            decision_id = row["id"]
+            outcome = await self._enqueue(
+                connection,
+                write,
+                decision_id,
+                now,
+                DecisionOutcome(row["outcome"]),
+            )
             return StoredDecision(decision_id, write, outcome)
 
     async def _enqueue(
@@ -186,10 +195,13 @@ class PgRepository:
         write: DecisionWrite,
         decision_id: UUID,
         now: datetime,
+        outcome: DecisionOutcome,
     ) -> DecisionOutcome:
-        outcome = DecisionOutcome.NONE
         identity = write.identity
-        if identity is not None:
+        if (
+            identity is not None
+            and outcome is not DecisionOutcome.STALE_SUPPRESSED
+        ):
             result = await connection.execute(
                 insert(actions)
                 .values(
@@ -287,6 +299,34 @@ class PgRepository:
                 if row["message"] is None
                 else _DRAFT.validate_python(row["message"])
                 for row in result.mappings()
+            }
+
+    async def get_action_plans(
+        self, keys: tuple[str, ...]
+    ) -> Mapping[str, DecisionWrite | None]:
+        """Read complete plans or payload-free tombstones."""
+        if len(keys) > MAX_BATCH_SIZE:
+            message = "plan lookup exceeds the batch bound"
+            raise ValueError(message)
+        if not keys:
+            return {}
+        statement = (
+            sa.select(action_keys.c.idempotency_key, decisions.c.data)
+            .select_from(
+                action_keys.outerjoin(
+                    actions,
+                    action_keys.c.idempotency_key == actions.c.idempotency_key,
+                ).outerjoin(decisions, actions.c.decision_id == decisions.c.id)
+            )
+            .where(action_keys.c.idempotency_key.in_(keys))
+        )
+        async with self._engine.connect() as connection:
+            rows = await connection.execute(statement)
+            return {
+                row["idempotency_key"]: None
+                if row["data"] is None
+                else _WRITE.validate_python(row["data"])
+                for row in rows.mappings()
             }
 
     async def query_actions(
@@ -443,7 +483,12 @@ class PgRepository:
             )
             return tuple(_action(row) for row in result.mappings())
 
-    async def apply_outcome(self, update: ActionUpdate) -> ActionStatus | None:
+    async def apply_outcome(
+        self,
+        update: ActionUpdate,
+        *,
+        audit_kind: DeliveryAuditKind | None = None,
+    ) -> ActionStatus | None:
         """Fence stale workers from modifying newer claims."""
         update.validate()
         async with self._engine.begin() as connection:
@@ -468,10 +513,31 @@ class PgRepository:
                     if update.status.value in _TERMINAL
                     else None,
                 )
-                .returning(actions.c.status)
+                .returning(actions.c.id, actions.c.status)
             )
-            status = result.scalar_one_or_none()
-            return None if status is None else ActionStatus(status)
+            row = result.mappings().one_or_none()
+            if row is None:
+                return None
+            status = ActionStatus(row["status"])
+            if audit_kind is not None:
+                saved = await connection.execute(
+                    _ACTION_QUERY.where(actions.c.id == row["id"])
+                )
+                event = outcome_event(
+                    _action(saved.mappings().one()),
+                    update.now,
+                    status,
+                    audit_kind,
+                )
+                await connection.execute(
+                    audit_events.insert().values(
+                        kind=event.kind,
+                        at=event.at,
+                        payload=dict(event.payload),
+                        task_id=event.task_id,
+                    )
+                )
+            return status
 
     async def defer_claim(self, update: ActionUpdate) -> bool:
         """Fence an unsent claim and restore its unspent attempt."""

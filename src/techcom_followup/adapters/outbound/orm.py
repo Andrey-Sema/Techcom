@@ -40,7 +40,8 @@ decisions = sa.Table(
     sa.Column("source_position", sa.Integer),
     sa.UniqueConstraint("run_id", "task_id"),
     sa.CheckConstraint(
-        "outcome IN ('none','enqueued','duplicate_suppressed')",
+        "outcome IN ('none','enqueued','duplicate_suppressed',"
+        "'stale_suppressed')",
         name="decisions_outcome_check",
     ),
     sa.CheckConstraint(
@@ -218,4 +219,14 @@ llm_spend_reservations = sa.Table(
     ),
     sa.Column("amount_usd", sa.Numeric(14, 6), nullable=False),
     sa.CheckConstraint("amount_usd >= 0"),
+)
+
+source_versions = sa.Table(
+    "source_versions",
+    metadata,
+    sa.Column("task_id", sa.Text, primary_key=True),
+    sa.Column("project", sa.Text, primary_key=True),
+    sa.Column("updated_at", sa.DateTime(timezone=True)),
+    sa.Column("date_only", sa.Boolean, nullable=False),
+    sa.Column("fingerprint", sa.Text, nullable=False),
 )

@@ -67,7 +67,8 @@ _KEYWORDS: tuple[tuple[BlockerCategory, re.Pattern[str]], ...] = tuple(
 # or historical context needs interpretation before confident routing.
 # These cues are conservative, not a complete negation detector.
 _AMBIGUOUS_CONTEXT = re.compile(
-    r"\b(?:historical|formerly|previously|quotes?|quoted|resolved)\b"
+    r"\b(?:historical|formerly|previously|quotes?|quoted|resolved"
+    r"|if|unless|hypothetical|potential|example|training|might|could)\b"
     r"|\bold\s+issue\b"
     r"|\bno\s+(?:remaining\s+)?(?:(?:materials?|permit|access|upstream)\s+)?"
     r"(?:blockers?|obstacles?|delays?)\b"
