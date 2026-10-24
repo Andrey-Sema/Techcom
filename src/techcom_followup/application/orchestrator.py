@@ -43,7 +43,9 @@ from techcom_followup.application.ports import (
 )
 from techcom_followup.application.processing_ports import PlannedAction
 from techcom_followup.application.repository import (
+    MAX_ACTION_READ_LIMIT,
     ActionReadQuery,
+    ActionRecord,
     ActionStatus,
     Repository,
 )
@@ -75,6 +77,7 @@ from techcom_followup.domain.models import (
     Priority,
     Task,
 )
+from techcom_followup.domain.normalize import project_authority
 from techcom_followup.domain.policy import DecisionPolicy
 from techcom_followup.domain.text import clean_line
 
@@ -427,14 +430,22 @@ class FollowUpOrchestrator:
         return session.fallback("step_budget")
 
     async def _history(self, task: Task) -> tuple[list[JsonValue], int]:
-        actions = await self._repository.query_actions(
+        authority = project_authority(task)
+        found = await self._repository.query_actions(
             ActionReadQuery(
                 all_projects=True,
-                project=task.project,
+                project=authority,
                 task_id=task.task_id,
-                limit=MAX_HISTORY,
+                limit=MAX_HISTORY
+                if authority is not None
+                else MAX_ACTION_READ_LIMIT,
                 newest_first=True,
             )
+        )
+        actions = (
+            found
+            if authority is not None
+            else _authority_free(found, task.project)[:MAX_HISTORY]
         )
         sent = sum(action.status is ActionStatus.SENT for action in actions)
         return [
@@ -451,3 +462,20 @@ class FollowUpOrchestrator:
             }
             for action in actions
         ], sent
+
+
+def _authority_free(
+    actions: tuple[ActionRecord, ...], label: str
+) -> list[ActionRecord]:
+    """Return the actions a task without project authority may own.
+
+    Those are its authority-free actions under the same label, never
+    another project's actions for a reused task id.
+    """
+    return [
+        action
+        for action in actions
+        if action.source_project is None
+        and action.decision.target is not None
+        and action.decision.target.project == label
+    ]

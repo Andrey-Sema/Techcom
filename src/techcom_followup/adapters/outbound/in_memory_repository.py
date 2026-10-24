@@ -7,7 +7,7 @@ from dataclasses import replace
 from datetime import date, datetime
 from heapq import nsmallest
 from itertools import islice
-from typing import TYPE_CHECKING, cast
+from typing import cast
 from uuid import UUID, uuid4
 
 from pydantic import JsonValue
@@ -36,9 +36,7 @@ from techcom_followup.application.repository import (
 )
 from techcom_followup.domain.messages import MessageDraft
 from techcom_followup.domain.models import DecisionKind, Target
-
-if TYPE_CHECKING:
-    from techcom_followup.domain.source_version import SourceVersion
+from techcom_followup.domain.source_version import SourceVersion
 
 _TERMINAL = frozenset({ActionStatus.SENT, ActionStatus.DEAD})
 
@@ -171,10 +169,7 @@ class InMemoryRepository:
         candidate = write.source_version
         if candidate is None and previous is None:
             return True
-        if previous is not None and (
-            (candidate is None and fingerprint != write.fingerprint)
-            or (candidate is not None and candidate.older_than(previous))
-        ):
+        if _stale(write, previous, fingerprint):
             return False
         version = (
             candidate
@@ -567,8 +562,7 @@ class InMemoryRepository:
         old = [
             key
             for key, stored in self._decisions.items()
-            if (finished := self._runs[key[0]].finished_at) is not None
-            and finished < cutoff
+            if _run_age(self._runs[key[0]]) < cutoff
             and stored.id not in referenced
         ][:limit]
         for key in old:
@@ -590,13 +584,29 @@ class InMemoryRepository:
         old = [
             run.id
             for run in self._runs.values()
-            if run.finished_at is not None
-            and run.finished_at < cutoff
-            and run.id not in used
+            if _run_age(run) < cutoff and run.id not in used
         ][:limit]
         for run_id in old:
             del self._runs[run_id]
         return len(old)
+
+
+def _stale(
+    write: DecisionWrite, previous: SourceVersion | None, fingerprint: str
+) -> bool:
+    """Mirror the database fence of provably obsolete observations."""
+    if previous is None:
+        return False
+    candidate = write.source_version
+    if candidate is None:
+        # Unversioned facts may retire work, never ask for new work.
+        return fingerprint != write.fingerprint and write.decision.actionable
+    return candidate.older_than(previous)
+
+
+def _run_age(run: RunRecord) -> datetime:
+    # A run that never finished (its process died) ages from its start.
+    return run.started_at if run.finished_at is None else run.finished_at
 
 
 def _visible(action: ActionRecord, query: ActionReadQuery) -> bool:

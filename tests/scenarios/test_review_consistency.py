@@ -52,6 +52,11 @@ async def test_source_regression_after_done_never_reaches_delivery() -> None:
         (receipt,) = await app.repository.list_decisions(stale.run_id)
         assert receipt.outcome is DecisionOutcome.STALE_SUPPRESSED
         assert stale.enqueued == 0
+        assert stale.stale == 1
+        saved = await app.repository.get_run(stale.run_id)
+        assert saved is not None
+        assert saved.stats is not None
+        assert saved.stats["stale"] == 1
         assert await app.dispatcher.execute() == 0
         source.records = [{**record, "last_update": "2026-10-22T09:00:00Z"}]
         fresh = await app.processor.execute(as_of=AS_OF.replace(day=22))
@@ -114,3 +119,39 @@ async def test_done_task_without_project_retires_its_reminder() -> None:
         assert action.status is ActionStatus.DEAD
         assert action.last_error == "source_state_superseded"
         assert await app.dispatcher.execute() == 0
+
+
+@pytest.mark.parametrize("planned", [False, True])
+async def test_reused_plan_reports_todays_policy_facts(planned: bool) -> None:
+    record = fixture_records()[0]
+    assert isinstance(record, dict)
+    task = {
+        **record,
+        "status": "Working on it",
+        "due_date": "2026-10-21",
+        "last_update": "2026-10-10",
+        "notes": "",
+    }
+    async with stack() as app:
+        app.processor._deps = replace(
+            app.processor._deps, source=Source([task])
+        )
+        if planned:
+            app.processor._planner = FollowUpOrchestrator(
+                OfflineLanguageModel(), app.repository, repo_policy()
+            )
+        first = await app.processor.execute(as_of=AS_OF)
+        assert first.enqueued == 1
+        later = await app.processor.execute(as_of=AS_OF.replace(day=22))
+        assert later.duplicates == 1
+        (before,), (after,) = first.decisions, later.decisions
+        assert before.rule_id.startswith("R8")
+        assert after.rule_id.startswith("R7")
+        assert after.reason == "1 day(s) overdue; no blocker explained."
+        assert later.plans[0].message == first.plans[0].message
+        assert later.plans[0].plan_audit == first.plans[0].plan_audit
+        if planned:
+            baseline = later.plans[0].baseline
+            assert baseline is not None
+            assert baseline.reason == after.reason
+            assert after.rule_id == "R7+agent"

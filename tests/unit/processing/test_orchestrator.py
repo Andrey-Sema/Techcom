@@ -254,6 +254,32 @@ async def test_unanswered_follow_up_lets_the_agent_escalate() -> None:
     assert "Chris" not in planned.message.body
 
 
+@pytest.mark.parametrize("own", [True, False])
+async def test_history_without_project_authority_is_the_tasks_own(
+    own: bool,
+) -> None:
+    repository = InMemoryRepository()
+    write = await action_write(repository)
+    # Only an authority-free action under the same label is this task's.
+    await repository.record_decision(
+        replace(write, source_project=None) if own else write, NOW
+    )
+    await DispatchActions(
+        DeliveryDependencies(repository, Gateway(), FixedClock(NOW))
+    ).execute(limit=1)
+    task: Task = replace(
+        TASK,
+        task_id=TaskId("TC-1"),
+        flags=frozenset({Flag.NONCANONICAL_PROJECT}),
+    )
+    decision = POLICY.decide(task, as_of=AS_OF)
+    planned = await orchestrator(OfflineLanguageModel(), repository).plan(
+        decision, task, as_of=AS_OF
+    )
+    expected = DecisionKind.ESCALATE if own else decision.kind
+    assert planned.decision.kind is expected
+
+
 @pytest.mark.owasp_llm("LLM01")
 async def test_instruction_in_the_title_withholds_the_note() -> None:
     task = replace(

@@ -121,3 +121,22 @@ async def test_batches_stop_at_the_configured_maximum(
     assert (total.audit, complete) == (2, False)
     rest, complete = await PruneData(repository, policy, lambda: NOW).execute()
     assert (rest.audit, complete) == (1, True)
+
+
+async def test_runs_whose_process_died_still_expire(
+    repository: Repository,
+) -> None:
+    task = make_task(task_id="TC-91")
+    decision = repo_policy().decide(task, as_of=AS_OF)
+    crashed = await repository.start_run(AS_OF, "v", OLD)
+    await repository.record_decision(
+        DecisionWrite(crashed.id, decision, state_fingerprint(task)), OLD
+    )
+    recent = await repository.start_run(AS_OF, "v", NOW)
+    total, complete = await PruneData(
+        repository, POLICY, lambda: NOW
+    ).execute()
+    assert complete
+    assert (total.decisions, total.runs) == (1, 1)
+    assert await repository.get_run(crashed.id) is None
+    assert await repository.get_run(recent.id) is not None

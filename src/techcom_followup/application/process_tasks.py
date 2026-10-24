@@ -30,20 +30,24 @@ from techcom_followup.application.telemetry import (
     HistogramName,
     Telemetry,
 )
+from techcom_followup.domain.envelope import priority_rank
 from techcom_followup.domain.identity import ActionIdentity, state_fingerprint
 from techcom_followup.domain.injection import screen_task
 from techcom_followup.domain.interpretation import prefilter
 from techcom_followup.domain.messages import MessageDraft, compose
 from techcom_followup.domain.models import (
     Decision,
-    Flag,
+    ReasonCode,
     RejectedRecord,
     Task,
 )
-from techcom_followup.domain.normalize import UNKNOWN_LABEL, normalize
+from techcom_followup.domain.normalize import normalize, project_authority
 from techcom_followup.domain.policy import DecisionPolicy
 
 DEFAULT_WRITE_CONCURRENCY = 8
+# A remotely triggered saved run delivers real messages: an evaluation
+# date far from the clock would make every task look overdue at once.
+MAX_AS_OF_SKEW_DAYS = 1
 _log = structlog.get_logger(__name__)
 MAX_WRITE_CONCURRENCY = 16
 
@@ -59,6 +63,7 @@ class RunReport:
     enqueued: int = 0
     duplicates: int = 0
     plans: tuple[DecisionWrite, ...] = ()
+    stale: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,6 +94,7 @@ class _Progress:
     rejected: tuple[RejectedRecord, ...] = ()
     enqueued: int = 0
     duplicates: int = 0
+    stale: int = 0
 
     def stats(self, status: str) -> dict[str, JsonValue]:
         return {
@@ -97,6 +103,7 @@ class _Progress:
             "rejected": len(self.rejected),
             "enqueued": self.enqueued,
             "duplicates": self.duplicates,
+            "stale": self.stale,
         }
 
 
@@ -150,6 +157,7 @@ class ProcessTasks:
                 rejected=len(report.rejected),
                 enqueued=report.enqueued,
                 duplicates=report.duplicates,
+                stale=report.stale,
             )
             return report
         finally:
@@ -197,6 +205,7 @@ class ProcessTasks:
             progress.enqueued,
             progress.duplicates,
             plans=tuple(progress.plans),
+            stale=progress.stale,
         )
 
     async def _process(
@@ -290,12 +299,7 @@ class ProcessTasks:
         )
         draft, final = None, decision
         audit: Mapping[str, JsonValue] | None = None
-        source_project = (
-            None
-            if task.project == UNKNOWN_LABEL
-            or Flag.NONCANONICAL_PROJECT in task.flags
-            else task.project
-        )
+        source_project = project_authority(task)
         if identity is not None:
             if identity.idempotency_key in existing:
                 # Retained identities need no new model call, even after
@@ -306,7 +310,7 @@ class ProcessTasks:
                     and retained.source_project == source_project
                 ):
                     return replace(
-                        retained,
+                        _refreshed(retained, decision),
                         run_id=UUID(int=0),
                         source_version=task.source_version,
                         task_project=task.project,
@@ -373,6 +377,8 @@ class ProcessTasks:
         progress.duplicates += (
             stored.outcome is DecisionOutcome.DUPLICATE_SUPPRESSED
         )
+        # Fenced snapshots stay in the report, but never count as work.
+        progress.stale += stored.outcome is DecisionOutcome.STALE_SUPPRESSED
         if stored.outcome is not DecisionOutcome.NONE:
             self._deps.telemetry.count(
                 CounterName.ACTIONS, outcome=stored.outcome.value
@@ -391,6 +397,46 @@ class ProcessTasks:
                     record.task_id,
                 )
             )
+
+
+def _refreshed(retained: DecisionWrite, current: Decision) -> DecisionWrite:
+    """Keep a retained plan's choices with today's policy facts.
+
+    The identity matched, so ``current`` is the same policy stage for
+    the same state; only its timing (reason, rule, priority) moved since
+    the plan was saved. The saved message is reused, never sent again.
+    """
+    if retained.baseline is None:
+        return replace(retained, decision=current)
+    planned, before = retained.decision, retained.baseline
+    return replace(
+        retained,
+        baseline=current,
+        decision=replace(
+            planned,
+            rule_id=f"{current.rule_id}+agent",
+            reason_code=planned.reason_code
+            if planned.reason_code is ReasonCode.AGENT_JUDGEMENT
+            else current.reason_code,
+            reason=current.reason,
+            priority=max(
+                planned.priority, current.priority, key=priority_rank
+            ),
+            flags=current.flags | (planned.flags - before.flags),
+            interpretation=current.interpretation,
+        ),
+    )
+
+
+def require_current(as_of: date, today: date) -> None:
+    """Reject an evaluation date too far from the UTC date to act on.
+
+    Raises:
+        ValueError: The dates differ by more than one day.
+    """
+    if abs((as_of - today).days) > MAX_AS_OF_SKEW_DAYS:
+        message = "as_of must be within one day of the current UTC date"
+        raise ValueError(message)
 
 
 async def _join_all[T](

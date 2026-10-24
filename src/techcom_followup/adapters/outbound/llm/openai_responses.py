@@ -42,13 +42,21 @@ class FailureKind(StrEnum):
 
 
 class BackendError(Exception):
-    """A route-level failure the router may fail over from."""
+    """A route-level failure the router may fail over from.
 
-    def __init__(self, kind: FailureKind, detail: str) -> None:
+    ``unbilled`` means the provider answered with an error status, so no
+    output was generated; a lost connection or an unexpected response
+    cannot prove that and keeps its conservative charge.
+    """
+
+    def __init__(
+        self, kind: FailureKind, detail: str, *, unbilled: bool = False
+    ) -> None:
         """Keep the failure class and a non-sensitive detail string."""
         super().__init__(f"{kind}: {detail}")
         self.kind = kind
         self.detail = detail
+        self.unbilled = unbilled
 
 
 class BackendReply:
@@ -151,7 +159,7 @@ def _status_error(exc: openai.APIStatusError) -> BackendError:
         or exc.status_code >= _SERVER_ERROR
     )
     kind = FailureKind.TRANSIENT if transient else FailureKind.REJECTED
-    return BackendError(kind, f"http {exc.status_code}")
+    return BackendError(kind, f"http {exc.status_code}", unbilled=True)
 
 
 def _conservative_usage(request: LLMRequest, route: RouteConfig) -> TokenUsage:

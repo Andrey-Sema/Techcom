@@ -188,3 +188,39 @@ async def test_quiet_watermark_outlives_pruned_history(
     assert (
         await repository.record_decision(stale, NOW)
     ).outcome is DecisionOutcome.STALE_SUPPRESSED
+
+
+async def test_unversioned_completion_retires_work_without_moving_version(
+    repository: Repository,
+) -> None:
+    write = replace(
+        await action_write(repository), source_version=version(21, 15)
+    )
+    await repository.record_decision(write, NOW)
+    run = await repository.start_run(AS_OF, "version-test", NOW)
+    done = replace(
+        write,
+        run_id=run.id,
+        decision=replace(
+            write.decision, kind=DecisionKind.NO_ACTION, target=None
+        ),
+        identity=None,
+        message=None,
+        fingerprint="completed-state",
+        source_version=None,
+    )
+    assert (
+        await repository.record_decision(done, NOW)
+    ).outcome is DecisionOutcome.NONE
+    (action,) = await repository.list_actions()
+    assert action.status is ActionStatus.DEAD
+    # The version did not move: an older versioned snapshot is fenced,
+    # and an unversioned return to the old state is a changed fact.
+    stale = await next_write(repository, write, version(21, 9), "old-state")
+    assert (
+        await repository.record_decision(stale, NOW)
+    ).outcome is DecisionOutcome.STALE_SUPPRESSED
+    back = await next_write(repository, write, None, write.fingerprint)
+    assert (
+        await repository.record_decision(back, NOW)
+    ).outcome is DecisionOutcome.STALE_SUPPRESSED

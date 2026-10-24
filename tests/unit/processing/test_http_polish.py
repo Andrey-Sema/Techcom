@@ -1,5 +1,7 @@
 import gzip
 import json
+import tracemalloc
+import zlib
 from uuid import uuid4
 
 import httpx
@@ -12,6 +14,7 @@ from techcom_followup.adapters.outbound.delivery_http import (
 )
 from techcom_followup.application.processing_ports import DeliveryKind
 from techcom_followup.infrastructure.http_client import (
+    ACCEPT_ENCODING,
     MAX_RESPONSE_BYTES,
     HttpEndpoint,
     UpstreamError,
@@ -110,3 +113,82 @@ async def test_receipts_are_validated_for_persistent_storage(
     else:
         assert result.kind is DeliveryKind.ACCEPTED
         assert result.provider_ref == reference
+
+
+def _endpoint(client: httpx.AsyncClient) -> HttpEndpoint:
+    return HttpEndpoint(
+        client, "https://mock-api", allowed_hosts=frozenset({"mock-api"})
+    )
+
+
+async def test_compression_bomb_is_bounded_while_decoding() -> None:
+    # One small wire chunk expands to 200 MB; decoding must stop at the
+    # response bound instead of materializing the whole expansion.
+    wire = zlib.compress(b"\0" * 200_000_000, 9)
+    seen: list[str] = []
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        seen.append(request.headers["Accept-Encoding"])
+        return httpx.Response(
+            200,
+            headers={"Content-Encoding": "deflate"},
+            stream=httpx.ByteStream(wire),
+        )
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(respond)
+    ) as client:
+        tracemalloc.start()
+        try:
+            with pytest.raises(UpstreamError, match="response_size"):
+                await _endpoint(client).request("GET", "/v1/tasks")
+            _current, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+    assert peak < 4 * MAX_RESPONSE_BYTES
+    assert seen == [ACCEPT_ENCODING]
+
+
+@pytest.mark.parametrize(
+    ("encoding", "wire"),
+    [
+        ("br", b"\x0b\x02\x80[]\x03"),
+        ("gzip, gzip", gzip.compress(gzip.compress(b"[]"))),
+        ("gzip", b"not gzip at all"),
+        ("gzip", gzip.compress(b"[]" * 10)[:-12]),
+    ],
+)
+async def test_undecodable_encodings_are_closed_errors(
+    encoding: str, wire: bytes
+) -> None:
+    def respond(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"Content-Encoding": encoding},
+            stream=httpx.ByteStream(wire),
+        )
+
+    async def fetch(client: httpx.AsyncClient) -> object:
+        return json_body(await _endpoint(client).request("GET", "/v1/tasks"))
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(respond)
+    ) as client:
+        with pytest.raises(UpstreamError) as raised:
+            await fetch(client)
+    assert str(raised.value) in {"response_encoding", "invalid_json"}
+
+
+async def test_zlib_deflate_bodies_decode() -> None:
+    def respond(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"Content-Encoding": "deflate"},
+            stream=httpx.ByteStream(zlib.compress(b'[{"task_id":"TC-1"}]')),
+        )
+
+    async with httpx.AsyncClient(
+        transport=httpx.MockTransport(respond)
+    ) as client:
+        result = await _endpoint(client).request("GET", "/v1/tasks")
+    assert json_body(result) == [{"task_id": "TC-1"}]

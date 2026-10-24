@@ -63,6 +63,14 @@ class _Admission:
     reservation: SpendReservation
     ticket: UUID | None
     started: bool = False
+    # The provider refused with an error status: nothing was generated.
+    unbilled: bool = False
+
+    def settlement(self, cost: Decimal | None) -> Decimal | None:
+        """Charge nothing unless the provider may have generated."""
+        if not self.started or self.unbilled:
+            return Decimal(0)
+        return cost
 
 
 class LLMBackend(Protocol):
@@ -201,9 +209,7 @@ class LLMRouter:
             return result
         finally:
             breaker.abandon(permit)
-            await self._release(
-                admission, cost if admission.started else Decimal(0), request
-            )
+            await self._release(admission, admission.settlement(cost), request)
 
     async def _admit(
         self,
@@ -303,6 +309,7 @@ class LLMRouter:
                     self._config.request_timeout_s,
                 )
         except BackendError as exc:
+            admission.unbilled = exc.unbilled
             breaker.record_failure(permit)
             attempts.append(_attempt(route, str(exc.kind)))
             _log.warning(

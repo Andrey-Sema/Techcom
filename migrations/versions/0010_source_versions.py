@@ -14,9 +14,12 @@ depends_on = None
 _DDL = """
 SET LOCAL lock_timeout = '5s';
 ALTER TABLE decisions DROP CONSTRAINT decisions_outcome_check;
+-- Keep the ACCESS EXCLUSIVE lock brief: revision 0013 validates existing
+-- rows in its own transaction; new and updated rows are checked at once.
 ALTER TABLE decisions ADD CONSTRAINT decisions_outcome_check
     CHECK (outcome IN (
-        'none','enqueued','duplicate_suppressed','stale_suppressed'));
+        'none','enqueued','duplicate_suppressed','stale_suppressed'))
+    NOT VALID;
 -- Non-prunable, payload-free watermark, including quiet decisions.
 -- Older receipts never stored last_update: their source order is unknown
 -- until the first versioned observation after upgrade, not fabricated.

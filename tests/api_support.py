@@ -53,6 +53,7 @@ class FakeRunResult:
     status: str = "completed"
     enqueued: int = 0
     duplicates: int = 0
+    stale: int = 0
 
 
 class FakeRunner:

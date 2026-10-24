@@ -56,7 +56,9 @@ async def test_replay_after_payload_retention_is_still_suppressed(
 async def test_active_empty_run_and_recently_finished_old_run_survive(
     repository: Repository,
 ) -> None:
-    active = await repository.start_run(AS_OF, "v", OLD)
+    # A run still within the decision window may be active; only a run
+    # unfinished beyond it (its process died) expires from its start.
+    active = await repository.start_run(AS_OF, "v", NOW - timedelta(days=89))
     recent = await repository.start_run(AS_OF, "v", OLD)
     await repository.finish_run(recent.id, {"status": "completed"}, NOW)
     await PruneData(repository, POLICY, lambda: NOW).execute()

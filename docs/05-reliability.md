@@ -27,7 +27,11 @@ retires their pending work.
 
 Once a version is known, an unversioned observation may replay the same
 fingerprint (including a time-driven policy escalation), but cannot replace
-it with different facts. Until a source supplies a version, arrival order
+it with different facts that ask for an action. An unversioned `no_action`
+observation (for example Done without `last_update`) is accepted
+(migration `0012`): it retires unsent work and records its fingerprint
+without advancing the version, because fencing it could only keep an
+obsolete message deliverable. Until a source supplies a version, arrival order
 is the only available ordering. Legacy receipts did not retain source
 versions: upgrade cannot reconstruct their order, so the first versioned
 observation establishes the watermark. A genuinely newer reopening is
@@ -145,7 +149,7 @@ key while the first request is still in progress → **409**; keys retained
 | F7 | Prompt injection in note | screen + structure | mass "complete" | no capability + flag | `test_s8_prompt_injection_is_data` |
 | F8 | Duplicate run / concurrent runs | `UNIQUE` conflict | duplicate messages | `ON CONFLICT DO NOTHING` | `test_s4_second_run_no_duplicates`, `test_concurrent_runs_single_action` |
 | F9 | Delivery timeout after commit | read timeout | duplicate message | `unknown` → reconcile; key replay | `test_s6_timeout_after_commit_no_duplicate` |
-| F10 | Delivery timeout before commit | read timeout + lookup 404 | lost message | reconcile 404 → `pending` → resend same key | `test_timeout_before_commit_is_resent_once` |
+| F10 | Delivery timeout before commit | read timeout + lookup 404 echoing the operation | lost message | reconcile verified 404 → `pending` → resend same key; any other 404 stays `unknown` | `test_timeout_before_commit_is_resent_once` |
 | F11 | Dispatcher crash after send, before DB update | lease expiry | duplicate | lease expiry → `unknown` → lookup before any resend | `test_crash_after_send_replayed` |
 | F12 | Two dispatchers | `SKIP LOCKED` | double send | row-level claim | `test_parallel_dispatchers_disjoint` |
 | F13 | Permanent 4xx | status code | infinite retry | `dead` + audit + metric | `test_permanent_error_goes_dead` |
@@ -173,7 +177,8 @@ key while the first request is still in progress → **409**; keys retained
   `followup_retries_total{dependency}`, `followup_llm_requests_total{result}`,
   `followup_llm_tokens_total{direction}`, `followup_llm_cost_usd_total`,
   `followup_circuit_state{dependency}`, `followup_outbox_backlog{status}`.
-* **Run report** (JSON): counts per decision, duplicates suppressed, LLM
+* **Run report** (JSON): counts per decision, duplicates suppressed,
+  stale snapshots fenced (`stale`, with a per-decision `outcome`), LLM
   calls/fallbacks/tokens/estimated cost, rejected records with reasons,
   durations.
 
@@ -185,8 +190,11 @@ attempt and outcome in order.
 
 ## Review corrections (2026-10-24)
 
-Duplicate reports reuse the saved decision, message, baseline and plan audit
-together within the same authorized source-project scope. A changed or
+Duplicate reports reuse the saved message, the planner's choices and plan
+audit together within the same authorized source-project scope. The policy
+facts (baseline, rule, reason, minimum priority) come from today's
+evaluation, so a report never shows yesterday's "due today" for a task
+that is now overdue. A changed or
 noncanonical scope gets a coherent current template projection without
 reusing the old scope authority. Their source version is taken from the
 current observation, so a
@@ -204,12 +212,18 @@ claim for lookup, not an immediate resend.
 A request waiting for the local LLM semaphore has not entered the provider
 backend. A queue timeout or cancellation settles both budget reservations
 at zero and does not count as a model failure. Once the backend is entered,
-unknown billing still charges the full reserved bound. This distinguishes
+unknown billing still charges the full reserved bound. A provider error
+status (429, 4xx, 5xx) proves that nothing was generated: it settles at
+zero but still counts as a model failure, so a provider outage cannot
+burn the daily budget. Lost connections keep the full charge. This distinguishes
 local saturation from an unavailable provider without weakening the shared
 spending cap.
 
-The HTTP adapter consumes decoded bytes, removes original wire-encoding,
-transfer and length headers, and supplies the decoded length on its returned
-response. Other headers, including Retry-After, remain available. Delivery
+The HTTP adapter offers only `gzip, deflate` and decodes the raw stream
+itself, capping every decompression step at the remaining 2 MB allowance,
+so a compression bomb fails with `response_size` without materializing
+its expansion; other encodings fail closed with `response_encoding`. It
+removes original wire-encoding, transfer and length headers, and supplies
+the decoded length on its returned response. Other headers, including Retry-After, remain available. Delivery
 receipt references must be representable by PostgreSQL text before they
 can authorize a sent outcome; invalid references remain uncertain receipts.

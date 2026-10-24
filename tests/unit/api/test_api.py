@@ -118,6 +118,7 @@ async def test_trigger_requires_explicit_all_project_service() -> None:
         "status",
         "enqueued",
         "duplicates",
+        "stale",
     }
 
 
@@ -388,3 +389,19 @@ async def test_metrics_require_a_separate_internal_application() -> None:
         assert response.status_code == 200
         assert "followup_api_requests_total" in response.text
         assert (await client.get("/v1/actions")).status_code == 404
+
+
+@pytest.mark.parametrize("as_of", ["2026-10-19", "2026-11-30", "2099-01-01"])
+async def test_saved_runs_need_an_evaluation_date_near_the_clock(
+    as_of: str,
+) -> None:
+    harness = Harness()
+    async with harness.client(harness.token()) as client:
+        response = await client.post("/v1/runs", json={"as_of": as_of})
+        assert response.status_code == 422
+        assert harness.runner.calls == []
+        # Dry runs persist and send nothing, so any date is allowed.
+        dry = await client.post(
+            "/v1/runs", json={"as_of": as_of, "dry_run": True}
+        )
+        assert dry.status_code == 200

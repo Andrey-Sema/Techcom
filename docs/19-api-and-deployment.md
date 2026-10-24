@@ -21,6 +21,9 @@ No deployment credential or live provider is needed for these tests.
   authorize object reads; query fields only narrow those memberships. A
   wildcard additionally requires an explicitly privileged service subject.
   Global processing rejects a project-only subject before reading its body.
+  A saved (non-dry) run needs `as_of` within one day of the server's UTC
+  date (`422` otherwise), so one mistyped date cannot escalate every task
+  at once; dry runs may evaluate any date.
 * UUIDs are identifiers, not authorization. Every decision persists its
   source project; scoped run reports fail closed for incomplete,
   ambiguous or mixed-project decision graphs and for historical rows
