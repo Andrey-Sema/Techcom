@@ -209,7 +209,10 @@ claim for lookup, not an immediate resend.
 A request waiting for the local LLM semaphore has not entered the provider
 backend. A queue timeout or cancellation settles both budget reservations
 at zero and does not count as a model failure. Once the backend is entered,
-unknown billing still charges the full reserved bound. This distinguishes
+unknown billing still charges the full reserved bound. A provider error
+status (429, 4xx, 5xx) proves that nothing was generated: it settles at
+zero but still counts as a model failure, so a provider outage cannot
+burn the daily budget. Lost connections keep the full charge. This distinguishes
 local saturation from an unavailable provider without weakening the shared
 spending cap.
 

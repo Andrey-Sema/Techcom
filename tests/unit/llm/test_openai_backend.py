@@ -192,6 +192,8 @@ async def test_sdk_errors_map_to_failover_kinds(
     with pytest.raises(BackendError) as caught:
         await backend.complete(request_, route, timeout_s=5)
     assert caught.value.kind is kind
+    # Only an error status proves that nothing was generated or billed.
+    assert caught.value.unbilled is isinstance(error, openai.APIStatusError)
 
 
 async def test_bad_credentials_are_a_configuration_error(

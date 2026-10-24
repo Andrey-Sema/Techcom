@@ -649,3 +649,38 @@ async def test_entered_provider_timeout_keeps_unknown_bill_and_opens_breaker(
     assert ledger.settled == [bound]
     assert ledger.reserved == {}
     assert router.breakers["gpt-6.1-sol"].state == "open"
+
+
+@pytest.mark.parametrize("unbilled", [False, True])
+async def test_provider_error_status_is_not_charged_to_either_budget(
+    routing_config: RoutingConfig,
+    request_: LLMRequest,
+    clock: FakeClock,
+    unbilled: bool,
+) -> None:
+    config, bound = bounded(routing_config, request_)
+    config = one_route(config)
+    route = config.routes[request_.purpose][0]
+    ledger = SharedLedger(bound)
+    backend = ScriptedBackend(
+        {
+            route.model: BackendError(
+                FailureKind.TRANSIENT, "http 429", unbilled=unbilled
+            )
+        }
+    )
+    router = LLMRouter(
+        config=config,
+        backends={"openai": backend},
+        monotonic=clock.monotonic,
+        today=lambda: date(2026, 10, 21),
+        ledger=ledger,
+    )
+    with pytest.raises(LLMUnavailableError):
+        await router.generate_json(request_)
+    expected = Decimal(0) if unbilled else bound
+    assert router.budget.spent_usd == expected
+    assert router.budget.reserved_usd == 0
+    assert ledger.settled == [expected]
+    # A refusal by status still counts against the model's health.
+    assert router.breakers[route.model].state == "open"
