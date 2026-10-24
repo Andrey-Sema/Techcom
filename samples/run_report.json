@@ -27,8 +27,8 @@
         },
         "task_id": "TC-1001"
       },
-      "decision_id": "032771a7-003e-4372-afb0-39cc6c02b230",
-      "id": "055e575b-0282-4d88-835f-f2597604c6c0",
+      "decision_id": "da00a992-7138-4328-9090-35847dc07362",
+      "id": "a37489bb-2560-43fb-90ae-1a6c3f889471",
       "identity": {
         "idempotency_key": "sha256:e12c8d7ba06d08b2d631d4338ebcabf29733b65baf4c9050a7ec8245b2ecb3e7",
         "operation_id": "c5d55398-d208-5869-9331-0a27f2591486"
@@ -42,8 +42,8 @@
         "subject": "Status check: TC-1001 Fiber splicing",
         "template_id": "agent.v3"
       },
-      "next_attempt_at": "2026-10-21T00:00:00.109738Z",
-      "provider_ref": "mock-1",
+      "next_attempt_at": "2026-10-21T00:00:01.939852Z",
+      "provider_ref": "mock-7",
       "sent_at": "2026-10-21T00:00:00Z",
       "status": "sent"
     },
@@ -73,8 +73,8 @@
         },
         "task_id": "TC-1002"
       },
-      "decision_id": "5f6a382c-bbc8-45c2-aca5-e3d5efa6019a",
-      "id": "e8e92b95-d380-4eeb-8149-59f19f7f25c4",
+      "decision_id": "feff5ca4-9579-4e84-b615-d9fb65ac9865",
+      "id": "13a2e301-e41b-48eb-862a-5c4173537c9b",
       "identity": {
         "idempotency_key": "sha256:21070d2c9edd2406f5f1683af69c64f3b8bdf9efc42007bdaf72fb1d62a1c126",
         "operation_id": "f1a2a370-ea2f-54ef-8fb5-7c74a97b9289"
@@ -88,8 +88,8 @@
         "subject": "Delivery ETA needed: TC-1002 Install handholes",
         "template_id": "agent.v3"
       },
-      "next_attempt_at": "2026-10-21T00:00:00.327042Z",
-      "provider_ref": "mock-7",
+      "next_attempt_at": "2026-10-21T00:00:00.934316Z",
+      "provider_ref": "mock-2",
       "sent_at": "2026-10-21T00:00:00Z",
       "status": "sent"
     },
@@ -113,8 +113,8 @@
         },
         "task_id": "TC-1004"
       },
-      "decision_id": "a50b41e0-5d37-4fef-bf61-6b66a6f80560",
-      "id": "4d7538a2-8b18-4b9e-b2eb-178dad74b17e",
+      "decision_id": "840a18b3-9dc3-45a5-af86-ba4843faef57",
+      "id": "7c28ebbd-86b7-4ac8-b43b-2cafb118190e",
       "identity": {
         "idempotency_key": "sha256:69a9ce427dee3f69a8f9f3e58a0bf0137ed28c0d379a3bb26cb4b4064eabb946",
         "operation_id": "c163cdab-dd1e-530f-b8b6-91ba6d3bff9d"
@@ -128,8 +128,8 @@
         "subject": "Details needed: TC-1004 Permit review",
         "template_id": "agent.v3"
       },
-      "next_attempt_at": "2026-10-21T00:00:00.540722Z",
-      "provider_ref": "mock-4",
+      "next_attempt_at": "2026-10-21T00:00:00.004255Z",
+      "provider_ref": "mock-6",
       "sent_at": "2026-10-21T00:00:00Z",
       "status": "sent"
     },
@@ -153,8 +153,8 @@
         },
         "task_id": "TC-1005"
       },
-      "decision_id": "7005b535-8b39-4841-b767-f492a843f785",
-      "id": "09a1ab4e-1656-4a43-8da1-a5dcdc82f838",
+      "decision_id": "512fc4b7-1c44-4c81-bfd7-fc5d85ca24e1",
+      "id": "3a90bc42-4a87-4848-ba80-2e7980965b1e",
       "identity": {
         "idempotency_key": "sha256:3f7f4a91565b41425c041c9ee76df9ca78158ff7c068e6cf830d49c05ce5ae84",
         "operation_id": "6e4b7466-e408-5dcb-83e0-07c68bec33c7"
@@ -168,8 +168,8 @@
         "subject": "Details needed: TC-1005 As-built drawings",
         "template_id": "agent.v3"
       },
-      "next_attempt_at": "2026-10-21T00:00:00.077693Z",
-      "provider_ref": "mock-2",
+      "next_attempt_at": "2026-10-21T00:00:01.466162Z",
+      "provider_ref": "mock-5",
       "sent_at": "2026-10-21T00:00:00Z",
       "status": "sent"
     },
@@ -194,8 +194,8 @@
         },
         "task_id": "TC-1006"
       },
-      "decision_id": "64dced05-cf88-45e7-8da5-40b0e11ceb14",
-      "id": "5ecddc02-02e4-448f-88f4-08a1717e81a7",
+      "decision_id": "dc9f7bc7-5d67-4b7b-8fbd-bf63d69edca9",
+      "id": "11edcf9b-9d81-4a81-9b15-9b592490faa3",
       "identity": {
         "idempotency_key": "sha256:857d18728a1feec73dba0a60a4fc447a0f1729e2f0e6482a6181c4718a7fc24a",
         "operation_id": "cd7a7371-6449-5c6d-96e8-5c6c8fbf917d"
@@ -209,8 +209,8 @@
         "subject": "Status check: TC-1006 Splice verification",
         "template_id": "agent.v3"
       },
-      "next_attempt_at": "2026-10-21T00:00:01.135758Z",
-      "provider_ref": "mock-5",
+      "next_attempt_at": "2026-10-21T00:00:01.646573Z",
+      "provider_ref": "mock-1",
       "sent_at": "2026-10-21T00:00:00Z",
       "status": "sent"
     },
@@ -240,8 +240,8 @@
         },
         "task_id": "TC-1008"
       },
-      "decision_id": "0ce0b54c-1941-4368-9c8f-c547964ed31d",
-      "id": "7f815537-e308-4ada-b3e5-6e1bb75fa933",
+      "decision_id": "e9a21d46-e8d0-4e8d-b100-2d71e56bd51f",
+      "id": "2decf310-afde-4779-87e0-7274a1afeae0",
       "identity": {
         "idempotency_key": "sha256:d3ef627e390fb6d7d5781003826669a7be43e8c2bda97f12603228646dd9b919",
         "operation_id": "81e9e4d9-1469-5ea5-beca-b74799a8d36f"
@@ -255,8 +255,8 @@
         "subject": "Needs your attention: TC-1008 Test fiber signal",
         "template_id": "agent.v3"
       },
-      "next_attempt_at": "2026-10-21T00:00:01.230015Z",
-      "provider_ref": "mock-6",
+      "next_attempt_at": "2026-10-21T00:00:01.127787Z",
+      "provider_ref": "mock-3",
       "sent_at": "2026-10-21T00:00:00Z",
       "status": "sent"
     },
@@ -286,8 +286,8 @@
         },
         "task_id": "TC-1009"
       },
-      "decision_id": "cad75ba0-0341-4a29-a49b-3cb079b2a594",
-      "id": "2054a401-62aa-4262-8399-25ada6801182",
+      "decision_id": "284f7094-71e8-4804-a6c8-eefae0aad804",
+      "id": "3601582c-d66f-4ddf-8ec7-64604b7acd4b",
       "identity": {
         "idempotency_key": "sha256:c193de851410147c0a1c984001215bbeb3259a15d498eb3a9818b573ab4b921b",
         "operation_id": "e06c021a-216f-5e62-9b92-d716b766833c"
@@ -301,8 +301,8 @@
         "subject": "Delivery ETA needed: TC-1009 Material reconciliation",
         "template_id": "agent.v3"
       },
-      "next_attempt_at": "2026-10-21T00:00:01.175739Z",
-      "provider_ref": "mock-3",
+      "next_attempt_at": "2026-10-21T00:00:01.522851Z",
+      "provider_ref": "mock-4",
       "sent_at": "2026-10-21T00:00:00Z",
       "status": "sent"
     }
@@ -568,7 +568,7 @@
   "run": {
     "as_of": "2026-10-21",
     "finished_at": "2026-10-21T00:00:00Z",
-    "id": "ff08f144-560b-4d63-83a1-4476a99d12db",
+    "id": "ab450f10-85ba-49d9-8fcb-6f96040740e3",
     "policy_version": "2026-10-21.1",
     "started_at": "2026-10-21T00:00:00Z",
     "stats": {
@@ -576,6 +576,7 @@
       "duplicates": 0,
       "enqueued": 7,
       "rejected": 0,
+      "stale": 0,
       "status": "completed"
     }
   }
