@@ -466,9 +466,9 @@ async def test_total_router_deadline_includes_waiting_for_semaphore(
     with pytest.raises(LLMUnavailableError) as caught:
         await router.generate_json(request_)
     assert backend.calls == 0
-    assert caught.value.attempts[0].outcome == "timeout"
+    assert caught.value.attempts[0].outcome == "queue_timeout"
     assert router.budget.reserved_usd == 0
-    assert router.budget.spent_usd > 0
+    assert router.budget.spent_usd == 0
 
 
 class SharedLedger:
@@ -575,3 +575,49 @@ async def test_unreachable_ledger_fails_closed_and_releases_admission(
     assert router.budget.reserved_usd == 0
     breaker = router.breakers["gpt-6.1-sol"]
     assert breaker.admit() is not None
+
+
+@pytest.mark.parametrize("cancel", [False, True])
+async def test_queue_only_attempts_release_both_budgets_and_keep_model_healthy(
+    routing_config: RoutingConfig,
+    request_: LLMRequest,
+    clock: FakeClock,
+    cancel: bool,
+) -> None:
+    config = one_route(
+        routing_config,
+        request_timeout_s=1 if cancel else 0.001,
+        breaker_failure_threshold=1,
+    )
+    backend = ScriptedBackend({"gpt-6.1-sol": reply("gpt-6.1-sol")})
+    ledger = SharedLedger(Decimal(5))
+    router = LLMRouter(
+        config=config,
+        backends={"openai": backend},
+        monotonic=clock.monotonic,
+        today=lambda: date(2026, 10, 21),
+        ledger=ledger,
+    )
+    for _ in range(4):
+        await router._semaphore.acquire()
+    if cancel:
+        pending = asyncio.create_task(router.generate_json(request_))
+        await asyncio.sleep(0)
+        assert len(ledger.reserved) == 1
+        pending.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await pending
+    else:
+        with pytest.raises(LLMUnavailableError):
+            await router.generate_json(request_)
+    assert backend.calls == []
+    assert router.budget.spent_usd == 0
+    assert router.budget.reserved_usd == 0
+    assert ledger.settled == [Decimal(0)]
+    assert ledger.reserved == {}
+    assert router.breakers["gpt-6.1-sol"].state == "closed"
+    for _ in range(4):
+        router._semaphore.release()
+    assert (await router.generate_json(request_)).model == "gpt-6.1-sol"
+    assert backend.calls == ["gpt-6.1-sol"]
+    assert ledger.spent == Decimal("0.004000")

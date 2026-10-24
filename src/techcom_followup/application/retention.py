@@ -1,11 +1,10 @@
 """Data retention (docs/15 s. 8): delete what policy no longer needs.
 
-Retention never touches work in progress: pending, in-flight and
+Retention never touches work in progress: pending, held, in-flight and
 unknown actions stay, and a decision stays while an action refers to
-it. Deleting a sent action also deletes its idempotency key, so a task
-that keeps exactly the same state for longer than ``action_days`` gets
-one new reminder; that is the documented trade-off of a one-year limit
-on personal data.
+it. Identity tombstones, slots and source watermarks outlive payload
+expiry. Pruning never authorizes another delivery of the same logical
+action or erases the source ordering guarantee.
 """
 
 from collections.abc import Callable

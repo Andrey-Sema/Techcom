@@ -1,18 +1,27 @@
 """Single-attempt writes and strict acknowledgement checks."""
 
 from dataclasses import asdict
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+)
 
 from techcom_followup.application.processing_ports import (
     Clock,
     DeliveryKind,
     DeliveryResult,
 )
-from techcom_followup.application.repository import ActionRecord
+from techcom_followup.application.repository import (
+    ActionRecord,
+    require_storage_text,
+)
 from techcom_followup.infrastructure.http_client import (
     HttpEndpoint,
     UpstreamError,
@@ -30,7 +39,11 @@ class _Receipt(BaseModel):
         strict=True, extra="forbid", hide_input_in_errors=True
     )
     operation_id: UUID
-    provider_ref: str = Field(min_length=1, max_length=200)
+    provider_ref: Annotated[
+        str,
+        Field(min_length=1, max_length=200),
+        AfterValidator(require_storage_text),
+    ]
     status: Literal["sent"]
 
 

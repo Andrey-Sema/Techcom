@@ -88,9 +88,18 @@ class HttpEndpoint:
                     msg = "response_size"
                     raise UpstreamError(msg)
                 content.extend(chunk)
+            decoded_headers = response.headers.copy()
+            # Drop wire metadata: aiter_bytes already decoded the body.
+            # Avoid decoding again or retaining the compressed length.
+            for name in (
+                "Content-Encoding",
+                "Content-Length",
+                "Transfer-Encoding",
+            ):
+                decoded_headers.pop(name, None)
             return httpx.Response(
                 response.status_code,
-                headers=response.headers,
+                headers=decoded_headers,
                 content=bytes(content),
             )
 
