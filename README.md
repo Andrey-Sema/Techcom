@@ -1,10 +1,12 @@
 # TechCom AI Operations & Follow-up Service
 
+[![CI](https://github.com/Andrey-Sema/Techcom/actions/workflows/ci.yaml/badge.svg)](https://github.com/Andrey-Sema/Techcom/actions/workflows/ci.yaml)
 ![Python](https://img.shields.io/badge/python-3.13%20%7C%203.14-3776AB)
 ![Coverage](https://img.shields.io/badge/branch%20coverage-100%25-2ea44f)
 ![Typing](https://img.shields.io/badge/mypy-strict-2a6db2)
-![Lint](https://img.shields.io/badge/ruff-ALL-d7ff64)
-![LLM](https://img.shields.io/badge/LLM-bounded%20orchestrator-8a2be2)
+![Lint](https://img.shields.io/badge/ruff-ALL%20%C2%B7%20PEP%208-d7ff64)
+![Model](https://img.shields.io/badge/model-gpt--6--luna%20%C2%B7%20high-8a2be2)
+![Live eval](https://img.shields.io/badge/live%20eval-macro--F1%200.99-2ea44f)
 
 A Python service that reads project tasks, decides which ones need
 attention, lets an **LLM orchestrate the follow-up inside limits set by
@@ -16,17 +18,27 @@ rules decide WHETHER to act  →  the LLM plans HOW, inside an envelope
 →  a deterministic guard approves  →  the outbox delivers idempotently
 ```
 
----
+## At a glance
+
+| | Result | Evidence |
+|---|---|---|
+| Brief scenarios | **9 / 9** covered, each by a named test | [Required scenarios](#required-scenarios) |
+| Supplied fixture | **10 / 10** expected decisions, 7 messages sent; rerun: 7 duplicates, **0** new sends | [`make demo`](#quick-start), [samples](samples/) |
+| What the model adds | On 95 labelled notes: macro-F1 **0.34 → 0.99**, wrong decisions **35 → 0** (35 fixed, none broken) | [Model value report](docs/eval/model-value-luna-high.v1.md) |
+| Safety | **0** unsafe outcomes on 95 notes including 32 injection variants, with and without the model | [OWASP LLM Top 10 matrix](docs/security/owasp-llm-top10.md) |
+| Evidence in CI | Synthetic replay **and** live `gpt-6-luna` captures replayed on every change | `make eval`, `make eval-provider` |
+| Code quality | 1,650+ tests, 100 % branch coverage, `mypy --strict`, ruff `ALL`, PEP 8 at 79 columns | [Quality gates](#quality-gates) |
+| Scale | 10,000 tasks: 89.1 s first run, 57.6 s rerun, 202 MB | [Benchmarks](docs/benchmarks.md) |
 
 ## Contents
 
 - [Quick start](#quick-start)
+- [Evidence](#evidence)
 - [How it works](#how-it-works)
 - [The LLM orchestrator and how it is kept in check](#the-llm-orchestrator-and-how-it-is-kept-in-check)
 - [Required scenarios](#required-scenarios)
 - [Output on the supplied fixture](#output-on-the-supplied-fixture)
 - [Commands and configuration](#commands-and-configuration)
-- [Quality and evidence](#quality-and-evidence)
 - [Assumptions and trade-offs](#assumptions-and-trade-offs)
 - [Not implemented, and why](#not-implemented-and-why)
 - [What changes for production](#what-changes-for-production)
@@ -58,6 +70,7 @@ Other entry points:
 uv run followup run --fixture fixtures/tasks.json --as-of 2026-10-21 --dry-run
 make test-fast                 # offline tests, no Docker
 make test                      # full suite with PostgreSQL 18, 100 % branch gate
+make eval eval-provider        # replay synthetic and live-model evidence
 ```
 
 Repeated runs from the command line need PostgreSQL, so that a second
@@ -73,9 +86,87 @@ uv run followup run --as-of 2026-10-21 --dispatch   # 7 duplicates, 0 sent
 uv run followup review         # actions the model held for a person
 ```
 
-To use a real model, set `FOLLOWUP_LLM_PROVIDER=router` and an OpenAI
-key (`FOLLOWUP_OPENAI_API_KEY`); routes and prices are in
-[`config/llm.toml`](config/llm.toml).
+To use the real model, set `FOLLOWUP_LLM_PROVIDER=router` and provide
+`FOLLOWUP_OPENAI_API_KEY` from your secret manager. Routes, reasoning
+effort and prices are in [`config/llm.toml`](config/llm.toml).
+
+---
+
+## Evidence
+
+### What the model adds
+
+The same 95 labelled notes run twice through the same policy, routing
+and safety judge: once with no model at all (keyword hits, the
+`unclear` fallback and catalogue templates, which is the service's
+offline path) and once with `gpt-6-luna`.
+
+| Pipeline | Macro-F1 | Benign macro-F1 | Wrong decisions | Unsafe outcomes |
+|---|---:|---:|---:|---:|
+| Without the model | 0.338 | 0.284 | 35 | 0 |
+| With `gpt-6-luna` (high effort) | **0.991** | **0.984** | **0** | 0 |
+
+The model fixes 35 decisions and breaks none: notes such as "The
+junction kit is missing; the crew cannot start" now reach the
+warehouse with an ETA request instead of a generic reminder, and
+permit, access and upstream blockers are escalated. The live
+responses are committed in
+[`tests/eval/bundles/luna-high.v1`](tests/eval/README.md#live-provider-captures)
+and replayed offline by CI on every change.
+
+Two honest limits: the corpus is built from notes the keyword path is
+not meant to settle, so the gap is larger than on routine notes; and
+one capture is one sample, while two other live runs scored macro-F1
+0.975. Replay proves that each capture matches its request, not where
+it came from, so the quality label stays `CAPTURE_REPLAY_ONLY`.
+
+### Live models compared
+
+`gpt-6-luna` at high effort against `gpt-6.1-sol` at low effort, one
+model per run and no failover, two runs each
+([method and raw numbers](docs/eval/model-comparison.md)):
+
+| | `gpt-6-luna`, high | `gpt-6.1-sol`, low |
+|---|---:|---:|
+| Macro-F1 on 95 notes (two runs) | 0.975 / 0.975 | 0.959 / 0.975 |
+| Wrong decisions | 1 / 0 | 0 / 0 |
+| Latency per call, p50 / p95 | 3.1 s / 4.5 s | 2.9 s / 4.2 s |
+| Corpus cost | **$0.013** | $0.168 |
+| Assignment: correct, wall time, cost | 10 / 10, 36.9 s, **$0.0067** | 10 / 10, **18.8 s**, $0.046 |
+
+Quality is a tie, single calls are equally fast, and Luna is 7 to 13
+times cheaper. It takes about twice as long on the orchestrated run,
+which a batch follow-up service can afford. Hence Luna is the primary
+route and the Sol generation the failover
+([ADR-0019](docs/adr/0019-luna-primary-route-and-live-evidence.md)).
+
+### How containment is proven
+
+| Evidence | What it shows |
+|----------|---------------|
+| [OWASP LLM Top 10 matrix](docs/security/owasp-llm-top10.md) | Threat, controls and tests for each of LLM01–LLM10; a meta test keeps the matrix and the test markers in step |
+| [`tests/property/test_agent_containment.py`](tests/property/test_agent_containment.py) | Hypothesis feeds arbitrary and hostile plans (fake tools, foreign recipients, `close_task`, unknown asks and tones, smuggled `subject`/`body` fields); every result is inside the envelope or is the baseline |
+| [`tests/unit/domain/test_guard.py`](tests/unit/domain/test_guard.py) | Each escape attempt maps to a closed violation code; every composable message passes the fact rules |
+| [`tests/unit/llm/test_owasp_llm_top10.py`](tests/unit/llm/test_owasp_llm_top10.py) | No model text is fed back, the history tool returns closed facts, prompts hold no secrets, an earlier contact must be real |
+| [`tests/unit/processing/test_review_flow.py`](tests/unit/processing/test_review_flow.py) | A held action is not sent until a person approves it, then exactly once |
+| [`tests/eval/`](tests/eval/README.md) | 95 labelled notes including 32 injections; synthetic scripts and live `gpt-6-luna` captures both replay with zero unsafe outcomes |
+
+### Quality gates
+
+| Gate | Result |
+|------|--------|
+| Tests | 1,650+ unit, property, contract, scenario and integration tests |
+| Coverage | 100 % statements and branches (application, mock and evaluation harness) |
+| Static checks | Ruff `ALL`, PEP 8 at 79 columns, mypy `--strict`, Bandit, import-linter (hexagonal layers), Semgrep project invariants |
+| Mutation testing | mutmut on policy, identity and messages |
+| LLM evaluation | 95 cases replayed in CI from synthetic scripts and from live `gpt-6-luna` captures: macro-F1 0.99, 0 wrong decisions, 0 unsafe outcomes |
+| Observability | Every metric behind the alerts and dashboard is emitted (`docs/14` §8, checked by a test); allow-listed JSON logs with run, plan and LLM cost fields |
+| 10,000 tasks | 89.1 s first run, 57.6 s rerun, 202 MB, PostgreSQL 18 ([benchmarks](docs/benchmarks.md)) |
+| Security | OWASP ASVS 5.0 L2 as the design target, [OWASP LLM Top 10 matrix](docs/security/owasp-llm-top10.md) with a test per control, least-privilege DB roles ([docs/15](docs/15-security-asvs-l2.md)) |
+
+Architecture: a hexagonal layout with a pure domain core
+(`domain/`), use cases (`application/`), adapters for HTTP, PostgreSQL,
+OpenAI and the CLI (`adapters/`), and composition in `bootstrap.py`.
 
 ---
 
@@ -186,6 +277,16 @@ Each decision also has its allowed asks (an ETA request must ask for the
 delivery date; "who should own this" only for an unowned task) and its
 allowed tones. First contacts always follow the brief's routing.
 
+### Note interpretation
+
+Notes the keyword path cannot settle go to the model, which returns a
+closed blocker category, whether an ETA is needed, a confidence and a
+**verbatim** quote. Code rejects a quote that is not in the note and any
+blocker below confidence 0.6; a low-confidence `unclear` is accepted,
+because the prompt asks for exactly that when the model is unsure and
+the policy routes it like the fallback. Accepted answers are cached by
+model, prompt version and note.
+
 ### Human review
 
 A plan with `delivery: hold_for_review` is stored as a **held** action.
@@ -195,8 +296,12 @@ decides one, with an audit event. Approval keeps the original operation
 identity, so the next dispatch sends it exactly once. Holding can only
 reduce automation; an alert fires when an action waits for 4 hours.
 
-### Failure handling and budgets
+### Routing, failure handling and budgets
 
+- **Routes.** Every purpose tries `gpt-6-luna` at high reasoning effort
+  first, then `gpt-6.1-sol`, `gpt-6-sol` and `gpt-5.6-sol`. Failover
+  happens only on availability errors (timeouts, 429, 5xx, model not
+  available); each model has its own circuit breaker.
 - At most **four steps** per plan; on the last one the model must submit.
 - Each model call has a 30-second timeout and the whole plan, including
   the history lookup, a 60-second deadline.
@@ -216,21 +321,10 @@ reduce automation; an alert fires when an action waits for 4 hours.
 - Notification slots allow one action per source task state, plus one
   escalation, whatever the interpreter or the model answers (ADR-0017).
 
-### How containment is proven
-
-| Evidence | What it shows |
-|----------|---------------|
-| [OWASP LLM Top 10 matrix](docs/security/owasp-llm-top10.md) | Threat, controls and tests for each of LLM01–LLM10; a meta test keeps the matrix and the test markers in step |
-| [`tests/property/test_agent_containment.py`](tests/property/test_agent_containment.py) | Hypothesis feeds arbitrary and hostile plans (fake tools, foreign recipients, `close_task`, unknown asks and tones, smuggled `subject`/`body` fields); every result is inside the envelope or is the baseline |
-| [`tests/unit/domain/test_guard.py`](tests/unit/domain/test_guard.py) | Each escape attempt maps to a closed violation code; every composable message passes the fact rules |
-| [`tests/unit/llm/test_owasp_llm_top10.py`](tests/unit/llm/test_owasp_llm_top10.py) | No model text is fed back, the history tool returns closed facts, prompts hold no secrets, an earlier contact must be real |
-| [`tests/unit/processing/test_review_flow.py`](tests/unit/processing/test_review_flow.py) | A held action is not sent until a person approves it, then exactly once |
-| [`tests/eval/`](tests/eval/README.md) | Replay evaluation of note interpretation: 95 cases including 32 injections; synthetic recordings and live gpt-6-luna captures both replay with zero unsafe outcomes |
-| [Model value](docs/eval/model-value-luna-high.v1.md) | The same 95 cases without the model: macro-F1 0.34 and 35 wrong decisions; with gpt-6-luna: 0.99 and none, 35 decisions fixed and none broken |
-
 Design records: [ADR-0016](docs/adr/0016-bounded-llm-orchestrator.md),
 [ADR-0017](docs/adr/0017-llm-output-and-notification-boundaries.md),
-[ADR-0018](docs/adr/0018-message-intents-review-and-shared-budget.md).
+[ADR-0018](docs/adr/0018-message-intents-review-and-shared-budget.md),
+[ADR-0019](docs/adr/0019-luna-primary-route-and-live-evidence.md).
 `FOLLOWUP_LLM_PLANNER=templates` switches the orchestrator off.
 
 ---
@@ -268,6 +362,10 @@ Faults can be injected into the mock, for example
 | TC-1008 | escalate | SURF Illinois project manager | blocked upstream, 6 days overdue |
 | TC-1009 | request_eta | Warehouse team | materials, due today |
 | TC-1010 | no_action | — | done |
+
+The live model reaches the same ten decisions: 7 messages sent, and a
+second run sends nothing and makes no model call, because every
+interpretation is cached and every action is a duplicate.
 
 A record from [`samples/decisions.json`](samples/decisions.json):
 
@@ -310,6 +408,13 @@ the full run with outbox states is [`samples/run_report.json`](samples/run_repor
 | `followup maintenance prune` | Apply retention (maintenance role) |
 | `followup-api` | Optional authenticated REST API ([docs/19](docs/19-api-and-deployment.md)) |
 
+| Evaluation | What it does |
+|------------|--------------|
+| `make eval` | Replay the synthetic corpus offline; contract gates |
+| `make eval-provider` | Replay the live `gpt-6-luna` captures offline with `--require-provider` |
+| `make eval-reports` | Regenerate the evidence pages in `docs/eval/`, including the model-value report |
+| `scripts/capture_eval.py` | Capture the corpus again from a live model (needs an API key) |
+
 | Variable | Default | Meaning |
 |----------|---------|---------|
 | `FOLLOWUP_LLM_PROVIDER` | `stub` | `stub` (offline) or `router` (OpenAI Responses API) |
@@ -326,27 +431,8 @@ into the shell (the CLI does not implicitly load `.env`). Docker Compose
 reads `.env` for substitution. Real-provider runs also need to expose
 `FOLLOWUP_OPENAI_API_KEY` to the process using your secret manager.
 
-Thresholds, routing and status synonyms live in [`config/`](config/).
-[`.env.example`](.env.example) lists the non-secret settings.
-
----
-
-## Quality and evidence
-
-| Gate | Result |
-|------|--------|
-| Tests | 1,500+ unit, property, contract, scenario and integration tests |
-| Observability | Every metric behind the alerts and dashboard is emitted (`docs/14` §8, checked by a test); allow-listed JSON logs with run, plan and LLM cost fields |
-| Coverage | 100 % statements and branches (application and mock) |
-| Static checks | Ruff `ALL` (79 columns), mypy `--strict`, Bandit, import-linter (hexagonal layers) |
-| Mutation testing | mutmut on policy, identity and messages |
-| LLM evaluation | 95 cases replayed in CI from live gpt-6-luna captures: macro-F1 0.99, 0 wrong decisions, 0 unsafe outcomes; without the model 0.34 and 35 wrong decisions ([value report](docs/eval/model-value-luna-high.v1.md)) |
-| 10,000 tasks | 89.1 s first run, 57.6 s rerun, 202 MB, PostgreSQL 18 ([benchmarks](docs/benchmarks.md)) |
-| Security | OWASP ASVS 5.0 L2 as the design target, [OWASP LLM Top 10 matrix](docs/security/owasp-llm-top10.md) with a test per control, least-privilege DB roles ([docs/15](docs/15-security-asvs-l2.md)) |
-
-Architecture: a hexagonal layout with a pure domain core
-(`domain/`), use cases (`application/`), adapters for HTTP, PostgreSQL,
-OpenAI and the CLI (`adapters/`), and composition in `bootstrap.py`.
+Thresholds, routing, model routes and status synonyms live in
+[`config/`](config/).
 
 ---
 
@@ -356,8 +442,8 @@ OpenAI and the CLI (`adapters/`), and composition in `bootstrap.py`.
 - **One follow-up per task state.** The dedupe key covers task, action,
   recipient and the decision-relevant state (status, due date, owner,
   notes); touching `last_update` alone does not re-notify.
-- **Strict dates.** Only ISO dates/datetimes are accepted; anything else counts as
-  missing and triggers a clarification instead of a guess.
+- **Strict dates.** Only ISO dates/datetimes are accepted; anything else
+  counts as missing and triggers a clarification instead of a guess.
 - **Source freshness.** A separate source timestamp watermark rejects older
   snapshots, including after `Done`; newer versions can reopen work.
   Date-only and equal versions cannot establish intra-day order
@@ -367,6 +453,9 @@ OpenAI and the CLI (`adapters/`), and composition in `bootstrap.py`.
 - **Intents over prose.** The model chooses what to ask and how firmly;
   code writes the words and renders the facts. Messages are less varied
   than free prose, and a whole class of hallucinations disappears.
+- **A cheaper model that thinks longer.** Luna at high effort matches
+  Sol at low effort for a seventh of the cost and takes about twice as
+  long on a plan; for a batch service the cost matters more.
 - **Per-decision transactions.** Simple to reason about and atomic; it is
   the main cost in the 10k benchmark.
 
@@ -404,12 +493,14 @@ build secrets and ordinary builds retain their default CA trust.
 Publishing remains manual and requires successful CI for the exact
 commit being published.
 
+---
+
 ## What changes for production
 
 1. Real tracker and messaging adapters behind the existing ports.
 2. TLS gateway and IdP-issued service tokens for the API.
-3. Calibrate the orchestrator on labelled real notes; record provider
-   responses into the evaluation harness and gate prompt changes on it.
+3. Extend the live evaluation from the labelled corpus to labelled real
+   field notes, and gate prompt changes on fresh captures.
 4. A provider-side spend cap on top of the shared ledger.
 5. Re-reminder cadence and a review UI once product rules exist.
 
@@ -430,6 +521,9 @@ commit being published.
 | [18 Runbook](docs/18-runbook.md) | Alerts, levers, backup and restore |
 | [19 API and deployment](docs/19-api-and-deployment.md) | Authenticated API, runtime configuration |
 | [OWASP LLM Top 10](docs/security/owasp-llm-top10.md) | Threats, controls and tests for LLM01–LLM10 |
-| [ADRs](docs/adr/) | Architecture decisions 0001–0018 |
+| [Model value report](docs/eval/model-value-luna-high.v1.md) | The corpus with and without the model |
+| [Live capture report](docs/eval/luna-high.v1.md) | `gpt-6-luna` captures replayed in CI |
+| [Model comparison](docs/eval/model-comparison.md) | `gpt-6-luna` high against `gpt-6.1-sol` low |
+| [ADRs](docs/adr/) | Architecture decisions 0001–0019 |
 
 AI coding assistants were used, as the brief allows.

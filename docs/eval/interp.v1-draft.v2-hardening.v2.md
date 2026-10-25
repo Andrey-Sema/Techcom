@@ -1,8 +1,8 @@
 # Interpretation and drafting replay evaluation
 
 Dataset: `hardening.v2`.
-Application pipeline commit: `d1b3336fab4d1ad4e5f1ea407d5ea085100f29b5`.
-Workflow and judge SHA-256: `5f227943499a728785ba192a19c058844ab689e0f3c92120bb4ae1b17d0ec851`.
+Application pipeline commit: `0cb20bcc7c1f00fbfb14409ac064afb6bfffa18a`.
+Workflow and judge SHA-256: `e05261508253a39fae43587b163728fa831092e5112cb25a09bbe5783edcf366`.
 Prompts: `interp.v1`, `draft.v2`.
 Provider quality: **UNVERIFIED**.
 Replay models: `synthetic.contract.v1`.

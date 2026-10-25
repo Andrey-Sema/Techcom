@@ -29,6 +29,8 @@ that does not exist or does not carry the risk, or if a risk marked
 
 * General prompt-injection immunity: screening is a signal; the controls
   above hold even when it misses.
-* Measured quality of a live provider: the replay evaluation is
-  synthetic; provider quality remains UNVERIFIED.
+* Authenticated provider quality: live `gpt-6-luna` captures are
+  replayed in CI and checked against their requests, but their origin
+  is attested, not independently verified (`CAPTURE_REPLAY_ONLY`),
+  and the corpus is labelled, not real field notes.
 * Full ASVS L2 compliance (see `15`).

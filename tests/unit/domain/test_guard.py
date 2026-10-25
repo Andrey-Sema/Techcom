@@ -175,7 +175,8 @@ def test_hold_for_review_is_recorded_on_the_decision() -> None:
 def test_every_escape_attempt_is_a_closed_violation(
     change: dict[str, object], code: str
 ) -> None:
-    assert code in violations(replace(GOOD, **change))  # type: ignore[arg-type]
+    plan = replace(GOOD, **change)  # type: ignore[arg-type]
+    assert code in violations(plan)
 
 
 @pytest.mark.owasp_llm("LLM09")
