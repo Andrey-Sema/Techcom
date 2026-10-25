@@ -1,6 +1,6 @@
 # ADR-0013: OpenAI model router (Responses API, Sol generation)
 
-* Status: Accepted
+* Status: Accepted; the route list is amended by ADR-0019
 * Date: 2026-10-22
 * Supersedes: the provider choice in ADR-0004 (Gemini as the only real
   integration). The safety design of ADR-0004 is unchanged.

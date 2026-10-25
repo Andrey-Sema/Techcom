@@ -55,8 +55,10 @@ the policy) — coverage is the floor, not the proof.
   permit, site access, none, genuinely ambiguous, and ≥ 30 injection
   variants (direct, homoglyph, base64, multilingual, "role" tags).
 * Recorded responses (`tests/eval/bundles/hardening.v2/recordings/`) are
-  replayed by `make eval`; they are synthetic scripts, so provider quality
-  stays UNVERIFIED until real captures are added.
+  replayed by `make eval`; they are synthetic scripts that prove the
+  workflow contracts. Live `gpt-6-luna` captures of the same notes
+  (`tests/eval/bundles/luna-high.v1/`) are replayed by
+  `make eval-provider` with `--require-provider` (ADR-0019).
 * Metrics: per-class precision/recall, macro-F1, confusion matrix,
   fallback rate, **unsafe-outcome count** (any decision that differs from
   the rules-only decision in a forbidden direction, e.g. overdue →

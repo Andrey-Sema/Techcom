@@ -16,7 +16,9 @@ responses are separate, deliberately synthetic scripts. The harness runs
 those scripts through the real `NoteInterpreter`, `DecisionPolicy` and
 `MessageDrafter`, including keyword bypasses, screen decisions, strict
 output validation, grounding, policy routing and catalogue rendering.
-It cannot measure provider quality: **provider quality is UNVERIFIED**.
+On its own it cannot measure provider quality: for this synthetic
+bundle **provider quality is UNVERIFIED** (see
+[live provider captures](#live-provider-captures) below).
 No provider endpoint is called and no credential is read.
 
 Every recording binds the isolated request input, exact prompt instructions,

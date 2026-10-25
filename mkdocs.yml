@@ -56,6 +56,7 @@ nav:
       - "Current synthetic replay": eval/interp.v1-draft.v2-hardening.v2.md
       - "Live gpt-6-luna capture": eval/luna-high.v1.md
       - "Model value: with and without the model": eval/model-value-luna-high.v1.md
+      - "Live model comparison": eval/model-comparison.md
   - Decisions (ADR):
       - "ADR-0001: Hexagonal architecture with a functional core": adr/0001-hexagonal-functional-core.md
       - "ADR-0002: PostgreSQL 18 for state and outbox; no Redis/Celery": adr/0002-postgresql-18-no-broker.md
@@ -75,3 +76,4 @@ nav:
       - "ADR-0016: Bounded LLM orchestrator": adr/0016-bounded-llm-orchestrator.md
       - "ADR-0017: LLM output and notification boundaries": adr/0017-llm-output-and-notification-boundaries.md
       - "ADR-0018: Message intents, review and shared budget": adr/0018-message-intents-review-and-shared-budget.md
+      - "ADR-0019: Luna primary route, live evidence": adr/0019-luna-primary-route-and-live-evidence.md
