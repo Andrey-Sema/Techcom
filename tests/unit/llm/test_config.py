@@ -39,10 +39,17 @@ def test_repository_config_is_valid_and_ordered(
 ) -> None:
     for purpose in LLMPurpose:
         models = [r.model for r in routing_config.routes[purpose]]
-        assert models == ["gpt-6.1-sol", "gpt-6-sol", "gpt-5.6-sol"]
+        assert models == [
+            "gpt-6-luna",
+            "gpt-6.1-sol",
+            "gpt-6-sol",
+            "gpt-5.6-sol",
+        ]
         assert all(
             r.provider == "openai" for r in routing_config.routes[purpose]
         )
+        # The primary route is pinned to Luna at high reasoning effort.
+        assert routing_config.routes[purpose][0].effort == "high"
 
 
 def test_minimal_config_uses_safe_defaults() -> None:

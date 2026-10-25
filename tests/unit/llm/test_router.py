@@ -31,6 +31,17 @@ from techcom_followup.application.ports import (
 USAGE = TokenUsage(input_tokens=1_000, output_tokens=200)
 
 
+@pytest.fixture
+def routing_config(routing_config: RoutingConfig) -> RoutingConfig:
+    # Router mechanics are pinned to the three Sol generations, so a
+    # new primary route in config/llm.toml does not rewrite them.
+    routes = {
+        purpose: tuple(r for r in chain if r.model.endswith("-sol"))
+        for purpose, chain in routing_config.routes.items()
+    }
+    return routing_config.model_copy(update={"routes": routes})
+
+
 class ScriptedBackend:
     """Returns or raises a scripted outcome per model."""
 

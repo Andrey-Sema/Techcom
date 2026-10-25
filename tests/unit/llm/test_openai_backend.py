@@ -64,10 +64,10 @@ async def test_request_is_strict_private_and_single_shot(
     assert reply.usage.cached_input_tokens == 0
     assert reply.usage.reasoning_tokens == 50
     (kwargs,) = create.calls
-    assert kwargs["model"] == "gpt-6.1-sol"
+    assert kwargs["model"] == "gpt-6-luna"
     assert kwargs["store"] is False
     assert kwargs["truncation"] == "disabled"
-    assert kwargs["reasoning"] == {"effort": "low"}
+    assert kwargs["reasoning"] == {"effort": "high"}
     assert kwargs["timeout"] == 7.5
     assert kwargs["prompt_cache_key"] == "interpret_note:interp.v1"
     text_format = kwargs["text"]["format"]

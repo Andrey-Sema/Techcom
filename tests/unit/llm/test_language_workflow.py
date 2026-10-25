@@ -106,6 +106,27 @@ async def test_interpreter_calls_only_for_ambiguous_relevant_note() -> None:
     assert "source" not in properties
 
 
+async def test_low_confidence_unclear_is_an_answer_not_a_failure() -> None:
+    unclear = json.dumps(
+        {
+            "blocker": "unclear",
+            "needs_eta": False,
+            "confidence": 0.1,
+            "evidence": "unfinished checks",
+        }
+    )
+    stub = ScriptedLLM([unclear])
+    interpreter = NoteInterpreter(stub, InMemoryRepository(), now=lambda: NOW)
+    first = await interpreter.interpret(TASK, as_of=AS_OF, screen=CLEAN_SCREEN)
+    again = await interpreter.interpret(TASK, as_of=AS_OF, screen=CLEAN_SCREEN)
+    assert first is not None
+    assert first.blocker is BlockerCategory.UNCLEAR
+    assert first.source is InterpretationSource.LLM
+    assert again == first
+    assert len(stub.requests) == 1
+    assert not interpreter.calls.failures
+
+
 async def test_false_screen_cannot_bypass_flagged_input() -> None:
     stub = ScriptedLLM([VALID])
     task = dataclasses.replace(

@@ -291,7 +291,7 @@ class PlanLimits:
     provider cannot stall a run, while a normal four-step plan fits.
     """
 
-    call_timeout_s: float = 20
+    call_timeout_s: float = 30
     plan_timeout_s: float = 60
 
 
