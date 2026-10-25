@@ -11,7 +11,7 @@ from techcom_followup.adapters.outbound.llm.catalog import (
 )
 from techcom_followup.application.ports import TokenUsage
 
-SOL_MODELS = {"gpt-5.6-sol", "gpt-6-sol", "gpt-6.1-sol"}
+ROUTED_MODELS = {"gpt-6-luna", "gpt-5.6-sol", "gpt-6-sol", "gpt-6.1-sol"}
 
 
 def price(**overrides: object) -> ModelPrice:
@@ -25,8 +25,8 @@ def price(**overrides: object) -> ModelPrice:
     return ModelPrice.model_validate(data)
 
 
-def test_catalogue_covers_the_sol_generation() -> None:
-    assert set(KNOWN_MODELS) == SOL_MODELS
+def test_catalogue_covers_the_routed_models() -> None:
+    assert set(KNOWN_MODELS) == ROUTED_MODELS
 
 
 def test_every_catalogue_model_exists_in_the_installed_sdk() -> None:

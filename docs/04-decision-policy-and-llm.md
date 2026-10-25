@@ -150,14 +150,17 @@ task complete" has no field to land in.
 
 ## 5. Validation pipeline (post-LLM)
 
-1. **Transport**: timeout (10 s), provider error → `LLMUnavailable`.
+1. **Transport**: timeout (30 s), provider error → `LLMUnavailable`.
 2. **Syntax**: JSON parse; failure → `LLMInvalidOutput("json")`.
 3. **Schema**: Pydantic strict validation; failure →
    `LLMInvalidOutput("schema")`.
 4. **Grounding** (interpretation): `evidence` must be a case-insensitive
    substring of the sanitized note, and `blocker != NONE` requires non-empty
    evidence. Failure → `LLMInvalidOutput("ungrounded")`.
-5. **Confidence gate**: `confidence < 0.6` → treat as `UNCLEAR`.
+5. **Confidence gate**: `confidence < 0.6` → treat as `UNCLEAR`. A
+   low-confidence `UNCLEAR` is itself an accepted answer, not a failed
+   call: the prompt asks for it when the model is unsure, and it routes
+   exactly like the fallback.
 6. **Message rules** (draft): only placeholders from the LLM allow-list
    (`{recipient_name}`, `{task_id}`, `{task_title}`, `{project}`,
    `{due_date}`, `{days_overdue}`, `{missing_fields}`); templates may
@@ -244,7 +247,7 @@ fragments in a fixed order and code renders the facts
 `{due_date}`, `{missing_fields}`, `{owner_name}`, `{reason_text}`).
 Any failure returns the baseline and its template with `llm_fallback`.
 The dedupe key always comes from the baseline, so reruns never call the
-model or send twice. Each call has a 20 s timeout; the whole plan has a
+model or send twice. Each call has a 30 s timeout; the whole plan has a
 60 s deadline.
 
 ## 8. Message templates (fallback and default for flagged notes)

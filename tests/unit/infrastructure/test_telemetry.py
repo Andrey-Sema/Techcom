@@ -263,7 +263,7 @@ async def test_router_reports_cost_tokens_latency_and_circuits(
     purpose = request_.purpose.value
     assert (
         value(telemetry, "followup_llm_cost_usd_total", purpose=purpose)
-        == 0.004
+        == 0.0002
     )
     assert (
         value(

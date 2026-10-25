@@ -53,6 +53,7 @@ from techcom_followup.application.dispatch import (
 )
 from techcom_followup.application.drafter import MessageDrafter
 from techcom_followup.application.interpreter import NoteInterpreter
+from techcom_followup.application.llm_workflow import LanguageCall
 from techcom_followup.application.orchestrator import FollowUpOrchestrator
 from techcom_followup.application.ports import LLMClient
 from techcom_followup.application.process_tasks import (
@@ -91,6 +92,9 @@ _log = structlog.get_logger(__name__)
 _LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", "mock-api"})
 _MAX_FIXTURE_BYTES = MAX_SOURCE_RESPONSE_BYTES
 _MAX_FIXTURE_RECORDS = 10_000
+# Total deadline for one interpretation or drafting call; high-effort
+# reasoning routes need more than the workflow default.
+_LANGUAGE_CALL_TIMEOUT_S = 30
 
 
 class RuntimeSettings(BaseSettings):
@@ -297,6 +301,14 @@ class _RuntimeScope:
                 due_soon_days=policy.due_soon_days,
             )
             drafter = MessageDrafter(None if offline else language)
+            interpreter.calls = LanguageCall(
+                interpreter.calls.client,
+                monotonic=time.monotonic,
+                timeout_s=_LANGUAGE_CALL_TIMEOUT_S,
+            )
+            drafter.calls = LanguageCall(
+                drafter.calls.client, timeout_s=_LANGUAGE_CALL_TIMEOUT_S
+            )
             interpreter.calls.telemetry = self._telemetry
             drafter.calls.telemetry = self._telemetry
             self._processor = ProcessTasks(

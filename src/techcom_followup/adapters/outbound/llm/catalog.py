@@ -41,6 +41,12 @@ class ModelCapabilities:
 
 
 KNOWN_MODELS: dict[str, ModelCapabilities] = {
+    "gpt-6-luna": ModelCapabilities(
+        provider="openai",
+        efforts=_SOL_EFFORTS,
+        structured_outputs=True,
+        max_output_tokens=128_000,
+    ),
     "gpt-6.1-sol": ModelCapabilities(
         provider="openai",
         efforts=_SOL_EFFORTS,

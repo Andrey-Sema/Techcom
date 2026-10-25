@@ -9,9 +9,15 @@
 # pricing page and update `verified_on` together with the numbers.
 
 daily_budget_usd = "5"
-request_timeout_s = 20
+request_timeout_s = 30
 breaker_failure_threshold = 5
 breaker_cooldown_s = 30
+
+[[routes.interpret_note]]
+model = "gpt-6-luna"
+effort = "high"
+verbosity = "low"
+max_output_tokens = 2048
 
 [[routes.interpret_note]]
 model = "gpt-6.1-sol"
@@ -28,6 +34,12 @@ max_output_tokens = 2048
 [[routes.interpret_note]]
 model = "gpt-5.6-sol"
 effort = "low"
+verbosity = "low"
+max_output_tokens = 2048
+
+[[routes.draft_message]]
+model = "gpt-6-luna"
+effort = "high"
 verbosity = "low"
 max_output_tokens = 2048
 
@@ -52,6 +64,12 @@ max_output_tokens = 2048
 # The orchestrator plans one action per new task state in at most four
 # steps; it gets more reasoning effort than single-shot purposes.
 [[routes.orchestrate]]
+model = "gpt-6-luna"
+effort = "high"
+verbosity = "low"
+max_output_tokens = 4096
+
+[[routes.orchestrate]]
 model = "gpt-6.1-sol"
 effort = "medium"
 verbosity = "low"
@@ -68,6 +86,13 @@ model = "gpt-5.6-sol"
 effort = "medium"
 verbosity = "low"
 max_output_tokens = 4096
+
+[prices."gpt-6-luna"]
+input_per_mtok = "0.10"
+cached_input_per_mtok = "0.01"
+output_per_mtok = "0.50"
+source = "OpenAI API pricing gpt-6-luna"
+verified_on = "2026-10-25"
 
 [prices."gpt-6.1-sol"]
 input_per_mtok = "2"

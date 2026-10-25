@@ -63,6 +63,16 @@ class InterpretationOutput(StrictOutput):
         )
 
 
+def _confident(output: InterpretationOutput) -> bool:
+    # UNCLEAR is the answer the prompt asks for when the model is
+    # unsure, and the policy treats it like the fallback, so a low
+    # score there is expected; other blockers must reach the bar.
+    return (
+        output.blocker is BlockerCategory.UNCLEAR
+        or output.confidence >= MIN_CONFIDENCE
+    )
+
+
 def _require_clock(
     now: Callable[[], datetime] | None,
 ) -> Callable[[], datetime]:
@@ -141,7 +151,7 @@ class NoteInterpreter:
         valid = (
             candidate.grounded(note)
             and candidate.evidence in redact_contacts(note)
-            and candidate.confidence >= MIN_CONFIDENCE
+            and _confident(candidate)
             and value.source is InterpretationSource.LLM
         )
         return value if valid else None
@@ -185,5 +195,5 @@ def _validate_interpretation(text: str, note: str) -> InterpretationOutput:
     output = parse_output(text, InterpretationOutput)
     require_output(output.grounded(note), "ungrounded")
     require_output(output.evidence in redact_contacts(note), "unseen_evidence")
-    require_output(output.confidence >= MIN_CONFIDENCE, "confidence")
+    require_output(_confident(output), "confidence")
     return output

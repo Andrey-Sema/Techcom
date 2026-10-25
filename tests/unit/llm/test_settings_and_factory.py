@@ -171,7 +171,7 @@ def test_build_router_exports_model_circuit_states(
     factory.build_router(
         routing_config, cast("AsyncOpenAI", _Client()), telemetry=telemetry
     )
-    for model in ("gpt-6.1-sol", "gpt-6-sol", "gpt-5.6-sol"):
+    for model in ("gpt-6-luna", "gpt-6.1-sol", "gpt-6-sol", "gpt-5.6-sol"):
         assert (
             telemetry.registry.get_sample_value(
                 "followup_circuit_state",

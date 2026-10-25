@@ -309,7 +309,7 @@ Service accounts: `scheduler` (`runs:trigger`), `ops-dashboard`
 | Client → API | HTTPS (prod) | service JWT | trigger/read | body ≤ 64 KiB, rate limit |
 | App → Task API | HTTPS | read-only token (prod: OAuth) | fetch tasks | 5 s, 4 attempts, 20 s deadline |
 | App → Delivery API | HTTPS | create-only token | send messages | 5 s, single attempt per dispatch |
-| App → LLM provider | HTTPS | API key (local) / workload identity (prod) | interpret, draft | 10 s, 1 retry, semaphore 4, daily budget |
+| App → LLM provider | HTTPS | API key (local) / workload identity (prod) | interpret, draft | 30 s, 1 retry, semaphore 4, daily budget |
 | App → PostgreSQL | TCP+TLS (prod) | `followup_app` role | state | pool 10, statement timeout 5 s |
 | Migrator → PostgreSQL | TCP+TLS (prod) | `followup_migrator` | DDL | one-shot |
 | App → Alloy | OTLP/HTTP(S) | network-restricted (prod: mTLS) | logs | batch, drop on overflow (counted) |

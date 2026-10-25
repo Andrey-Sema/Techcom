@@ -198,7 +198,7 @@ reduce automation; an alert fires when an action waits for 4 hours.
 ### Failure handling and budgets
 
 - At most **four steps** per plan; on the last one the model must submit.
-- Each model call has a 20-second timeout and the whole plan, including
+- Each model call has a 30-second timeout and the whole plan, including
   the history lookup, a 60-second deadline.
 - Invalid JSON, an unknown tool, a timeout, an open circuit breaker, an
   exhausted budget or a plan that never passes the guard all fall back

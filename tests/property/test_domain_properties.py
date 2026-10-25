@@ -150,7 +150,12 @@ def test_8_llm_cannot_widen_the_decision(
 
 
 def noisy(text: str) -> str:
-    return f"  {text.upper()}  ".replace(" ", "   ")
+    # Upper-casing is noise only when folding undoes it: a dotless
+    # i upper-cases into a different letter.
+    shouted = text.upper()
+    if shouted.casefold() != text.casefold():
+        shouted = text
+    return f"  {shouted}  ".replace(" ", "   ")
 
 
 @given(records)

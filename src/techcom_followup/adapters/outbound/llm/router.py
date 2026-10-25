@@ -1,7 +1,8 @@
 """Model router: ordered failover with circuit breakers and a budget.
 
 For each purpose the router walks its route list in order (for
-example ``gpt-6.1-sol`` → ``gpt-6-sol`` → ``gpt-5.6-sol``). It fails
+example ``gpt-6-luna`` → ``gpt-6.1-sol`` → ``gpt-6-sol`` →
+``gpt-5.6-sol``). It fails
 over only on *availability* problems (timeouts, 429, 5xx, model not
 available). A refusal or an incomplete answer is returned to the
 caller unchanged: a second model would cost money without making the
