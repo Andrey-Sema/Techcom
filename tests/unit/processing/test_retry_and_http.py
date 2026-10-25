@@ -239,7 +239,8 @@ async def test_source_total_deadline_cancels_inflight_attempt() -> None:
         original = asyncio.timeout
         with (
             patch(
-                "techcom_followup.adapters.outbound.task_source_http.asyncio.timeout",
+                "techcom_followup.adapters.outbound.task_source_http."
+                "asyncio.timeout",
                 side_effect=lambda _: original(0.001),
             ),
             pytest.raises(TimeoutError),

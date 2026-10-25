@@ -242,7 +242,8 @@ async def test_receiver_non_idempotent_fault_and_reset() -> None:
     async with client_for(
         store,
         faults=FaultPlan.parse(
-            "messages:non_idempotent@1,messages:non_idempotent@2,lookup:reset@1"
+            "messages:non_idempotent@1,messages:non_idempotent@2,"
+            "lookup:reset@1"
         ),
     ) as client:
         assert (await send(client, operation_id)).status_code == 201

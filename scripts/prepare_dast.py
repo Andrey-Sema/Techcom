@@ -46,7 +46,8 @@ def main() -> None:
     arguments = parser.parse_args()
     if (
         re.fullmatch(
-            r"ghcr\.io/zaproxy/zaproxy(?::[A-Za-z0-9_.-]+)?@sha256:[a-f0-9]{64}",
+            r"ghcr\.io/zaproxy/zaproxy(?::[A-Za-z0-9_.-]+)?"
+            r"@sha256:[a-f0-9]{64}",
             os.environ.get("ZAP_IMAGE", ""),
         )
         is None

@@ -86,7 +86,8 @@ _AMBIGUOUS_CONTEXT = re.compile(
 # Keywords cannot decide whether a dependency is denied or ETA known.
 # Defer negative blockers to a model or the safe UNCLEAR fallback.
 _SEMANTIC_CONTEXT = re.compile(
-    r"\b(?:not|never|neither|without|isn['\u2019]t|aren['\u2019]t|don['\u2019]t"
+    r"\b(?:not|never|neither|without|isn['\u2019]t|aren['\u2019]t"
+    r"|don['\u2019]t"
     r"|doesn['\u2019]t|cannot|can['\u2019]t)\b"
     r"|\bno\b(?!\s+(?:eta|site\s+access)\b)"
     r"|\b(?:eta|delivery\s+date)\b.{0,30}\b(?:known|confirmed|set)\b"

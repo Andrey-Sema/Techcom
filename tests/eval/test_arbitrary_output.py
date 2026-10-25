@@ -14,7 +14,10 @@ from techcom_followup.domain.models import BlockerCategory, DecisionKind
         st.text(max_size=18000),
         st.sampled_from(
             [
-                '{"blocker":"none","needs_eta":false,"confidence":0.95,"evidence":""}',
+                (
+                    '{"blocker":"none","needs_eta":false,'
+                    '"confidence":0.95,"evidence":""}'
+                ),
                 '{"blocker":"none","status":"done"}',
                 (
                     '{"subject":"{recipient_name.__class__}",'
