@@ -69,6 +69,34 @@ fabricated solely to test validation and are excluded from corpus recordings.
 
 See [the current report](../../docs/eval/interp.v1-draft.v2-hardening.v2.md).
 
+## Live provider captures
+
+`bundles/luna-high.v1` holds the same 95 notes with responses captured
+from `gpt-6-luna` at high reasoning effort through the real
+interpreter and drafter (`scripts/capture_eval.py`, which needs an API
+key and writes nothing unless every request got a response). Each
+recording keeps the raw Responses API object; encrypted reasoning
+blobs are removed because they are opaque, bound to the capturing
+organisation and not needed to replay the answer text. `make
+eval-provider` replays the bundle offline with `--require-provider`,
+and CI runs it on every change, so a prompt or workflow change that
+invalidates the captures fails until they are captured again. The
+quality label stays `CAPTURE_REPLAY_ONLY`: replay proves consistency,
+not origin.
+
+## Model value
+
+`--value-report` runs the same cases once more with no model: keyword
+hits, the `unclear` fallback and catalogue templates, which is the
+service's offline path. Policy, routing and the safety judge are
+unchanged, so the difference is what the model adds. On
+`luna-high.v1` the model fixes 35 decisions and breaks none
+([report](../../docs/eval/model-value-luna-high.v1.md)). The corpus
+is built from notes the keyword path is not meant to settle, so the
+gap is larger than on routine notes; one capture is one sample, and
+two other live runs scored macro-F1 0.975. `make eval-reports`
+regenerates all evidence pages.
+
 Three scripted `NONE` interpretations exercise conservative deferral for
 resolved materials, completed upstream work and a quoted historical permit
 issue. The model remains responsible for interpretation: if unavailable,

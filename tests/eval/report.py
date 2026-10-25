@@ -4,6 +4,54 @@ from eval.harness import Evaluation
 from eval.metrics import score
 
 
+def _synthetic(result: Evaluation) -> bool:
+    return result.provider_quality == "UNVERIFIED"
+
+
+def _origin(result: Evaluation) -> list[str]:
+    if _synthetic(result):
+        return [
+            (
+                "Synthetic scripted responses verify workflow contracts "
+                "and guardrails."
+            ),
+            (
+                "They do not measure a live model's accuracy or attest "
+                "provider origin."
+            ),
+            "No provider API was called. No API credentials were used.",
+        ]
+    return [
+        "Captured provider responses are replayed offline. Replay checks",
+        "that every capture matches its request, prompt and schema; it",
+        "cannot authenticate where a capture came from. The operator",
+        "attestation above is the only origin claim.",
+        (
+            "No provider API was called during replay. "
+            "No API credentials were used."
+        ),
+    ]
+
+
+def _provenance(result: Evaluation) -> list[str]:
+    if _synthetic(result):
+        return [
+            (
+                "`--require-provider` rejects this synthetic corpus. "
+                "Captured provider"
+            ),
+            (
+                "inputs must be supplied separately and their origin "
+                "independently reviewed."
+            ),
+        ]
+    return [
+        "Every recording carries its raw provider response, so this",
+        "corpus passes `--require-provider`. Its origin still needs",
+        "independent review.",
+    ]
+
+
 def markdown(result: Evaluation) -> str:
     """Render deterministic Markdown with explicit quality limits."""
     scores = result.scores
@@ -21,15 +69,7 @@ def markdown(result: Evaluation) -> str:
         "",
         result.manifest.provenance,
         "",
-        (
-            "Synthetic scripted responses verify workflow contracts "
-            "and guardrails."
-        ),
-        (
-            "They do not measure a live model's accuracy or attest "
-            "provider origin."
-        ),
-        "No provider API was called. No API credentials were used.",
+        *_origin(result),
         "",
         f"- Examples: {scores.examples}",
         f"- Benign notes: {benign.examples}",
@@ -81,7 +121,11 @@ def markdown(result: Evaluation) -> str:
         or row.expected_decision != row.actual_decision
     ]
     if not disagreements:
-        lines.append("No disagreements in this scripted corpus.")
+        lines.append(
+            "No disagreements in this scripted corpus."
+            if _synthetic(result)
+            else "No disagreements in this corpus."
+        )
     lines.extend(
         f"- `{row.case_id}`: label `{row.expected.value}` → "
         f"`{row.predicted.value}`; decision "
@@ -100,14 +144,7 @@ def markdown(result: Evaluation) -> str:
                 "Every response binds its prompt instructions, "
                 "schema and isolated input."
             ),
-            (
-                "`--require-provider` rejects this synthetic corpus. "
-                "Captured provider"
-            ),
-            (
-                "inputs must be supplied separately and their origin "
-                "independently reviewed."
-            ),
+            *_provenance(result),
             "",
             "## Limits",
             "",
