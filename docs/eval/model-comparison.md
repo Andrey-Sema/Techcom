@@ -57,8 +57,8 @@ checks its plan more often before submitting.
 
 ## Conclusion
 
-Quality is a tie within the noise of two runs: each model makes one
-recurring borderline error, on different notes. Single calls are
+Quality is a tie within the noise of two runs: each model misreads one
+or two borderline notes per run, mostly different ones. Single calls are
 equally fast. Luna is 7 to 13 times cheaper and takes about twice as
 long on the orchestrated assignment, which is acceptable for a batch
 follow-up service. That is why `gpt-6-luna` at high effort is the
