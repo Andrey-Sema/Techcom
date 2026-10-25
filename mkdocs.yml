@@ -54,6 +54,8 @@ nav:
       - "Logging checklist": security/logging-security.md
   - Evaluation evidence:
       - "Current synthetic replay": eval/interp.v1-draft.v2-hardening.v2.md
+      - "Live gpt-6-luna capture": eval/luna-high.v1.md
+      - "Model value: with and without the model": eval/model-value-luna-high.v1.md
   - Decisions (ADR):
       - "ADR-0001: Hexagonal architecture with a functional core": adr/0001-hexagonal-functional-core.md
       - "ADR-0002: PostgreSQL 18 for state and outbox; no Redis/Celery": adr/0002-postgresql-18-no-broker.md

@@ -5,7 +5,7 @@ SHELL := /bin/sh
 
 .PHONY: help db-secrets compose-check bootstrap quality gates semgrep semgrep-test complexity deadcode \
         deps audit spelling yaml workflows pyproject-check docs \
-        test test-fast test-integration eval eval-test mock demo db-up db-down db-init \
+        test test-fast test-integration eval eval-provider eval-reports eval-test mock demo db-up db-down db-init \
         obs-secrets up-obs down-obs obs-check obs-smoke \
         images dockerfile-lint image-scan image-test mutation sbom \
         secrets-scan secrets-staged secrets-repo-check bench demo-check db-backup db-restore zap
@@ -113,6 +113,22 @@ test-integration:
 
 eval:
 	PYTHONPATH=tests uv run --locked python -m eval
+
+# Live gpt-6-luna captures, replayed offline (no API call, no key).
+LUNA = tests/eval/bundles/luna-high.v1
+LUNA_BUNDLE = --dataset $(LUNA)/notes.jsonl \
+  --recordings $(LUNA)/recordings/responses.jsonl \
+  --manifest $(LUNA)/manifest.json --require-provider
+
+eval-provider:
+	PYTHONPATH=tests uv run --locked python -m eval $(LUNA_BUNDLE)
+
+eval-reports:
+	PYTHONPATH=tests uv run --locked python -m eval \
+	  --report docs/eval/interp.v1-draft.v2-hardening.v2.md
+	PYTHONPATH=tests uv run --locked python -m eval $(LUNA_BUNDLE) \
+	  --report docs/eval/luna-high.v1.md \
+	  --value-report docs/eval/model-value-luna-high.v1.md
 
 eval-test:
 	PYTHONPATH=tests COVERAGE_FILE=.coverage.eval uv run --locked pytest -o addopts='' tests/eval --strict-markers --strict-config --cov=eval --cov-branch --cov-fail-under=100

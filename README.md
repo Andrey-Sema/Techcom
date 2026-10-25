@@ -225,7 +225,8 @@ reduce automation; an alert fires when an action waits for 4 hours.
 | [`tests/unit/domain/test_guard.py`](tests/unit/domain/test_guard.py) | Each escape attempt maps to a closed violation code; every composable message passes the fact rules |
 | [`tests/unit/llm/test_owasp_llm_top10.py`](tests/unit/llm/test_owasp_llm_top10.py) | No model text is fed back, the history tool returns closed facts, prompts hold no secrets, an earlier contact must be real |
 | [`tests/unit/processing/test_review_flow.py`](tests/unit/processing/test_review_flow.py) | A held action is not sent until a person approves it, then exactly once |
-| [`tests/eval/`](tests/eval/README.md) | Replay evaluation of note interpretation: 95 cases including 32 injections, macro-F1 0.99, zero unsafe outcomes (synthetic recordings) |
+| [`tests/eval/`](tests/eval/README.md) | Replay evaluation of note interpretation: 95 cases including 32 injections; synthetic recordings and live gpt-6-luna captures both replay with zero unsafe outcomes |
+| [Model value](docs/eval/model-value-luna-high.v1.md) | The same 95 cases without the model: macro-F1 0.34 and 35 wrong decisions; with gpt-6-luna: 0.99 and none, 35 decisions fixed and none broken |
 
 Design records: [ADR-0016](docs/adr/0016-bounded-llm-orchestrator.md),
 [ADR-0017](docs/adr/0017-llm-output-and-notification-boundaries.md),
@@ -339,7 +340,7 @@ Thresholds, routing and status synonyms live in [`config/`](config/).
 | Coverage | 100 % statements and branches (application and mock) |
 | Static checks | Ruff `ALL` (79 columns), mypy `--strict`, Bandit, import-linter (hexagonal layers) |
 | Mutation testing | mutmut on policy, identity and messages |
-| LLM evaluation | Replay harness, 95 cases, macro-F1 0.99, unsafe outcomes 0 |
+| LLM evaluation | 95 cases replayed in CI from live gpt-6-luna captures: macro-F1 0.99, 0 wrong decisions, 0 unsafe outcomes; without the model 0.34 and 35 wrong decisions ([value report](docs/eval/model-value-luna-high.v1.md)) |
 | 10,000 tasks | 89.1 s first run, 57.6 s rerun, 202 MB, PostgreSQL 18 ([benchmarks](docs/benchmarks.md)) |
 | Security | OWASP ASVS 5.0 L2 as the design target, [OWASP LLM Top 10 matrix](docs/security/owasp-llm-top10.md) with a test per control, least-privilege DB roles ([docs/15](docs/15-security-asvs-l2.md)) |
 

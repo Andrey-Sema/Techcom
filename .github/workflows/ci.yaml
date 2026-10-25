@@ -52,6 +52,7 @@ jobs:
           make db-init
           make db-init
       - run: make eval
+      - run: make eval-provider
       - run: make eval-test
       - run: uv build --package techcom-followup --wheel
   gates:

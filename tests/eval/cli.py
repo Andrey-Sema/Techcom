@@ -6,6 +6,7 @@ import json
 import sys
 from pathlib import Path
 
+from eval.ablation import evaluate_without_model, value_markdown
 from eval.contracts import load_bundle
 from eval.harness import evaluate
 from eval.report import markdown
@@ -26,6 +27,7 @@ def main(argv: list[str] | None = None) -> int:
         "--manifest", type=Path, default=_DATA / "manifest.json"
     )
     parser.add_argument("--report", type=Path)
+    parser.add_argument("--value-report", type=Path)
     parser.add_argument("--require-provider", action="store_true")
     args = parser.parse_args(argv)
     try:
@@ -42,6 +44,9 @@ def main(argv: list[str] | None = None) -> int:
         )
         if args.report is not None:
             args.report.write_text(markdown(result))
+        if args.value_report is not None:
+            without = asyncio.run(evaluate_without_model(cases))
+            args.value_report.write_text(value_markdown(without, result))
     except (OSError, ValueError):
         sys.stderr.write('{"error":"invalid_bundle_or_unverified_provider"}\n')
         return 2

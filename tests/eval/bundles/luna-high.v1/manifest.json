@@ -1,0 +1,10 @@
+{
+  "dataset_sha256": "bcab023dad1fe13f7c64f21800299f57f8e7009c152b470987d2fa12af7889f0",
+  "recordings_sha256": "93aafbedf7b3d42bc6a0e2e6268efa39b47fef5c6b9896b05e8d3008638d78de",
+  "dataset_version": "luna-high.v1",
+  "provenance": "Live gpt-6-luna responses at high reasoning effort, captured from the OpenAI Responses API. Captured on 2026-10-25 by scripts/capture_eval.py from a Claude Code session operated for Andrei Somushkin; consistency-checked offline, origin not independently reviewed.",
+  "interpretation_prompt": "interp.v1",
+  "drafting_prompt": "draft.v2",
+  "pipeline_commit": "d1b3336fab4d1ad4e5f1ea407d5ea085100f29b5",
+  "pipeline_sha256": "5f227943499a728785ba192a19c058844ab689e0f3c92120bb4ae1b17d0ec851"
+}
