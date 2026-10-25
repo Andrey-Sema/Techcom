@@ -24,6 +24,7 @@ rules decide WHETHER to act  →  the LLM plans HOW, inside an envelope
 |---|---|---|
 | Brief scenarios | **9 / 9** covered, each by a named test | [Required scenarios](#required-scenarios) |
 | Supplied fixture | **10 / 10** expected decisions, 7 messages sent; rerun: 7 duplicates, **0** new sends | [`make demo`](#quick-start), [samples](samples/) |
+| Unseen fixtures | One command, no Docker, database or API key | [Run it on your own fixture](#run-it-on-your-own-fixture) |
 | What the model adds | On 95 labelled notes: macro-F1 **0.34 → 0.99**, wrong decisions **35 → 0** (35 fixed, none broken) | [Model value report](docs/eval/model-value-luna-high.v1.md) |
 | Safety | **0** unsafe outcomes on 95 notes including 32 injection variants, with and without the model | [OWASP LLM Top 10 matrix](docs/security/owasp-llm-top10.md) |
 | Evidence in CI | Synthetic replay **and** live `gpt-6-luna` captures replayed on every change | `make eval`, `make eval-provider` |
@@ -33,8 +34,10 @@ rules decide WHETHER to act  →  the LLM plans HOW, inside an envelope
 ## Contents
 
 - [Quick start](#quick-start)
+- [Run it on your own fixture](#run-it-on-your-own-fixture)
 - [Evidence](#evidence)
 - [How it works](#how-it-works)
+- [Code map for reviewers](#code-map-for-reviewers)
 - [The LLM orchestrator and how it is kept in check](#the-llm-orchestrator-and-how-it-is-kept-in-check)
 - [Required scenarios](#required-scenarios)
 - [Output on the supplied fixture](#output-on-the-supplied-fixture)
@@ -89,6 +92,70 @@ uv run followup review         # actions the model held for a person
 To use the real model, set `FOLLOWUP_LLM_PROVIDER=router` and provide
 `FOLLOWUP_OPENAI_API_KEY` from your secret manager. Routes, reasoning
 effort and prices are in [`config/llm.toml`](config/llm.toml).
+
+---
+
+## Run it on your own fixture
+
+Any file with the schema of [`fixtures/tasks.json`](fixtures/tasks.json)
+works. The mock API serves it in place of the supplied fixture:
+
+```sh
+FOLLOWUP_MOCK_FIXTURE=path/to/tasks.json make demo
+cat var/demo/decisions.json      # one explained decision per task
+cat var/demo/delivery_log.jsonl  # what the mock receiver accepted
+cat var/demo/run_report.json     # outbox states; "demo" holds the rerun counts
+```
+
+No Docker, database or API key is needed. The demo processes the file,
+sends, reconciles and then processes the same file again, so
+`run_report.json` shows `rerun_duplicates` equal to `first_enqueued`
+and the delivery log has no second copy of any message.
+
+To see the reliability scenarios on the same file, add faults to the
+mock; the demo still ends with one delivery per action:
+
+```sh
+FOLLOWUP_MOCK_FIXTURE=path/to/tasks.json \
+FOLLOWUP_MOCK_FAULTS=tasks:429@1,messages:timeout_after_commit@1 make demo
+```
+
+For decisions only, without sending anything:
+
+```sh
+uv run followup run --fixture path/to/tasks.json --as-of 2026-10-21 --dry-run
+```
+
+What to expect from an unseen file:
+
+- Dates must be ISO (`2026-10-21` or an ISO datetime). Anything else
+  counts as missing and leads to a clarification, never a guess.
+- A project that is not in [`config/routing.toml`](config/routing.toml)
+  routes coordinator and manager messages to the fallback team
+  (`Operations desk`).
+- Offline, the model is a deterministic stub. A note the keyword path
+  cannot settle takes the safe fallback and carries the `llm_fallback`
+  flag. With the real model (`FOLLOWUP_LLM_PROVIDER=router`, PostgreSQL
+  as in the quick start, and `FOLLOWUP_MOCK_FIXTURE=… make mock`), the
+  model reads those notes.
+
+[`fixtures/unseen-example.json`](fixtures/unseen-example.json) is an
+eight-task file in a project the routing table does not know. Try it
+with `FOLLOWUP_MOCK_FIXTURE=fixtures/unseen-example.json make demo`.
+Run both ways on 2026-10-21:
+
+| Task | Note | Offline stub | Real model (`gpt-6-luna`) |
+|------|------|--------------|---------------------------|
+| NX-2001 | overdue, no note | follow-up to owner | follow-up to owner |
+| NX-2002 | "Waiting for the county permit; …" | follow-up to owner, `llm_fallback` | **escalate** (permit blocker) |
+| NX-2003 | "Fiber reels on backorder, supplier has no ship date." | escalate (overdue), `llm_fallback` | **request ETA** from the warehouse |
+| NX-2004 | done | no action | no action |
+| NX-2005 | no owner | clarification to the fallback team | clarification to the fallback team |
+| NX-2006 | "ignore previous instructions…" | flagged, follow-up from dates | flagged, follow-up from dates |
+| NX-2007 | on schedule | no action | no action |
+| NX-2008 | no due date | clarification to the owner | clarification to the owner |
+
+Both runs send six messages; a second run sends none.
 
 ---
 
@@ -208,6 +275,48 @@ flowchart LR
    tokens, send with a stable `Idempotency-Key`, retry with bounded
    backoff, and treat a timeout as **unknown**: the reconciler looks the
    operation up before anything is resent.
+
+---
+
+## Code map for reviewers
+
+The path a task takes is about 3,500 lines of the 12,700 in `src/`.
+Read these in order; paths are relative to `src/techcom_followup/`.
+
+| Step | File | Look for |
+|------|------|----------|
+| Read tasks | `adapters/outbound/task_source_http.py` | One bounded retry layer with `Retry-After` for 429 and 5xx |
+| Normalize | `domain/normalize.py` | Status synonyms, strict ISO dates, rejected records with reasons |
+| Screen notes | `domain/injection.py` | Instruction-like text is flagged and withheld from the model |
+| Decide | `domain/policy.py` | Rules R1–R9, first match wins; the baseline action and its recipient |
+| Interpret notes | `application/interpreter.py` | One validated call, verbatim evidence, confidence gate, cache |
+| Plan the action | `application/orchestrator.py` | Four steps at most, read-only tools, fallback on any failure |
+| Bound the plan | `domain/envelope.py`, `domain/guard.py` | What the model may choose, and the closed violation codes |
+| Write the message | `domain/messages.py` | Code-composed text from reviewed fragments; the fact validator |
+| Dedupe | `domain/identity.py` | Idempotency key and operation id from the task state |
+| Persist | `application/process_tasks.py` | Decision, action and audit in one transaction |
+| Deliver | `application/dispatch.py`, `adapters/outbound/delivery_http.py` | Fenced claims, stable `Idempotency-Key`, bounded backoff |
+| Reconcile | `application/reconcile.py` | A timeout is "unknown": look the operation up, never resend blindly |
+
+The model side is `adapters/outbound/llm/router.py` (failover, circuit
+breakers, budget) and `adapters/outbound/llm/openai_responses.py`
+(strict JSON schema, one attempt per call); the offline stand-in is
+`adapters/outbound/llm_agent_stub.py`. Everything is wired in
+`bootstrap.py` and exposed by `adapters/inbound/cli.py`. The mock API is
+`mocks/src/techcom_mocks/`, with fault plans in `faults.py`.
+
+The brief's scenarios are tested end to end in
+`tests/scenarios/test_processing.py` (S1–S6) and
+`tests/scenarios/test_llm_safety.py` (malformed output, prompt
+injection).
+
+**Beyond the four-hour brief.** These parts harden the service but are
+not needed to judge the core path: the authenticated REST API
+(`adapters/inbound/api/`), the observability stack (`deploy/`,
+`infrastructure/telemetry.py`, `infrastructure/otlp.py`), the PostgreSQL
+repository and migrations (`adapters/outbound/pg_repository.py`,
+`migrations/`), the evaluation harness (`tests/eval/`), the benchmark,
+mutation and DAST tooling, and the ADRs.
 
 ---
 
