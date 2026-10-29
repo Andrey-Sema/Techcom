@@ -47,7 +47,7 @@ dev = [
     "testcontainers[postgres]>=4.8",
     "pyyaml>=6.0.3",
     "types-pyyaml>=6.0.12.20260906",
-    "schemathesis>=4.31,<4.32",
+    "schemathesis>=4.31,<4.33",
 ]
 # Mutation testing (make mutation): slow, so it runs nightly in CI.
 mutation = [
